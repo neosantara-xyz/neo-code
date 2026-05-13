@@ -1,26 +1,50 @@
 #!/usr/bin/env sh
-# Install NAI Code from this source tree, or from GitHub release assets.
+# Install NAI Code from this source tree, GitHub release assets, or a release
+# source archive for environments like Termux that need a local Node.js build.
 #
 # Termux note: GitHub release binaries are built for normal Linux glibc/macos/windows.
-# Android/Termux should use source mode so the CLI runs through Node.js.
+# On Android/Termux, this installer automatically falls back to a release source
+# archive and builds the CLI locally with Node.js.
 #
 # Examples:
 #   ./install.sh
 #   ./install.sh --dry-run
 #   ./install.sh --bin-dir "$HOME/.local/bin"
-#   NAI_CODE_REPO=owner/repo curl -fsSL https://your-domain.example/install.sh | sh -s -- --release
+#   curl -fsSL https://code.neosantara.xyz/install.sh | sh
 
 set -eu
 
 DEFAULT_REPO="neosantara/nai-code"
+DEFAULT_DOWNLOAD_BASE_URL="https://code.neosantara.xyz"
 REPO="${NAI_CODE_REPO:-$DEFAULT_REPO}"
+if [ "${NAI_CODE_DOWNLOAD_BASE_URL+x}" = "x" ]; then
+  DOWNLOAD_BASE_URL="${NAI_CODE_DOWNLOAD_BASE_URL}"
+else
+  DOWNLOAD_BASE_URL="$DEFAULT_DOWNLOAD_BASE_URL"
+fi
 VERSION="${NAI_CODE_VERSION:-latest}"
 MODE="${NAI_CODE_INSTALL_MODE:-auto}"
+TERMUX_PREFIX="${PREFIX:-}"
 PREFIX="${NAI_CODE_INSTALL_PREFIX:-$HOME/.local}"
 BIN_DIR="${NAI_CODE_INSTALL_BIN_DIR:-}"
 DRY_RUN=0
 NO_BUILD=0
 FORCE=0
+
+print_header() {
+  printf '\n%s\n' '========================================'
+  printf '%s\n' '  NAI Code Installer'
+  printf '%s\n' '========================================'
+}
+
+bundle_install_url() {
+  release_ref="$1"
+  if [ -n "$DOWNLOAD_BASE_URL" ]; then
+    printf '%s/releases/%s/nai-termux-npm-bundle.tar.gz' "$DOWNLOAD_BASE_URL" "$release_ref"
+  else
+    printf 'https://github.com/%s/releases/download/%s/nai-termux-npm-bundle.tar.gz' "$REPO" "$release_ref"
+  fi
+}
 
 log() { printf '%s\n' "$*"; }
 err() { printf 'error: %s\n' "$*" >&2; }
@@ -35,8 +59,8 @@ Usage:
 
 Options:
   --source              Install from the current source tree.
-  --release             Install from GitHub release assets.
-  --repo owner/name     GitHub repo for release mode. Default: $DEFAULT_REPO
+  --release             Install from release assets, or source archive on Termux.
+  --repo owner/name     GitHub repo for GitHub fallback mode. Default: $DEFAULT_REPO
   --version vX.Y.Z      Release tag for release mode. Default: latest
   --prefix DIR          Install prefix for release mode. Default: ~/.local
   --bin-dir DIR         Directory for the nai command. Default: Termux \$PREFIX/bin or ~/.local/bin
@@ -45,8 +69,11 @@ Options:
   --dry-run             Print commands without running them.
   -h, --help            Show this help.
 
+Recommended:
+  curl -fsSL https://code.neosantara.xyz/install.sh | sh
+
 Termux recommended:
-  ./install.sh
+  curl -fsSL https://code.neosantara.xyz/install.sh | sh
   nai login
 USAGE
 }
@@ -69,7 +96,7 @@ need_cmd() {
 }
 
 is_termux() {
-  [ -n "${TERMUX_VERSION:-}" ] || printf '%s' "${PREFIX:-}" | grep -q '/com.termux/'
+  [ -n "${TERMUX_VERSION:-}" ] || printf '%s' "${TERMUX_PREFIX:-}" | grep -q '/com.termux/'
 }
 
 is_source_tree() {
@@ -86,17 +113,30 @@ resolve_bin_dir() {
     return
   fi
 
-  if is_termux && [ -n "${PREFIX:-}" ] && [ -d "${PREFIX}/bin" ] && [ -w "${PREFIX}/bin" ]; then
-    printf '%s' "${PREFIX}/bin"
+  if is_termux && [ -n "${TERMUX_PREFIX:-}" ]; then
+    printf '%s' "${TERMUX_PREFIX}/bin"
     return
   fi
 
   printf '%s' "$HOME/.local/bin"
 }
 
-install_source() {
+prepare_npm_cache() {
+  if [ -n "${NPM_CONFIG_CACHE:-}" ]; then
+    return
+  fi
+
+  cache_root="${TMPDIR:-/tmp}/nai-code-npm-cache"
+  run mkdir -p "$cache_root"
+  export NPM_CONFIG_CACHE="$cache_root"
+}
+
+install_source_tree() {
+  source_dir="$1"
+  install_kind="${2:-source}"
   need_cmd node
   need_cmd npm
+  prepare_npm_cache
 
   major="$(node_major)"
   if [ "$major" -lt 20 ]; then
@@ -107,29 +147,30 @@ install_source() {
     exit 1
   fi
 
-  if ! is_source_tree; then
-    err "source mode must be run from the repo root containing packages/coding-agent"
-    err "for curl installs, use --release with NAI_CODE_REPO=owner/repo, or clone/unzip the repo first"
-    exit 1
+  if [ "$install_kind" = "archive" ]; then
+    log "    Preparing portable workspace install"
+    run rm -f "$source_dir/package-lock.json"
+    log "    Installing dependencies"
+    run sh -c "cd \"$source_dir\" && npm install --ignore-scripts"
+  else
+    log "    Installing dependencies"
+    run sh -c "cd \"$source_dir\" && npm ci --ignore-scripts"
   fi
-
-  log "==> Installing dependencies"
-  run npm install --ignore-scripts
 
   if [ "$NO_BUILD" != "1" ]; then
-    log "==> Building packages"
-    run npm run build
+    log "    Building packages"
+    run sh -c "cd \"$source_dir\" && npm run build"
   fi
 
-  cli_path="$(pwd)/packages/coding-agent/dist/cli.js"
-  if [ ! -f "$cli_path" ]; then
+  cli_path="$source_dir/packages/coding-agent/dist/cli.js"
+  if [ "$DRY_RUN" != "1" ] && [ ! -f "$cli_path" ]; then
     err "missing built CLI: $cli_path"
     err "run npm run build or re-run installer without --no-build"
     exit 1
   fi
 
   bin="$(resolve_bin_dir)"
-  log "==> Installing nai command to $bin"
+  log "    Installing nai command to $bin"
   run mkdir -p "$bin"
 
   target="$bin/nai"
@@ -146,13 +187,24 @@ install_source() {
   run ln -s "$cli_path" "$target"
 
   log ""
-  log "NAI Code installed."
-  log "Run: nai login"
+  log "    NAI Code installed."
+  log "    Run: nai login"
   if ! command -v nai >/dev/null 2>&1 && [ "$DRY_RUN" != "1" ]; then
     log ""
     log "Add this to your shell profile if nai is not found:"
     log "  export PATH=\"$bin:\$PATH\""
   fi
+}
+
+install_source() {
+  if ! is_source_tree; then
+    err "source mode must be run from the repo root containing packages/coding-agent"
+    err "for curl installs, use --release so the installer can fetch a release asset or source archive"
+    exit 1
+  fi
+
+  print_header
+  install_source_tree "$(pwd)" source
 }
 
 platform_asset() {
@@ -172,6 +224,39 @@ platform_asset() {
   esac
 
   printf 'nai-%s-%s.tar.gz' "$os_name" "$arch_name"
+}
+
+source_archive_url() {
+  tag="$1"
+  if [ -n "$DOWNLOAD_BASE_URL" ]; then
+    printf '%s/releases/%s/nai-code-source.tar.gz' "$DOWNLOAD_BASE_URL" "$tag"
+  else
+    printf 'https://github.com/%s/archive/refs/tags/%s.tar.gz' "$REPO" "$tag"
+  fi
+}
+
+release_asset_url() {
+  release_ref="$1"
+  asset="$2"
+  if [ -n "$DOWNLOAD_BASE_URL" ]; then
+    printf '%s/releases/%s/%s' "$DOWNLOAD_BASE_URL" "$release_ref" "$asset"
+  else
+    printf 'https://github.com/%s/releases/download/%s/%s' "$REPO" "$release_ref" "$asset"
+  fi
+}
+
+resolve_release_ref() {
+  if [ "$VERSION" = "latest" ] && [ -n "$DOWNLOAD_BASE_URL" ]; then
+    printf 'latest'
+    return
+  fi
+
+  if [ "$VERSION" = "latest" ]; then
+    latest_tag
+    return
+  fi
+
+  printf '%s' "$VERSION"
 }
 
 latest_tag() {
@@ -200,36 +285,105 @@ download() {
   fi
 }
 
+install_release_source_archive() {
+  need_cmd tar
+
+  release_ref="$(resolve_release_ref)"
+  if [ -z "$release_ref" ]; then
+    err "could not resolve release reference"
+    exit 1
+  fi
+
+  url="$(source_archive_url "$release_ref")"
+  tmp="${TMPDIR:-/tmp}/nai-code-install-$$"
+  src_dir="$tmp/src"
+
+  log "[1/4] Downloading $url"
+  run mkdir -p "$tmp"
+  download "$url" "$tmp/source.tar.gz"
+
+  log "[2/4] Extracting source archive"
+  run mkdir -p "$src_dir"
+  run tar -xzf "$tmp/source.tar.gz" -C "$src_dir" --strip-components=1
+
+  install_source_tree "$src_dir" archive
+
+  log "    Cleaning up temporary source archive"
+  run rm -rf "$tmp"
+}
+
+install_termux_bundle() {
+  need_cmd tar
+
+  release_ref="$(resolve_release_ref)"
+  if [ -z "$release_ref" ]; then
+    err "could not resolve release reference"
+    exit 1
+  fi
+
+  if [ -z "${TERMUX_PREFIX:-}" ]; then
+    err "could not detect Termux prefix"
+    exit 1
+  fi
+
+  url="$(bundle_install_url "$release_ref")"
+  tmp="${TMPDIR:-/tmp}/nai-code-install-$$"
+  bundle_dir="$tmp/bundle"
+
+  log "[1/3] Downloading $url"
+  run mkdir -p "$bundle_dir"
+  run mkdir -p "$TERMUX_PREFIX/bin"
+  download "$url" "$tmp/nai-termux-npm-bundle.tar.gz"
+
+  log "[2/3] Extracting installer bundle"
+  run tar -xzf "$tmp/nai-termux-npm-bundle.tar.gz" -C "$bundle_dir"
+
+  prepare_npm_cache
+  log "[3/3] Installing NAI Code into $TERMUX_PREFIX"
+  run sh -c "cd \"$bundle_dir\" && npm_config_prefix=\"$TERMUX_PREFIX\" npm install -g --no-fund --no-audit ./neosantara-ai.tgz ./neosantara-agent-core.tgz ./neosantara-tui.tgz ./neosantara-code.tgz"
+
+  log ""
+  log "    NAI Code installed for Termux."
+  log "    Run: nai login"
+  log "    Cleaning up temporary installer bundle"
+  run rm -rf "$tmp"
+}
+
 install_release() {
   if is_termux; then
-    err "release binaries are not recommended for Termux/Android; use source mode instead"
-    err "run from the extracted repo: ./install.sh"
-    exit 1
+    print_header
+    log "==> Termux detected; using prebuilt npm bundle"
+    install_termux_bundle
+    return
   fi
 
   need_cmd uname
   need_cmd tar
 
   asset="$(platform_asset)"
-  tag="$VERSION"
-  if [ "$tag" = "latest" ]; then
-    tag="$(latest_tag)"
-  fi
-  if [ -z "$tag" ]; then
-    err "could not resolve latest release tag for $REPO"
+  release_ref="$(resolve_release_ref)"
+  if [ -z "$release_ref" ]; then
+    err "could not resolve release reference"
     exit 1
   fi
 
-  url="https://github.com/$REPO/releases/download/$tag/$asset"
+  url="$(release_asset_url "$release_ref" "$asset")"
   tmp="${TMPDIR:-/tmp}/nai-code-install-$$"
   prefix="$PREFIX"
   bin="$(resolve_bin_dir)"
 
-  log "==> Downloading $url"
+  print_header
+  log "[1/3] Downloading $url"
   run mkdir -p "$tmp"
-  download "$url" "$tmp/$asset"
+  if ! download "$url" "$tmp/$asset"; then
+    log "==> Binary asset unavailable; falling back to source archive build"
+    run rm -rf "$tmp"
+    print_header
+    install_release_source_archive
+    return
+  fi
 
-  log "==> Installing to $prefix/nai"
+  log "[2/3] Installing to $prefix/nai"
   run rm -rf "$prefix/nai"
   run mkdir -p "$prefix"
   run tar -xzf "$tmp/$asset" -C "$prefix"
@@ -248,8 +402,8 @@ install_release() {
   run rm -rf "$tmp"
 
   log ""
-  log "NAI Code installed from $tag."
-  log "Run: nai login"
+  log "[3/3] NAI Code installed from $release_ref."
+  log "    Run: nai login"
 }
 
 while [ "$#" -gt 0 ]; do
