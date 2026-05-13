@@ -1,0 +1,16 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"paths": {
+			"@neosantara/code": ["./src/index.ts"],
+			"@neosantara/code/hooks": ["./src/core/hooks/index.ts"],
+			"@neosantara/tui": ["../tui/src/index.ts"],
+			"@neosantara/ai": ["../ai/src/index.ts"],
+			"typebox": ["../../node_modules/typebox"]
+		},
+		"skipLibCheck": true
+	},
+	"include": ["examples/**/*.ts"],
+	"exclude": ["node_modules", "dist"]
+}

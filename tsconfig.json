@@ -1,0 +1,61 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"paths": {
+			"*": [
+				"./*"
+			],
+			"@neosantara/ai": [
+				"./packages/ai/src/index.ts"
+			],
+			"@neosantara/ai/oauth": [
+				"./packages/ai/src/oauth.ts"
+			],
+			"@neosantara/ai/*": [
+				"./packages/ai/src/*.ts",
+				"./packages/ai/src/providers/*.ts"
+			],
+			"@neosantara/ai/dist/*": [
+				"./packages/ai/src/*"
+			],
+			"@neosantara/agent-core": [
+				"./packages/agent/src/index.ts"
+			],
+			"@neosantara/agent-core/*": [
+				"./packages/agent/src/*"
+			],
+			"@neosantara/code": [
+				"./packages/coding-agent/src/index.ts"
+			],
+			"@neosantara/code/hooks": [
+				"./packages/coding-agent/src/core/hooks/index.ts"
+			],
+			"@neosantara/code/*": [
+				"./packages/coding-agent/src/*"
+			],
+			"typebox": [
+				"./node_modules/typebox"
+			],
+			"@neosantara/tui": [
+				"./packages/tui/src/index.ts"
+			],
+			"@neosantara/tui/*": [
+				"./packages/tui/src/*"
+			],
+			"@neosantara/agent-old": [
+				"./packages/agent-old/src/index.ts"
+			],
+			"@neosantara/agent-old/*": [
+				"./packages/agent-old/src/*"
+			]
+		}
+	},
+	"include": [
+		"packages/*/src/**/*"
+	],
+	"exclude": [
+		"**/dist/**",
+		"node_modules"
+	]
+}

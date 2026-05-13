@@ -1,0 +1,47 @@
+{
+	"name": "@neosantara/agent-core",
+	"version": "0.74.0",
+	"description": "Neosantara Code agent runtime primitives",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsgo -p tsconfig.build.json",
+		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+		"test": "vitest --run --reporter=verbose --testTimeout=20000 --pool=threads --poolOptions.threads.singleThread=true",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"dependencies": {
+		"ignore": "^7.0.5",
+		"typebox": "^1.1.24",
+		"yaml": "^2.8.2",
+		"@neosantara/ai": "^0.74.0"
+	},
+	"keywords": [
+		"ai",
+		"agent",
+		"llm",
+		"transport",
+		"state-management"
+	],
+	"author": "Neosantara",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/neosantara/nai-code.git",
+		"directory": "packages/agent"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	},
+	"devDependencies": {
+		"@types/node": "^24.3.0",
+		"typescript": "^5.7.3",
+		"vitest": "^3.2.4"
+	}
+}

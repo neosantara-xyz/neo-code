@@ -1,0 +1,69 @@
+{
+	"name": "@neosantara/ai",
+	"version": "0.74.0",
+	"description": "Neosantara OpenAI-compatible AI provider package",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./openai-completions": {
+			"types": "./dist/providers/openai-completions.d.ts",
+			"import": "./dist/providers/openai-completions.js"
+		},
+		"./openai-responses": {
+			"types": "./dist/providers/openai-responses.d.ts",
+			"import": "./dist/providers/openai-responses.js"
+		},
+		"./oauth": {
+			"types": "./dist/oauth.d.ts",
+			"import": "./dist/oauth.js"
+		}
+	},
+	"bin": {
+		"neosantara-ai": "./dist/cli.js"
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"generate-models": "node -e \"console.log('Static Neosantara model registry is checked in.')\"",
+		"generate-image-models": "node -e \"console.log('Static Neosantara image model registry is checked in.')\"",
+		"build": "tsgo -p tsconfig.build.json",
+		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+		"dev:tsc": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+		"test": "vitest --run --reporter=verbose --testTimeout=20000 --pool=threads --poolOptions.threads.singleThread=true",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"dependencies": {
+		"openai": "6.26.0",
+		"partial-json": "^0.1.7",
+		"typebox": "^1.1.24"
+	},
+	"keywords": [
+		"ai",
+		"llm",
+		"openai-compatible",
+		"neosantara",
+		"gateway"
+	],
+	"author": "Neosantara",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/neosantara/nai-code.git",
+		"directory": "packages/ai"
+	},
+	"engines": {
+		"node": ">=20.0.0"
+	},
+	"devDependencies": {
+		"@types/node": "^24.3.0",
+		"vitest": "^3.2.4"
+	}
+}
