@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
-import { runNeosantaraDeviceLogin } from "../src/core/neosantara-device-auth.js";
+import { loginWithNeosantaraDeviceAuth, runNeosantaraDeviceLogin } from "../src/core/neosantara-device-auth.js";
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
 	return new Response(JSON.stringify(body), {
@@ -10,6 +10,65 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
 }
 
 describe("Neosantara device login", () => {
+	it("returns device auth details for interactive consumers", async () => {
+		const authStorage = AuthStorage.inMemory();
+		const initiated: string[] = [];
+		const pendingUpdates: string[] = [];
+		let tokenPolls = 0;
+		const fetchImpl: typeof fetch = async (input) => {
+			if (String(input).endsWith("/auth/cli/initiate")) {
+				return jsonResponse({
+					status: true,
+					data: {
+						device_code: "interactive-device",
+						user_code: "NUSA-1234",
+						verification_uri: "https://app.neosantara.xyz/device",
+						expires_in: 300,
+						interval: 1,
+					},
+				});
+			}
+
+			return jsonResponse(
+				tokenPolls++ === 0
+					? { status: true, message: "waiting" }
+					: {
+							status: true,
+							data: {
+								token: "interactive-token",
+								user: { username: "neosantara", tier: "Pro" },
+							},
+						},
+				{ status: tokenPolls === 1 ? 202 : 200 },
+			);
+		};
+
+		const result = await loginWithNeosantaraDeviceAuth({
+			apiBaseUrl: "https://api.example.test",
+			authStorage,
+			fetchImpl,
+			stdout: {
+				write: () => true,
+			},
+			sleep: async () => {
+				// Keep the polling loop synchronous in test.
+			},
+			now: () => 0,
+			onInitiated: (data) => {
+				initiated.push(`${data.user_code}@${data.verification_uri}`);
+			},
+			onPending: () => {
+				pendingUpdates.push("pending");
+			},
+		});
+
+		expect(initiated).toEqual(["NUSA-1234@https://app.neosantara.xyz/device"]);
+		expect(pendingUpdates).toContain("pending");
+		expect(result.initiateData.user_code).toBe("NUSA-1234");
+		expect(result.tokenData.token).toBe("interactive-token");
+		expect(await authStorage.getApiKey("neosantara")).toBe("interactive-token");
+	});
+
 	it("stores the authorized CLI token as the Neosantara credential", async () => {
 		const calls: Array<{ url: string; body?: unknown }> = [];
 		const fetchImpl: typeof fetch = async (input, init) => {

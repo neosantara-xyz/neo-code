@@ -106,6 +106,30 @@ export class LoginDialogComponent extends Container implements Focusable {
 		this.tui.requestRender();
 	}
 
+	showDeviceAuth(url: string, code: string, expiresInSeconds: number): void {
+		this.contentContainer.clear();
+		this.contentContainer.addChild(new Spacer(1));
+		this.contentContainer.addChild(new Text(theme.fg("text", "Open this URL in your browser:"), 1, 0));
+		const linkedUrl = `\x1b]8;;${url}\x07${url}\x1b]8;;\x07`;
+		this.contentContainer.addChild(new Text(theme.fg("accent", linkedUrl), 1, 0));
+
+		const clickHint = process.platform === "darwin" ? "Cmd+click to open" : "Ctrl+click to open";
+		const hyperlink = `\x1b]8;;${url}\x07${clickHint}\x1b]8;;\x07`;
+		this.contentContainer.addChild(new Text(theme.fg("dim", hyperlink), 1, 0));
+
+		this.contentContainer.addChild(new Spacer(1));
+		this.contentContainer.addChild(new Text(theme.fg("text", "Enter this code:"), 1, 0));
+		this.contentContainer.addChild(new Text(theme.fg("accent", theme.bold(code)), 1, 0));
+		this.contentContainer.addChild(
+			new Text(theme.fg("dim", `Code expires in ${expiresInSeconds} seconds. Waiting for authorization...`), 1, 0),
+		);
+		this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", "to cancel")})`, 1, 0));
+
+		const openCmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+		exec(`${openCmd} "${url}"`);
+		this.tui.requestRender();
+	}
+
 	/**
 	 * Show input for manual code/URL entry (for callback server providers)
 	 */

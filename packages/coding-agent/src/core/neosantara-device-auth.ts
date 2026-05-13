@@ -8,7 +8,7 @@ const EXTRA_EXPIRY_GRACE_MS = 1_000;
 
 type JsonObject = Record<string, unknown>;
 
-type DeviceInitiateData = {
+export type DeviceInitiateData = {
 	device_code: string;
 	user_code: string;
 	verification_uri: string;
@@ -16,14 +16,14 @@ type DeviceInitiateData = {
 	interval: number;
 };
 
-type DeviceUser = {
+export type DeviceUser = {
 	id?: string;
 	username?: string;
 	email?: string;
 	tier?: string;
 };
 
-type DeviceTokenData = {
+export type DeviceTokenData = {
 	token: string;
 	user?: DeviceUser;
 };
@@ -43,6 +43,18 @@ export interface DeviceLoginOptions {
 	now?: () => number;
 	sleep?: (ms: number) => Promise<void>;
 	authStorage?: AuthStorage;
+	signal?: AbortSignal;
+}
+
+export interface DeviceLoginResult {
+	initiateData: DeviceInitiateData;
+	tokenData: DeviceTokenData;
+	provider: string;
+}
+
+export interface DeviceLoginCallbacks {
+	onInitiated?: (data: DeviceInitiateData) => void | Promise<void>;
+	onPending?: () => void;
 }
 
 interface ParsedLoginArgs {
@@ -114,8 +126,14 @@ async function postJson(
 	fetchImpl: typeof fetch,
 	url: string,
 	body?: JsonObject,
+	signal?: AbortSignal,
 ): Promise<{ response: Response; json: unknown }> {
 	const controller = new AbortController();
+	const abortFromParent = () => controller.abort();
+	if (signal?.aborted) {
+		throw new Error("Login cancelled");
+	}
+	signal?.addEventListener("abort", abortFromParent, { once: true });
 	const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 	try {
 		const response = await fetchImpl(url, {
@@ -127,11 +145,15 @@ async function postJson(
 		return { response, json: await readJsonResponse(response) };
 	} catch (error) {
 		if (error instanceof Error && error.name === "AbortError") {
+			if (signal?.aborted) {
+				throw new Error("Login cancelled");
+			}
 			throw new Error("Neosantara auth request timed out");
 		}
 		throw error;
 	} finally {
 		clearTimeout(timeout);
+		signal?.removeEventListener("abort", abortFromParent);
 	}
 }
 
@@ -201,17 +223,31 @@ async function pollForToken(
 		now: () => number;
 		sleep: (ms: number) => Promise<void>;
 		stdout: Pick<typeof process.stdout, "write">;
+		signal?: AbortSignal;
+		onPending?: () => void;
 	},
 ): Promise<DeviceTokenData> {
 	let intervalMs = options.intervalMs;
 	let dotCount = 0;
 
 	while (options.now() <= options.expiresAt + EXTRA_EXPIRY_GRACE_MS) {
+		if (options.signal?.aborted) {
+			throw new Error("Login cancelled");
+		}
 		await options.sleep(intervalMs);
-		const { response, json } = await postJson(fetchImpl, `${apiBaseUrl}/auth/cli/token`, { device_code: deviceCode });
+		if (options.signal?.aborted) {
+			throw new Error("Login cancelled");
+		}
+		const { response, json } = await postJson(
+			fetchImpl,
+			`${apiBaseUrl}/auth/cli/token`,
+			{ device_code: deviceCode },
+			options.signal,
+		);
 
 		if (response.status === 202) {
 			dotCount = (dotCount + 1) % 12;
+			options.onPending?.();
 			options.stdout.write(
 				`\r${chalk.dim(`Waiting for authorization${".".repeat(dotCount + 1)}${" ".repeat(12 - dotCount)}`)}`,
 			);
@@ -233,6 +269,49 @@ async function pollForToken(
 	}
 
 	throw new Error("Device code expired before authorization completed");
+}
+
+export async function loginWithNeosantaraDeviceAuth(
+	options: DeviceLoginOptions & DeviceLoginCallbacks = {},
+): Promise<DeviceLoginResult> {
+	const provider = options.provider ?? DEFAULT_PROVIDER;
+	const apiBaseUrl = normalizeBaseUrl(
+		options.apiBaseUrl ||
+			process.env.NEOSANTARA_API_BASE_URL ||
+			process.env.NAI_CODE_NEOSANTARA_API_BASE_URL,
+	);
+	const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+	if (!fetchImpl) {
+		throw new Error("this Node.js runtime does not provide fetch. Use Node.js 20 or newer.");
+	}
+
+	const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+	const now = options.now ?? (() => Date.now());
+	const authStorage = options.authStorage ?? AuthStorage.create();
+	const stdout = options.stdout ?? process.stdout;
+
+	const { response, json } = await postJson(fetchImpl, `${apiBaseUrl}/auth/cli/initiate`, undefined, options.signal);
+	if (!response.ok) {
+		const message = isRecord(json) && typeof json.message === "string" ? json.message : response.statusText;
+		throw new Error(message || `Failed to initiate device login (${response.status})`);
+	}
+
+	const initiateData = parseInitiateResponse(json);
+	await options.onInitiated?.(initiateData);
+
+	const tokenData = await pollForToken(fetchImpl, apiBaseUrl, initiateData.device_code, {
+		intervalMs: Math.max(1, initiateData.interval) * 1_000,
+		expiresAt: now() + initiateData.expires_in * 1_000,
+		now,
+		sleep,
+		stdout,
+		signal: options.signal,
+		onPending: options.onPending,
+	});
+
+	authStorage.set(provider, { type: "api_key", key: tokenData.token });
+
+	return { initiateData, tokenData, provider };
 }
 
 export async function runNeosantaraDeviceLogin(args: string[], options: DeviceLoginOptions = {}): Promise<void> {
@@ -271,24 +350,18 @@ export async function runNeosantaraDeviceLogin(args: string[], options: DeviceLo
 	const authStorage = options.authStorage ?? AuthStorage.create();
 
 	try {
-		const { response, json } = await postJson(fetchImpl, `${parsed.apiBaseUrl}/auth/cli/initiate`);
-		if (!response.ok) {
-			const message = isRecord(json) && typeof json.message === "string" ? json.message : response.statusText;
-			throw new Error(message || `Failed to initiate device login (${response.status})`);
-		}
-
-		const initiateData = parseInitiateResponse(json);
-		printDeviceInstructions(stdout, initiateData);
-
-		const tokenData = await pollForToken(fetchImpl, parsed.apiBaseUrl, initiateData.device_code, {
-			intervalMs: Math.max(1, initiateData.interval) * 1_000,
-			expiresAt: now() + initiateData.expires_in * 1_000,
-			now,
+		const { tokenData } = await loginWithNeosantaraDeviceAuth({
+			...options,
+			apiBaseUrl: parsed.apiBaseUrl,
+			fetchImpl,
 			sleep,
+			now,
+			authStorage,
 			stdout,
+			onInitiated: (initiateData) => {
+				printDeviceInstructions(stdout, initiateData);
+			},
 		});
-
-		authStorage.set(provider, { type: "api_key", key: tokenData.token });
 
 		const userLabel = formatUser(tokenData.user);
 		stdout.write(`${chalk.green("✓")} Logged in to Neosantara${userLabel ? ` as ${userLabel}` : ""}.\n`);

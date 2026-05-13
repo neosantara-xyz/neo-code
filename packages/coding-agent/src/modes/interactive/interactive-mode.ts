@@ -73,6 +73,7 @@ import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.js";
 import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.js";
+import { loginWithNeosantaraDeviceAuth } from "../../core/neosantara-device-auth.js";
 import { DefaultPackageManager } from "../../core/package-manager.js";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.js";
 import type { ResourceDiagnostic } from "../../core/resource-loader.js";
@@ -4400,16 +4401,19 @@ export class InteractiveMode {
 	}
 
 	private showLoginAuthTypeSelector(): void {
-		const subscriptionLabel = "Use a subscription";
+		const neosantaraLabel = "Log in with Neosantara";
 		const apiKeyLabel = "Use an API key";
 		this.showSelector((done) => {
 			const selector = new ExtensionSelectorComponent(
 				"Select authentication method:",
-				[subscriptionLabel, apiKeyLabel],
-				(option) => {
+				[neosantaraLabel, apiKeyLabel],
+				async (option) => {
 					done();
-					const authType = option === subscriptionLabel ? "oauth" : "api_key";
-					this.showLoginProviderSelector(authType);
+					if (option === neosantaraLabel) {
+						await this.showNeosantaraDeviceLogin();
+						return;
+					}
+					this.showLoginProviderSelector("api_key");
 				},
 				() => {
 					done();
@@ -4420,11 +4424,61 @@ export class InteractiveMode {
 		});
 	}
 
+	private async showNeosantaraDeviceLogin(): Promise<void> {
+		const providerId = "neosantara";
+		const providerName = this.session.modelRegistry.getProviderDisplayName(providerId);
+		const previousModel = this.session.model;
+
+		const dialog = new LoginDialogComponent(
+			this.ui,
+			providerId,
+			(_success, _message) => {
+				// Completion handled below
+			},
+			providerName,
+			"Login to Neosantara",
+		);
+
+		this.editorContainer.clear();
+		this.editorContainer.addChild(dialog);
+		this.ui.setFocus(dialog);
+		this.ui.requestRender();
+
+		const restoreEditor = () => {
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.editor);
+			this.ui.setFocus(this.editor);
+			this.ui.requestRender();
+		};
+
+		try {
+			await loginWithNeosantaraDeviceAuth({
+				authStorage: this.session.modelRegistry.authStorage,
+				signal: dialog.signal,
+				stdout: {
+					write: () => true,
+				},
+				onInitiated: (data) => {
+					dialog.showDeviceAuth(data.verification_uri, data.user_code, data.expires_in);
+				},
+			});
+
+			restoreEditor();
+			await this.completeProviderAuthentication(providerId, providerName, "api_key", previousModel);
+		} catch (error: unknown) {
+			restoreEditor();
+			const errorMsg = error instanceof Error ? error.message : String(error);
+			if (errorMsg !== "Login cancelled") {
+				this.showError(`Failed to login to ${providerName}: ${errorMsg}`);
+			}
+		}
+	}
+
 	private showLoginProviderSelector(authType: "oauth" | "api_key"): void {
 		const providerOptions = this.getLoginProviderOptions(authType);
 		if (providerOptions.length === 0) {
 			this.showStatus(
-				authType === "oauth" ? "No subscription providers available." : "No API key providers available.",
+				authType === "oauth" ? "No browser-login providers available." : "No API key providers available.",
 			);
 			return;
 		}
