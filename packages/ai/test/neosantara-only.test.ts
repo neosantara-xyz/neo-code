@@ -1,6 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { findEnvKeys } from "../src/env-api-keys.js";
 import { getModel, getModels, getProviders } from "../src/models.js";
+import { streamSimple } from "../src/stream.js";
+import type { Context } from "../src/types.js";
+
+const context: Context = {
+	systemPrompt: "You are a concise coding assistant.",
+	messages: [{ role: "user", content: "Say hi", timestamp: 0 }],
+	tools: [],
+};
+
+async function capturePayload(options: Parameters<typeof streamSimple>[2]) {
+	const model = getModel("neosantara", "grok-4.1-fast-reasoning");
+	let payload: unknown;
+	const stream = streamSimple(model, context, {
+		apiKey: "test-key",
+		...options,
+		onPayload: async (nextPayload) => {
+			payload = nextPayload;
+			throw new Error("stop after payload capture");
+		},
+	});
+	await stream.result();
+	return payload as { reasoning?: { effort?: string; summary?: string }; include?: string[] };
+}
 
 describe("Neosantara model registry", () => {
 	it("exposes only Neosantara as a built-in provider", () => {
@@ -32,5 +55,17 @@ describe("Neosantara model registry", () => {
 		delete process.env.NAI_API_KEY;
 		delete process.env.NEOSANTARA_API_KEY;
 		expect(findEnvKeys("neosantara")).toBeUndefined();
+	});
+
+	it("does not send reasoning params when thinking is off", async () => {
+		const payload = await capturePayload({});
+		expect(payload.reasoning).toBeUndefined();
+		expect(payload.include).toBeUndefined();
+	});
+
+	it("sends Neosantara reasoning effort only when requested", async () => {
+		const payload = await capturePayload({ reasoning: "high" });
+		expect(payload.reasoning).toEqual({ effort: "high", summary: "auto" });
+		expect(payload.include).toEqual(["reasoning.encrypted_content"]);
 	});
 });
