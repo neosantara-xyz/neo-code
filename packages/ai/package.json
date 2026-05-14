@@ -32,7 +32,7 @@
 	],
 	"scripts": {
 		"clean": "shx rm -rf dist",
-		"generate-models": "node -e \"console.log('Static Neosantara model registry is checked in.')\"",
+		"generate-models": "tsx ./scripts/generate-models.ts",
 		"generate-image-models": "node -e \"console.log('Static Neosantara image model registry is checked in.')\"",
 		"build": "tsgo -p tsconfig.build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",

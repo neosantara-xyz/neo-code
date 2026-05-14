@@ -373,11 +373,12 @@ export interface Model<TApi extends Api> {
 	thinkingLevelMap?: ThinkingLevelMap;
 	input: ("text" | "image")[];
 	cost: {
-		input: number; // $/million tokens
-		output: number; // $/million tokens
-		cacheRead: number; // $/million tokens
-		cacheWrite: number; // $/million tokens
+		input: number; // per-million-token rate in costCurrency units
+		output: number; // per-million-token rate in costCurrency units
+		cacheRead: number; // per-million-token rate in costCurrency units
+		cacheWrite: number; // per-million-token rate in costCurrency units
 	};
+	costCurrency?: string;
 	contextWindow: number;
 	maxTokens: number;
 	headers?: Record<string, string>;

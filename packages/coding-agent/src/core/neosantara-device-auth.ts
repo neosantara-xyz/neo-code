@@ -276,9 +276,7 @@ export async function loginWithNeosantaraDeviceAuth(
 ): Promise<DeviceLoginResult> {
 	const provider = options.provider ?? DEFAULT_PROVIDER;
 	const apiBaseUrl = normalizeBaseUrl(
-		options.apiBaseUrl ||
-			process.env.NEOSANTARA_API_BASE_URL ||
-			process.env.NAI_CODE_NEOSANTARA_API_BASE_URL,
+		options.apiBaseUrl || process.env.NEOSANTARA_API_BASE_URL || process.env.NAI_CODE_NEOSANTARA_API_BASE_URL,
 	);
 	const fetchImpl = options.fetchImpl ?? globalThis.fetch;
 	if (!fetchImpl) {

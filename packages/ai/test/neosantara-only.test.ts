@@ -11,6 +11,17 @@ describe("Neosantara model registry", () => {
 		const model = getModel("neosantara", "grok-4.1-fast-non-reasoning");
 		expect(model?.api).toBe("openai-responses");
 		expect(model?.baseUrl).toBe("https://api.neosantara.xyz/v1");
+		expect(model?.costCurrency).toBe("IDR");
+	});
+
+	it("includes tool-capable Neosantara chat models", () => {
+		expect(getModel("neosantara", "garda-core")).toBeDefined();
+		expect(getModel("neosantara", "claude-sonnet-4-6")).toBeDefined();
+	});
+
+	it("omits text models that do not advertise function calling", () => {
+		expect(getModel("neosantara", "archipelago-core-70b")).toBeUndefined();
+		expect(getModel("neosantara", "deepseek-r1")).toBeUndefined();
 	});
 
 	it("keeps all built-in models under the Neosantara provider", () => {

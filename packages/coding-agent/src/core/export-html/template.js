@@ -13,6 +13,7 @@
       }
       const data = JSON.parse(new TextDecoder('utf-8').decode(bytes));
       const { header, entries, leafId: defaultLeafId, systemPrompt, tools, renderedTools } = data;
+      const idrFormatter = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 2 });
 
       // ============================================================
       // URL PARAMETER HANDLING
@@ -1381,7 +1382,7 @@
               <div class="info-item"><span class="info-label">Messages:</span><span class="info-value">${msgParts.join(', ') || '0'}</span></div>
               <div class="info-item"><span class="info-label">Tool Calls:</span><span class="info-value">${globalStats.toolCalls}</span></div>
               <div class="info-item"><span class="info-label">Tokens:</span><span class="info-value">${tokenParts.join(' ') || '0'}</span></div>
-              <div class="info-item"><span class="info-label">Cost:</span><span class="info-value">$${totalCost.toFixed(3)}</span></div>
+              <div class="info-item"><span class="info-label">Cost:</span><span class="info-value">${idrFormatter.format(totalCost)}</span></div>
             </div>
           </div>`;
 

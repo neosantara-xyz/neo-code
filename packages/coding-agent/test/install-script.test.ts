@@ -32,10 +32,14 @@ describe("install.sh", () => {
 		const cwd = createTempDir();
 		const home = createTempDir();
 
-		const output = runInstall(["--release", "--version", "v0.74.0", "--dry-run"], {
-			HOME: home,
-			TERMUX_VERSION: "",
-		}, cwd);
+		const output = runInstall(
+			["--release", "--version", "v0.74.0", "--dry-run"],
+			{
+				HOME: home,
+				TERMUX_VERSION: "",
+			},
+			cwd,
+		);
 
 		expect(output).toContain("https://code.neosantara.xyz/releases/v0.74.0/nai-linux-x64.tar.gz");
 		expect(output).toContain("NAI Code Installer");
@@ -47,27 +51,37 @@ describe("install.sh", () => {
 		const cwd = createTempDir();
 		const home = createTempDir();
 
-		const output = runInstall(["--release", "--version", "v0.74.0", "--dry-run"], {
-			HOME: home,
-			TERMUX_VERSION: "0.118.0",
-			PREFIX: "/data/data/com.termux/files/usr",
-		}, cwd);
+		const output = runInstall(
+			["--release", "--version", "v0.74.0", "--dry-run"],
+			{
+				HOME: home,
+				TERMUX_VERSION: "0.118.0",
+				PREFIX: "/data/data/com.termux/files/usr",
+			},
+			cwd,
+		);
 
 		expect(output).toContain("Termux detected; using prebuilt npm bundle");
 		expect(output).toContain("https://code.neosantara.xyz/releases/v0.74.0/nai-termux-npm-bundle.tar.gz");
 		expect(output).toContain("[1/3] Downloading");
 		expect(output).toContain("[2/3] Extracting installer bundle");
-		expect(output).toContain("npm install -g --no-fund --no-audit ./neosantara-ai.tgz ./neosantara-agent-core.tgz ./neosantara-tui.tgz ./neosantara-code.tgz");
+		expect(output).toContain(
+			"npm install -g --no-fund --no-audit ./neosantara-ai.tgz ./neosantara-agent-core.tgz ./neosantara-tui.tgz ./neosantara-code.tgz",
+		);
 	});
 
 	it("can fall back to GitHub release downloads when the custom base URL is disabled", () => {
 		const cwd = createTempDir();
 		const home = createTempDir();
 
-		const output = runInstall(["--release", "--version", "v0.74.0", "--dry-run"], {
-			HOME: home,
-			NAI_CODE_DOWNLOAD_BASE_URL: "",
-		}, cwd);
+		const output = runInstall(
+			["--release", "--version", "v0.74.0", "--dry-run"],
+			{
+				HOME: home,
+				NAI_CODE_DOWNLOAD_BASE_URL: "",
+			},
+			cwd,
+		);
 
 		expect(output).toContain("https://github.com/neosantara/nai-code/releases/download/v0.74.0/nai-linux-x64.tar.gz");
 	});

@@ -26,6 +26,15 @@ function formatTokens(count: number): string {
 	return `${Math.round(count / 1000000)}M`;
 }
 
+function formatIdrCompact(amount: number): string {
+	if (amount < 1000) return `Rp${amount.toFixed(0)}`;
+	if (amount < 10000) return `Rp${(amount / 1000).toFixed(1)}rb`;
+	if (amount < 1000000) return `Rp${Math.round(amount / 1000)}rb`;
+	if (amount < 10000000) return `Rp${(amount / 1000000).toFixed(1)}jt`;
+	if (amount < 1000000000) return `Rp${Math.round(amount / 1000000)}jt`;
+	return `Rp${(amount / 1000000000).toFixed(1)}M`;
+}
+
 /**
  * Footer component that shows pwd, token stats, and context usage.
  * Computes token/context stats from session, gets git branch and extension statuses from provider.
@@ -118,7 +127,7 @@ export class FooterComponent implements Component {
 		// Show cost with "(sub)" indicator if using browser-based OAuth credentials
 		const usingSubscription = state.model ? this.session.modelRegistry.isUsingOAuth(state.model) : false;
 		if (totalCost || usingSubscription) {
-			const costStr = `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
+			const costStr = `${formatIdrCompact(totalCost)}${usingSubscription ? " (sub)" : ""}`;
 			statsParts.push(costStr);
 		}
 

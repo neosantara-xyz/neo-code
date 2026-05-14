@@ -141,6 +141,14 @@ interface Expandable {
 	setExpanded(expanded: boolean): void;
 }
 
+function formatIdrCurrency(amount: number): string {
+	return new Intl.NumberFormat("id-ID", {
+		style: "currency",
+		currency: "IDR",
+		maximumFractionDigits: 2,
+	}).format(amount);
+}
+
 function isExpandable(obj: unknown): obj is Expandable {
 	return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
 }
@@ -5111,7 +5119,7 @@ export class InteractiveMode {
 
 		if (stats.cost > 0) {
 			info += `\n${theme.bold("Cost")}\n`;
-			info += `${theme.fg("dim", "Total:")} ${stats.cost.toFixed(4)}`;
+			info += `${theme.fg("dim", "Total:")} ${formatIdrCurrency(stats.cost)}`;
 		}
 
 		this.chatContainer.addChild(new Spacer(1));
