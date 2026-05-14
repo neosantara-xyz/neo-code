@@ -45,6 +45,7 @@ This repository is intentionally scoped to a Neosantara-first, OpenAI-SDK-only b
 - NEVER run `npm run dev`.
 - NEVER run full `npm run build` or `npm test` unless the user explicitly instructs it.
 - For Termux installer artifacts, run `npm run build:termux-bundle` only when the user asks to build or refresh install assets.
+- After install.sh changes or version bumps, run `npm run build:install-assets` to build, bundle, and sync assets (install.sh + Termux bundle + releases) to the server via `~/nusantaraai/scripts/sync-neo-code-install-assets.sh`.
 - Only run specific tests when they are relevant or the user instructs it. Prefer package-root commands such as `npx tsx ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`.
 - Run tests from the package root, not the repo root, unless the user explicitly asks for workspace-wide verification.
 - If you create or modify a test file, you MUST run that test file and iterate until it passes.

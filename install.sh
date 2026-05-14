@@ -31,10 +31,56 @@ DRY_RUN=0
 NO_BUILD=0
 FORCE=0
 
+# --- Terminal styling ---
+if [ -t 1 ]; then
+  BOLD='\033[1m'
+  DIM='\033[2m'
+  GREEN='\033[1;32m'
+  CYAN='\033[1;36m'
+  YELLOW='\033[1;33m'
+  BLUE='\033[1;34m'
+  RED='\033[1;31m'
+  RESET='\033[0m'
+else
+  BOLD=''; DIM=''; GREEN=''; CYAN=''; YELLOW=''; BLUE=''; RED=''; RESET=''
+fi
+
+# --- Output helpers ---
+info()    { printf "${BLUE}::${RESET} %s\n" "$*"; }
+success() { printf "${GREEN}==>${RESET} %s\n" "$*"; }
+warn()    { printf "${YELLOW}!!${RESET} %s\n" "$*"; }
+err()     { printf "${RED}error:${RESET} %s\n" "$*" >&2; }
+step()    { printf "  ${CYAN}[%s]${RESET} ${BOLD}%s${RESET}\n" "$1" "$2"; }
+ok()      { printf "  ${GREEN}[%s]${RESET} ${DIM}ok${RESET}\n" "$1"; }
+
 print_header() {
-  printf '\n%s\n' '========================================'
-  printf '%s\n' '  Neo Code Installer'
-  printf '%s\n' '========================================'
+  ref="${1:-latest}"
+  printf '\n'
+  printf "${BLUE}  ╔══════════════════════════════════════╗${RESET}\n"
+  printf "${BLUE}  ║${RESET}  ${BOLD}Neo Code Installer${RESET}               ${BLUE}║${RESET}\n"
+  printf "${BLUE}  ║${RESET}  ${DIM}%s${RESET}                   ${BLUE}║${RESET}\n" "$ref"
+  printf "${BLUE}  ╚══════════════════════════════════════╝${RESET}\n"
+  printf '\n'
+}
+
+print_summary() {
+  cmd="${1:-neo}"
+  printf '\n'
+  printf "${GREEN}  ╔══════════════════════════════════════╗${RESET}\n"
+  printf "${GREEN}  ║${RESET}  ${BOLD}Neo Code installed${RESET}                ${GREEN}║${RESET}\n"
+  if [ -n "${INSTALLED_VERSION:-}" ]; then
+    printf "${GREEN}  ║${RESET}  ${DIM}version %s${RESET}                   ${GREEN}║${RESET}\n" "$INSTALLED_VERSION"
+  fi
+  printf "${GREEN}  ╚══════════════════════════════════════╝${RESET}\n"
+  printf '\n'
+  success "Run: ${BOLD}neo${RESET} login"
+  if ! command -v neo >/dev/null 2>&1 && [ "$DRY_RUN" != "1" ] && [ "$cmd" = "neo" ]; then
+    bin="$(resolve_bin_dir)"
+    printf '\n'
+    warn "Add this to your shell profile if ${BOLD}neo${RESET} is not found:"
+    printf "  ${CYAN}export PATH=\"%s:\$PATH\"${RESET}\n" "$bin"
+  fi
+  printf '\n'
 }
 
 bundle_install_url() {
@@ -47,7 +93,6 @@ bundle_install_url() {
 }
 
 log() { printf '%s\n' "$*"; }
-err() { printf 'error: %s\n' "$*" >&2; }
 
 usage() {
   cat <<USAGE
@@ -134,8 +179,8 @@ prepare_npm_cache() {
 install_source_tree() {
   source_dir="$1"
   install_kind="${2:-source}"
-  need_cmd node
-  need_cmd npm
+  need_cmd node || return 1
+  need_cmd npm || return 1
   prepare_npm_cache
 
   major="$(node_major)"
@@ -144,33 +189,35 @@ install_source_tree() {
     if is_termux; then
       err "Termux hint: pkg install nodejs-lts"
     fi
-    exit 1
+    return 1
   fi
 
+  step "deps" "Installing dependencies"
   if [ "$install_kind" = "archive" ]; then
-    log "    Preparing portable workspace install"
     run rm -f "$source_dir/package-lock.json"
-    log "    Installing dependencies"
     run sh -c "cd \"$source_dir\" && npm install --ignore-scripts"
   else
-    log "    Installing dependencies"
     run sh -c "cd \"$source_dir\" && npm ci --ignore-scripts"
   fi
+  ok "deps"
 
   if [ "$NO_BUILD" != "1" ]; then
-    log "    Building packages"
+    step "build" "Building packages"
     run sh -c "cd \"$source_dir\" && npm run build"
+    ok "build"
   fi
 
   cli_path="$source_dir/packages/coding-agent/dist/cli.js"
   if [ "$DRY_RUN" != "1" ] && [ ! -f "$cli_path" ]; then
     err "missing built CLI: $cli_path"
     err "run npm run build or re-run installer without --no-build"
-    exit 1
+    return 1
   fi
 
+  INSTALLED_VERSION="$(detect_source_version "$source_dir")"
+
   bin="$(resolve_bin_dir)"
-  log "    Installing neo command to $bin"
+  step "link" "Installing neo command to $bin"
   run mkdir -p "$bin"
 
   target="$bin/neo"
@@ -179,31 +226,44 @@ install_source_tree() {
       run rm -f "$target"
     else
       err "$target already exists. Re-run with --force or choose --bin-dir."
-      exit 1
+      return 1
     fi
   fi
 
   run chmod +x "$cli_path"
   run ln -s "$cli_path" "$target"
+  ok "link"
+}
 
-  log ""
-  log "    Neo Code installed."
-  log "    Run: neo login"
-  if ! command -v neo >/dev/null 2>&1 && [ "$DRY_RUN" != "1" ]; then
-    log ""
-    log "Add this to your shell profile if neo is not found:"
-    log "  export PATH=\"$bin:\$PATH\""
+detect_source_version() {
+  dir="$1"
+  if [ -f "$dir/packages/coding-agent/package.json" ]; then
+    sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+      "$dir/packages/coding-agent/package.json" 2>/dev/null | head -1
   fi
+}
+
+detect_bundle_version() {
+  dir="$1"
+  pkg="$dir/neosantara-code.tgz"
+  if [ -f "$pkg" ] && command -v tar >/dev/null 2>&1; then
+    ver="$(tar -xzf "$pkg" -O package/package.json 2>/dev/null | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+    if [ -n "$ver" ]; then
+      printf '%s' "$ver"
+      return
+    fi
+  fi
+  printf 'unknown'
 }
 
 install_source() {
   if ! is_source_tree; then
     err "source mode must be run from the repo root containing packages/coding-agent"
     err "for curl installs, use --release so the installer can fetch a release asset or source archive"
-    exit 1
+    return 1
   fi
 
-  print_header
+  print_header "$VERSION"
   install_source_tree "$(pwd)" source
 }
 
@@ -214,13 +274,13 @@ platform_asset() {
   case "$os" in
     darwin) os_name="darwin" ;;
     linux) os_name="linux" ;;
-    *) err "unsupported OS for release mode: $os"; exit 1 ;;
+    *) err "unsupported OS for release mode: $os"; return 1 ;;
   esac
 
   case "$arch" in
     x86_64|amd64) arch_name="x64" ;;
     arm64|aarch64) arch_name="arm64" ;;
-    *) err "unsupported architecture for release mode: $arch"; exit 1 ;;
+    *) err "unsupported architecture for release mode: $arch"; return 1 ;;
   esac
 
   printf 'neo-%s-%s.tar.gz' "$os_name" "$arch_name"
@@ -246,29 +306,24 @@ release_asset_url() {
 }
 
 resolve_release_ref() {
-  if [ "$VERSION" = "latest" ] && [ -n "$DOWNLOAD_BASE_URL" ]; then
-    printf 'latest'
-    return
-  fi
-
   if [ "$VERSION" = "latest" ]; then
-    latest_tag
+    tag="$(fetch_latest_version)"
+    if [ -n "$tag" ]; then
+      printf '%s' "$tag"
+      return
+    fi
+    printf 'latest'
     return
   fi
 
   printf '%s' "$VERSION"
 }
 
-latest_tag() {
-  need_cmd sed
-  url="https://api.github.com/repos/$REPO/releases/latest"
+fetch_latest_version() {
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
+    curl -fsSL "${DOWNLOAD_BASE_URL}/releases/version.txt" 2>/dev/null
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO- "$url" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
-  else
-    err "curl or wget is required for release mode"
-    exit 1
+    wget -qO- "${DOWNLOAD_BASE_URL}/releases/version.txt" 2>/dev/null
   fi
 }
 
@@ -276,95 +331,97 @@ download() {
   url="$1"
   out="$2"
   if command -v curl >/dev/null 2>&1; then
-    run curl -fL "$url" -o "$out"
+    run curl -fL --progress-bar "$url" -o "$out"
   elif command -v wget >/dev/null 2>&1; then
     run wget -O "$out" "$url"
   else
     err "curl or wget is required for release mode"
-    exit 1
+    return 1
   fi
 }
 
 install_release_source_archive() {
-  need_cmd tar
+  need_cmd tar || return 1
 
   release_ref="$(resolve_release_ref)"
   if [ -z "$release_ref" ]; then
     err "could not resolve release reference"
-    exit 1
+    return 1
   fi
 
   url="$(source_archive_url "$release_ref")"
   tmp="${TMPDIR:-/tmp}/neo-code-install-$$"
   src_dir="$tmp/src"
 
-  log "[1/4] Downloading $url"
+  step "fetch" "Downloading source archive"
   run mkdir -p "$tmp"
-  download "$url" "$tmp/source.tar.gz"
+  download "$url" "$tmp/source.tar.gz" || return 1
+  ok "fetch"
 
-  log "[2/4] Extracting source archive"
+  step "extract" "Extracting source archive"
   run mkdir -p "$src_dir"
   run tar -xzf "$tmp/source.tar.gz" -C "$src_dir" --strip-components=1
+  ok "extract"
 
   install_source_tree "$src_dir" archive
 
-  log "    Cleaning up temporary source archive"
   run rm -rf "$tmp"
 }
 
 install_termux_bundle() {
-  need_cmd tar
+  need_cmd tar || return 1
 
   release_ref="$(resolve_release_ref)"
   if [ -z "$release_ref" ]; then
     err "could not resolve release reference"
-    exit 1
+    return 1
   fi
 
   if [ -z "${TERMUX_PREFIX:-}" ]; then
     err "could not detect Termux prefix"
-    exit 1
+    return 1
   fi
 
   url="$(bundle_install_url "$release_ref")"
   tmp="${TMPDIR:-/tmp}/neo-code-install-$$"
   bundle_dir="$tmp/bundle"
 
-  log "[1/3] Downloading $url"
+  step "fetch" "Downloading Termux bundle"
   run mkdir -p "$bundle_dir"
   run mkdir -p "$TERMUX_PREFIX/bin"
-  download "$url" "$tmp/neo-termux-npm-bundle.tar.gz"
+  download "$url" "$tmp/neo-termux-npm-bundle.tar.gz" || return 1
+  ok "fetch"
 
-  log "[2/3] Extracting installer bundle"
+  step "extract" "Extracting installer bundle"
   run tar -xzf "$tmp/neo-termux-npm-bundle.tar.gz" -C "$bundle_dir"
+  ok "extract"
+
+  INSTALLED_VERSION="$(detect_bundle_version "$bundle_dir")"
 
   prepare_npm_cache
-  log "[3/3] Installing Neo Code into $TERMUX_PREFIX"
+  step "install" "Installing Neo Code into $TERMUX_PREFIX"
   run sh -c "cd \"$bundle_dir\" && npm_config_prefix=\"$TERMUX_PREFIX\" npm install -g --no-fund --no-audit ./neosantara-ai.tgz ./neosantara-agent-core.tgz ./neosantara-tui.tgz ./neosantara-code.tgz"
+  ok "install"
 
-  log ""
-  log "    Neo Code installed for Termux."
-  log "    Run: neo login"
-  log "    Cleaning up temporary installer bundle"
   run rm -rf "$tmp"
 }
 
 install_release() {
   if is_termux; then
-    print_header
-    log "==> Termux detected; using prebuilt npm bundle"
-    install_termux_bundle
-    return
+    print_header "$VERSION"
+    info "Termux detected; using prebuilt npm bundle"
+    install_termux_bundle && return
+    return 1
   fi
 
-  need_cmd uname
-  need_cmd tar
+  need_cmd uname || return 1
+  need_cmd tar || return 1
 
-  asset="$(platform_asset)"
+  asset="$(platform_asset)" || return 1
   release_ref="$(resolve_release_ref)"
   if [ -z "$release_ref" ]; then
     err "could not resolve release reference"
-    exit 1
+    return 1
   fi
 
   url="$(release_asset_url "$release_ref" "$asset")"
@@ -372,21 +429,23 @@ install_release() {
   prefix="$PREFIX"
   bin="$(resolve_bin_dir)"
 
-  print_header
-  log "[1/3] Downloading $url"
+  print_header "$release_ref"
+  step "fetch" "Downloading ${asset}"
   run mkdir -p "$tmp"
   if ! download "$url" "$tmp/$asset"; then
-    log "==> Binary asset unavailable; falling back to source archive build"
+    info "Binary asset unavailable; falling back to source archive build"
     run rm -rf "$tmp"
-    print_header
-    install_release_source_archive
+    print_header "$release_ref"
+    install_release_source_archive || return 1
     return
   fi
+  ok "fetch"
 
-  log "[2/3] Installing to $prefix/neo"
+  step "extract" "Installing to $prefix/neo"
   run rm -rf "$prefix/neo"
   run mkdir -p "$prefix"
   run tar -xzf "$tmp/$asset" -C "$prefix"
+  ok "extract"
 
   run mkdir -p "$bin"
   target="$bin/neo"
@@ -395,15 +454,19 @@ install_release() {
       run rm -f "$target"
     else
       err "$target already exists. Re-run with --force or choose --bin-dir."
-      exit 1
+      return 1
     fi
   fi
   run ln -s "$prefix/neo/neo" "$target"
-  run rm -rf "$tmp"
+  step "verify" "Detecting installed version"
+  if command -v neo >/dev/null 2>&1; then
+    INSTALLED_VERSION="$(neo --version 2>/dev/null || printf '%s' "$release_ref")"
+  else
+    INSTALLED_VERSION="$release_ref"
+  fi
+  ok "verify"
 
-  log ""
-  log "[3/3] Neo Code installed from $release_ref."
-  log "    Run: neo login"
+  run rm -rf "$tmp"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -431,7 +494,11 @@ if [ "$MODE" = "auto" ]; then
 fi
 
 case "$MODE" in
-  source) install_source ;;
-  release) install_release ;;
+  source)
+    install_source && print_summary neo
+    ;;
+  release)
+    install_release && print_summary neo
+    ;;
   *) err "invalid mode: $MODE"; exit 1 ;;
 esac
