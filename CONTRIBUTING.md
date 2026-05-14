@@ -1,3 +1,3 @@
-# NAI Code
+# Neo Code
 
 Neosantara-maintained package.

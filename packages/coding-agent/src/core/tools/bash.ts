@@ -17,6 +17,14 @@ import {
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { OutputAccumulator } from "./output-accumulator.js";
 import { getTextOutput, invalidArgText, str } from "./render-utils.js";
+import {
+	formatToolActivityLine,
+	formatToolActivityResultLine,
+	isBenignBashExit,
+	isNoMatchBashExit,
+	summarizeToolCall,
+	summarizeToolResult,
+} from "./tool-activity.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult } from "./truncate.js";
 
@@ -30,6 +38,8 @@ export type BashToolInput = Static<typeof bashSchema>;
 export interface BashToolDetails {
 	truncation?: TruncationResult;
 	fullOutputPath?: string;
+	exitCode?: number | null;
+	noMatches?: boolean;
 }
 
 /**
@@ -57,9 +67,9 @@ export interface BashOperations {
 }
 
 /**
- * Create bash operations using NAI Code's built-in local shell execution backend.
+ * Create bash operations using Neo Code's built-in local shell execution backend.
  *
- * This is useful for extensions that intercept user_bash and still want NAI Code's
+ * This is useful for extensions that intercept user_bash and still want Neo Code's
  * standard local shell behavior while wrapping or rewriting commands.
  */
 export function createLocalBashOperations(options?: { shellPath?: string }): BashOperations {
@@ -177,10 +187,14 @@ function formatDuration(ms: number): string {
 	return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function formatBashCall(args: { command?: string; timeout?: number } | undefined): string {
+function formatBashCall(args: { command?: string; timeout?: number } | undefined, expanded: boolean): string {
 	const command = str(args?.command);
 	const timeout = args?.timeout as number | undefined;
 	const timeoutSuffix = timeout ? theme.fg("muted", ` (timeout ${timeout}s)`) : "";
+	if (!expanded && command !== null) {
+		const activity = formatToolActivityLine("bash", { command: command ?? "" });
+		return theme.fg("toolTitle", theme.bold(activity)) + timeoutSuffix;
+	}
 	const commandDisplay = command === null ? invalidArgText(theme) : command ? command : theme.fg("toolOutput", "...");
 	return theme.fg("toolTitle", theme.bold(`$ ${commandDisplay}`)) + timeoutSuffix;
 }
@@ -195,13 +209,26 @@ function rebuildBashResultRenderComponent(
 	showImages: boolean,
 	startedAt: number | undefined,
 	endedAt: number | undefined,
+	args?: { command?: string },
 ): void {
 	const state = component.state;
 	component.clear();
 
 	const output = getTextOutput(result as any, showImages).trim();
+	const renderArgs = args;
 
-	if (output) {
+	if (!options.expanded) {
+		const duration = startedAt !== undefined ? formatDuration((endedAt ?? Date.now()) - startedAt) : undefined;
+		component.addChild(
+			new Text(
+				`\n${theme.fg("muted", formatToolActivityResultLine("bash", renderArgs, result, { isPartial: options.isPartial, duration }))}`,
+				0,
+				0,
+			),
+		);
+	}
+
+	if (output && options.expanded) {
 		const styledOutput = output
 			.split("\n")
 			.map((line) => theme.fg("toolOutput", line))
@@ -254,7 +281,7 @@ function rebuildBashResultRenderComponent(
 		component.addChild(new Text(`\n${theme.fg("warning", `[${warnings.join(". ")}]`)}`, 0, 0));
 	}
 
-	if (startedAt !== undefined) {
+	if (options.expanded && startedAt !== undefined) {
 		const label = options.isPartial ? "Elapsed" : "Took";
 		const endTime = endedAt ?? Date.now();
 		component.addChild(new Text(`\n${theme.fg("muted", `${label} ${formatDuration(endTime - startedAt)}`)}`, 0, 0));
@@ -274,6 +301,23 @@ export function createBashToolDefinition(
 		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
 		promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
 		parameters: bashSchema,
+		isSearchOrReadCommand(args) {
+			const activity = summarizeToolCall("bash", args);
+			return {
+				isSearch: activity.kind === "search",
+				isRead: activity.kind === "read",
+				isList: activity.kind === "list",
+			};
+		},
+		getToolUseSummary(args) {
+			return summarizeToolCall("bash", args).compact;
+		},
+		getActivityDescription(args) {
+			return summarizeToolCall("bash", args).title;
+		},
+		renderToolResultSummary(result, args, context) {
+			return summarizeToolResult("bash", args, result as any, context).label;
+		},
 		async execute(
 			_toolCallId,
 			{ command, timeout }: { command: string; timeout?: number },
@@ -283,7 +327,7 @@ export function createBashToolDefinition(
 		) {
 			const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
 			const spawnContext = resolveSpawnContext(resolvedCommand, cwd, spawnHook);
-			const output = new OutputAccumulator({ tempFilePrefix: "nai-bash" });
+			const output = new OutputAccumulator({ tempFilePrefix: "neo-bash" });
 			let updateTimer: NodeJS.Timeout | undefined;
 			let updateDirty = false;
 			let lastUpdateAt = 0;
@@ -388,8 +432,18 @@ export function createBashToolDefinition(
 				}
 
 				const snapshot = await finishOutput();
-				const { text: outputText, details } = formatOutput(snapshot);
-				if (exitCode !== 0 && exitCode !== null) {
+				const rawSnapshotText = snapshot.content || "";
+				const noMatches = isNoMatchBashExit(spawnContext.command, exitCode, rawSnapshotText);
+				const { text: outputText, details: outputDetails } = formatOutput(
+					snapshot,
+					noMatches ? "No matches found" : "(no output)",
+				);
+				const details: BashToolDetails | undefined = {
+					...(outputDetails ?? {}),
+					exitCode,
+					noMatches: noMatches || undefined,
+				};
+				if (!isBenignBashExit(spawnContext.command, exitCode, rawSnapshotText)) {
 					throw new Error(appendStatus(outputText, `Command exited with code ${exitCode}`));
 				}
 				return { content: [{ type: "text", text: outputText }], details };
@@ -404,7 +458,7 @@ export function createBashToolDefinition(
 				state.endedAt = undefined;
 			}
 			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-			text.setText(formatBashCall(args));
+			text.setText(formatBashCall(args, context.expanded));
 			return text;
 		},
 		renderResult(result, options, _theme, context) {
@@ -428,6 +482,7 @@ export function createBashToolDefinition(
 				context.showImages,
 				state.startedAt,
 				state.endedAt,
+				context.args,
 			);
 			component.invalidate();
 			return component;

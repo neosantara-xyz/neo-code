@@ -3,6 +3,7 @@ import { spawn } from "child_process";
 import { selectConfig } from "./cli/config-selector.js";
 import {
 	APP_NAME,
+	detectInstallMethod,
 	getAgentDir,
 	getSelfUpdateCommand,
 	getSelfUpdateUnavailableInstruction,
@@ -12,12 +13,16 @@ import {
 } from "./config.js";
 import { DefaultPackageManager } from "./core/package-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
+import { buildInstallTelemetryPayload } from "./core/telemetry.js";
 import { shouldUseWindowsShell } from "./utils/child-process.js";
+import { getNeosantaraUserAgent } from "./utils/neosantara-user-agent.js";
 import { getLatestPiRelease, isNewerPackageVersion } from "./utils/version-check.js";
 
 export type PackageCommand = "install" | "remove" | "update" | "list";
 
 type UpdateTarget = { type: "all" } | { type: "self" } | { type: "extensions"; source?: string };
+const DEFAULT_INSTALLER_URL = "https://code.neosantara.xyz/install.sh";
+const INSTALL_TELEMETRY_URL = "https://api.neosantara.xyz/api/report-install";
 
 interface PackageCommandOptions {
 	command: PackageCommand;
@@ -49,7 +54,7 @@ function getPackageCommandUsage(command: PackageCommand): string {
 		case "remove":
 			return `${APP_NAME} remove <source> [-l]`;
 		case "update":
-			return `${APP_NAME} update [source|self|nai] [--self] [--extensions] [--extension <source>] [--force]`;
+			return `${APP_NAME} update [source|self|neo] [--self] [--extensions] [--extension <source>] [--force]`;
 		case "list":
 			return `${APP_NAME} list`;
 	}
@@ -64,7 +69,7 @@ function printPackageCommandHelp(command: PackageCommand): void {
 Install a package and add it to settings.
 
 Options:
-  -l, --local    Install project-locally (.neosantara-code/settings.json)
+  -l, --local    Install project-locally (.neo-code/settings.json)
 
 Examples:
   ${APP_NAME} install npm:@foo/bar
@@ -84,7 +89,7 @@ Remove a package and its source from settings.
 Alias: ${APP_NAME} uninstall <source> [-l]
 
 Options:
-  -l, --local    Remove from project settings (.neosantara-code/settings.json)
+  -l, --local    Remove from project settings (.neo-code/settings.json)
 
 Examples:
   ${APP_NAME} remove npm:@foo/bar
@@ -96,18 +101,18 @@ Examples:
 			console.log(`${chalk.bold("Usage:")}
   ${getPackageCommandUsage("update")}
 
-Update NAI Code and installed packages.
+Update Neo Code and installed packages.
 
 Options:
-  --self                  Update NAI Code only
+  --self                  Update Neo Code only
   --extensions            Update installed packages only
   --extension <source>    Update one package only
-  --force                 Reinstall NAI Code even if the current version is latest
+  --force                 Reinstall Neo Code even if the current version is latest
 
 Short forms:
-  ${APP_NAME} update                Update NAI Code and all extensions
+  ${APP_NAME} update                Update Neo Code and all extensions
   ${APP_NAME} update <source>       Update one package
-  ${APP_NAME} update nai             Update NAI Code only (self works as alias to nai)
+  ${APP_NAME} update neo             Update Neo Code only (self works as alias to neo)
 `);
 			return;
 
@@ -230,7 +235,7 @@ function parsePackageCommand(args: string[]): PackageCommandOptions | undefined 
 			}
 			updateTarget = { type: "extensions", source: extensionFlagSource };
 		} else if (source) {
-			const sourceIsSelf = source === "self" || source === "nai";
+			const sourceIsSelf = source === "self" || source === "neo";
 			if (sourceIsSelf) {
 				updateTarget = extensionsFlag ? { type: "all" } : { type: "self" };
 			} else {
@@ -280,12 +285,58 @@ function printSelfUpdateUnavailable(npmCommand?: string[], updatePackageName = P
 	const entrypoint = process.argv[1];
 	if (entrypoint) {
 		console.error("");
-		console.error(`Location of NAI Code executable: ${entrypoint}`);
+		console.error(`Location of Neo Code executable: ${entrypoint}`);
 	}
 }
 
 function printSelfUpdateFallback(command: SelfUpdateCommand): void {
 	console.error(chalk.dim(`If this keeps failing, run this command yourself: ${command.display}`));
+}
+
+export function getInstallerSelfUpdateCommand(): SelfUpdateCommand | undefined {
+	if (process.platform === "win32" || process.env.NEO_CODE_OFFLINE) {
+		return undefined;
+	}
+
+	const installerUrl = process.env.NEO_CODE_INSTALLER_URL?.trim() || DEFAULT_INSTALLER_URL;
+	const script =
+		`if command -v curl >/dev/null 2>&1; then curl -fsSL "${installerUrl}"; ` +
+		`elif command -v wget >/dev/null 2>&1; then wget -qO- "${installerUrl}"; ` +
+		`else echo "error: curl or wget is required to update Neo Code" >&2; exit 1; fi | ` +
+		"sh -s -- --release --force";
+	return {
+		command: "sh",
+		args: ["-c", script],
+		display: `curl -fsSL ${installerUrl} | sh -s -- --release --force`,
+	};
+}
+
+export function selectSelfUpdateCommand(packageManagerCommand?: SelfUpdateCommand): SelfUpdateCommand | undefined {
+	return getInstallerSelfUpdateCommand() ?? packageManagerCommand;
+}
+
+async function reportUpdateCommandTelemetry(
+	event: "update_command_success" | "update_command_failure",
+	version: string,
+): Promise<void> {
+	if (process.env.NEO_CODE_OFFLINE) {
+		return;
+	}
+
+	try {
+		await fetch(INSTALL_TELEMETRY_URL, {
+			method: "POST",
+			headers: {
+				"User-Agent": getNeosantaraUserAgent(version),
+				"Content-Type": "application/json",
+				accept: "application/json",
+			},
+			body: JSON.stringify(buildInstallTelemetryPayload(version, event, detectInstallMethod())),
+			signal: AbortSignal.timeout(5000),
+		});
+	} catch {
+		// best effort telemetry only
+	}
 }
 
 interface SelfUpdatePlan {
@@ -495,20 +546,23 @@ export async function handlePackageCommand(args: string[]): Promise<boolean> {
 						selfUpdateNpmCommand,
 						selfUpdatePlan.packageName,
 					);
-					if (!selfUpdateCommand) {
+					const updateCommand = selectSelfUpdateCommand(selfUpdateCommand);
+					if (!updateCommand) {
 						printSelfUpdateUnavailable(selfUpdateNpmCommand, selfUpdatePlan.packageName);
 						process.exitCode = 1;
 						return true;
 					}
 					try {
-						await runSelfUpdate(selfUpdateCommand);
+						await runSelfUpdate(updateCommand);
 					} catch (error: unknown) {
 						const message = error instanceof Error ? error.message : "Unknown package command error";
+						void reportUpdateCommandTelemetry("update_command_failure", VERSION);
 						console.error(chalk.red(`Error: ${message}`));
-						printSelfUpdateFallback(selfUpdateCommand);
+						printSelfUpdateFallback(updateCommand);
 						process.exitCode = 1;
 						return true;
 					}
+					void reportUpdateCommandTelemetry("update_command_success", VERSION);
 					console.log(chalk.green(`Updated ${APP_NAME}`));
 				}
 				return true;

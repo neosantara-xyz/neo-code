@@ -17,6 +17,16 @@ export interface BuiltinSlashCommand {
 
 export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "settings", description: "Open settings menu" },
+	{ name: "status", description: "Show Neo Code status, model, auth, and usage summary" },
+	{ name: "usage", description: "Show Neosantara PAYG usage and budget in Rupiah" },
+	{ name: "context", description: "Show current context window usage and compaction guidance" },
+	{ name: "doctor", description: "Run local Neo Code health checks" },
+	{ name: "permissions", description: "Show or change active tool permissions for the next turn" },
+	{ name: "diff", description: "Show current Git workspace diff" },
+	{ name: "agents", description: "Show or initialize AGENTS.md project instructions" },
+	{ name: "memory", description: "Alias for /agents project instructions" },
+	{ name: "skills", description: "Install or list skills" },
+	{ name: "hooks", description: "Show extension hooks, commands, tools, and shortcuts" },
 	{ name: "model", description: "Select model (opens selector UI)" },
 	{ name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
 	{ name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)" },

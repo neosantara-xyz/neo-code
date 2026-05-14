@@ -61,7 +61,7 @@ function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention 
 	if (cacheRetention) {
 		return cacheRetention;
 	}
-	if (typeof process !== "undefined" && process.env.NAI_CODE_CACHE_RETENTION === "long") {
+	if (typeof process !== "undefined" && process.env.NEO_CODE_CACHE_RETENTION === "long") {
 		return "long";
 	}
 	return "short";
@@ -403,12 +403,12 @@ function createClient(
 	compat: ResolvedOpenAICompletionsCompat = getCompat(model),
 ) {
 	if (!apiKey) {
-		if (!process.env.OPENAI_API_KEY) {
+		if (!process.env.NEOSANTARA_API_KEY) {
 			throw new Error(
-				"OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass it as an argument.",
+				"OpenAI API key is required. Set NEOSANTARA_API_KEY environment variable or pass it as an argument.",
 			);
 		}
-		apiKey = process.env.OPENAI_API_KEY;
+		apiKey = process.env.NEOSANTARA_API_KEY;
 	}
 
 	const headers = { ...model.headers };

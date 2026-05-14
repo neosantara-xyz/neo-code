@@ -40,7 +40,7 @@ jobs:
         run: ./scripts/build-binaries.sh
 
       - name: Smoke test Linux x64 binary
-        run: packages/coding-agent/binaries/linux-x64/nai --help
+        run: packages/coding-agent/binaries/linux-x64/neo --help
 
       - name: Extract changelog for this version
         id: changelog
@@ -67,18 +67,18 @@ jobs:
           gh release create "${RELEASE_TAG}" \
             --title "${RELEASE_TAG}" \
             --notes-file /tmp/release-notes.md \
-            nai-darwin-arm64.tar.gz \
-            nai-darwin-x64.tar.gz \
-            nai-linux-x64.tar.gz \
-            nai-linux-arm64.tar.gz \
-            nai-windows-x64.zip \
+            neo-darwin-arm64.tar.gz \
+            neo-darwin-x64.tar.gz \
+            neo-linux-x64.tar.gz \
+            neo-linux-arm64.tar.gz \
+            neo-windows-x64.zip \
             ../../../install.sh \
             2>/dev/null || \
           gh release upload "${RELEASE_TAG}" \
-            nai-darwin-arm64.tar.gz \
-            nai-darwin-x64.tar.gz \
-            nai-linux-x64.tar.gz \
-            nai-linux-arm64.tar.gz \
-            nai-windows-x64.zip \
+            neo-darwin-arm64.tar.gz \
+            neo-darwin-x64.tar.gz \
+            neo-linux-x64.tar.gz \
+            neo-linux-arm64.tar.gz \
+            neo-windows-x64.zip \
             ../../../install.sh \
             --clobber

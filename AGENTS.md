@@ -14,7 +14,7 @@ This repository is intentionally scoped to a Neosantara-first, OpenAI-SDK-only b
 - Do not add vendor SDK providers.
 - Keep built-in runtime transport to `openai-responses` and `openai-completions`.
 - Keep built-in provider identity as `neosantara`.
-- Prefer `NAI_API_KEY` or `NEOSANTARA_API_KEY` for credentials.
+- Prefer `NEOSANTARA_API_KEY` or `NEOSANTARA_API_KEY` for credentials.
 - Use `https://api.neosantara.xyz/v1` as the default API base URL.
 - Model prices shown by the CLI should follow Neosantara billing and be represented in IDR.
 
@@ -32,9 +32,16 @@ This repository is intentionally scoped to a Neosantara-first, OpenAI-SDK-only b
 
 ## Commands
 
+- Use a repo-local npm cache for install-like commands in this environment: `npm_config_cache=.npm-cache <command>`.
+- Prefer `npm_config_cache=.npm-cache npm run bump -- <patch|minor|major> --notes "<notes>"` for version bumps so npm does not write to `/root/.npm`.
 - After code changes, run `npm run check` and read the full output. Fix all errors, warnings, and infos before committing.
 - Documentation-only changes do not require `npm run check`.
 - Note: `npm run check` does not run tests.
+- After non-doc fixes/features are complete and verified, run `npm run bump -- <patch|minor|major> --notes "<human-readable semantic notes>"` unless the user explicitly asks not to bump.
+- Use semantic, human-readable notes that describe user-facing impact and scope. Prefer format: `<type>(<area>): <what changed and why>`.
+- Examples:
+  - `fix(session): restore resume tree visibility for termux cwd scope`
+  - `feat(update): add installer fallback when package-manager self-update is unavailable`
 - NEVER run `npm run dev`.
 - NEVER run full `npm run build` or `npm test` unless the user explicitly instructs it.
 - For Termux installer artifacts, run `npm run build:termux-bundle` only when the user asks to build or refresh install assets.
@@ -92,16 +99,16 @@ When closing issues via commit:
 
 ## Testing Interactive Mode with tmux
 
-To test `nai` TUI in a controlled terminal environment:
+To test `neo` TUI in a controlled terminal environment:
 
 ```bash
-tmux new-session -d -s nai-test -x 80 -y 24
-tmux send-keys -t nai-test "cd /root/nusantaraai/nai-code && ./packages/coding-agent/dist/cli.js" Enter
-sleep 3 && tmux capture-pane -t nai-test -p
-tmux send-keys -t nai-test "your prompt here" Enter
-tmux send-keys -t nai-test Escape
-tmux send-keys -t nai-test C-o
-tmux kill-session -t nai-test
+tmux new-session -d -s neo-test -x 80 -y 24
+tmux send-keys -t neo-test "cd /root/nusantaraai/neo-code && ./packages/coding-agent/dist/cli.js" Enter
+sleep 3 && tmux capture-pane -t neo-test -p
+tmux send-keys -t neo-test "your prompt here" Enter
+tmux send-keys -t neo-test Escape
+tmux send-keys -t neo-test C-o
+tmux kill-session -t neo-test
 ```
 
 ## Changelog
@@ -128,8 +135,8 @@ Use these sections under `## [Unreleased]`:
 
 ### Attribution
 
-- Internal changes from issues: `Fixed foo bar ([#123](https://github.com/neosantara/nai-code/issues/123))`.
-- External contributions: `Added feature X ([#456](https://github.com/neosantara/nai-code/pull/456) by [@username](https://github.com/username))`.
+- Internal changes from issues: `Fixed foo bar ([#123](https://github.com/neosantara/neo-code/issues/123))`.
+- External contributions: `Added feature X ([#456](https://github.com/neosantara/neo-code/pull/456) by [@username](https://github.com/username))`.
 
 ## Adding a New LLM Provider
 

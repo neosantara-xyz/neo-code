@@ -1,7 +1,7 @@
 {
 	"name": "@neosantara/agent-core",
-	"version": "0.74.0",
-	"description": "Neosantara Code agent runtime primitives",
+	"version": "0.74.5",
+	"description": "Neo Code agent runtime primitives",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -20,7 +20,7 @@
 		"ignore": "^7.0.5",
 		"typebox": "^1.1.24",
 		"yaml": "^2.8.2",
-		"@neosantara/ai": "^0.74.0"
+		"@neosantara/ai": "^0.74.5"
 	},
 	"keywords": [
 		"ai",
@@ -33,7 +33,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/neosantara/nai-code.git",
+		"url": "git+https://github.com/neosantara/neo-code.git",
 		"directory": "packages/agent"
 	},
 	"engines": {

@@ -1,5 +1,5 @@
 /**
- * TUI config selector for `nai config` command
+ * TUI config selector for `neo config` command
  */
 
 import { ProcessTerminal, TUI } from "@neosantara/tui";

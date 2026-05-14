@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findEnvKeys } from "../src/env-api-keys.js";
+import { findEnvKeys, getEnvApiKey } from "../src/env-api-keys.js";
 import { getModel, getModels, getProviders } from "../src/models.js";
 import { streamSimple } from "../src/stream.js";
 import type { Context } from "../src/types.js";
@@ -52,9 +52,26 @@ describe("Neosantara model registry", () => {
 	});
 
 	it("does not report env keys when Neosantara credentials are absent", () => {
-		delete process.env.NAI_API_KEY;
+		const previous = process.env.NEOSANTARA_API_KEY;
 		delete process.env.NEOSANTARA_API_KEY;
-		expect(findEnvKeys("neosantara")).toBeUndefined();
+		try {
+			expect(findEnvKeys("neosantara")).toBeUndefined();
+		} finally {
+			if (previous === undefined) delete process.env.NEOSANTARA_API_KEY;
+			else process.env.NEOSANTARA_API_KEY = previous;
+		}
+	});
+
+	it("uses NEOSANTARA_API_KEY as the only built-in API key env var", () => {
+		const previous = process.env.NEOSANTARA_API_KEY;
+		process.env.NEOSANTARA_API_KEY = "test-neosantara-key";
+		try {
+			expect(findEnvKeys("neosantara")).toEqual(["NEOSANTARA_API_KEY"]);
+			expect(getEnvApiKey("neosantara")).toBe("test-neosantara-key");
+		} finally {
+			if (previous === undefined) delete process.env.NEOSANTARA_API_KEY;
+			else process.env.NEOSANTARA_API_KEY = previous;
+		}
 	});
 
 	it("does not send reasoning params when thinking is off", async () => {

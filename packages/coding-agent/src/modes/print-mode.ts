@@ -2,8 +2,8 @@
  * Print mode (single-shot): Send prompts, output result, exit.
  *
  * Used for:
- * - `nai -p "prompt"` - text output
- * - `nai --mode json "prompt"` - JSON event stream
+ * - `neo -p "prompt"` - text output
+ * - `neo --mode json "prompt"` - JSON event stream
  */
 
 import type { AssistantMessage, ImageContent } from "@neosantara/ai";

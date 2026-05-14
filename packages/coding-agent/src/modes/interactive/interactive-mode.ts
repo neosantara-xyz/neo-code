@@ -33,8 +33,6 @@ import {
 	type Component,
 	Container,
 	fuzzyFilter,
-	getCapabilities,
-	hyperlink,
 	Loader,
 	type LoaderIndicatorOptions,
 	Markdown,
@@ -51,6 +49,7 @@ import { spawn, spawnSync } from "child_process";
 import {
 	APP_NAME,
 	APP_TITLE,
+	detectInstallMethod,
 	getAgentDir,
 	getAuthPath,
 	getDebugLogPath,
@@ -59,6 +58,7 @@ import {
 } from "../../config.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.js";
+import { AuthStorage } from "../../core/auth-storage.js";
 import type {
 	AutocompleteProviderFactory,
 	EditorFactory,
@@ -79,18 +79,24 @@ import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-nam
 import type { ResourceDiagnostic } from "../../core/resource-loader.js";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
+import { parseSkillsCommand } from "../../core/skills-command.js";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import type { SourceInfo } from "../../core/source-info.js";
-import { isInstallTelemetryEnabled } from "../../core/telemetry.js";
+import {
+	buildInstallTelemetryPayload,
+	type InstallTelemetryEvent,
+	isInstallTelemetryEnabled,
+} from "../../core/telemetry.js";
+import { formatToolInputLoadingMessage, formatToolLoadingMessage } from "../../core/tools/tool-activity.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
-import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
+import { getAllChangelogEntries, getNewEntries } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { parseGitUrl } from "../../utils/git.js";
 import { getNeosantaraUserAgent } from "../../utils/neosantara-user-agent.js";
 import { getCwdRelativePath } from "../../utils/paths.js";
 import { killTrackedDetachedChildren } from "../../utils/shell.js";
-import { ensureTool } from "../../utils/tools-manager.js";
+import { ensureTool, getToolPath } from "../../utils/tools-manager.js";
 import { checkForNewPiVersion } from "../../utils/version-check.js";
 import { ArminComponent } from "./components/armin.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
@@ -101,6 +107,7 @@ import { CompactionSummaryMessageComponent } from "./components/compaction-summa
 import { CountdownTimer } from "./components/countdown-timer.js";
 import { CustomEditor } from "./components/custom-editor.js";
 import { CustomMessageComponent } from "./components/custom-message.js";
+import { renderDiff } from "./components/diff.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
@@ -115,6 +122,7 @@ import { ScopedModelsSelectorComponent } from "./components/scoped-models-select
 import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.js";
+import { ToolActivityGroupComponent } from "./components/tool-activity-group.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
@@ -136,6 +144,10 @@ import {
 	theme,
 } from "./theme/theme.js";
 
+const CLAUDE_STYLE_SPINNER_FRAMES = ["·", "✢", "✳", "✶", "✻", "✽", "✽", "✻", "✶", "✳", "✢", "·"];
+type WorkingLoaderMode = "responding" | "tool-input" | "tool-use";
+type ToolPermissionPreset = "default" | "read-only" | "full" | "no-tools";
+
 /** Interface for components that can be expanded/collapsed */
 interface Expandable {
 	setExpanded(expanded: boolean): void;
@@ -147,6 +159,131 @@ function formatIdrCurrency(amount: number): string {
 		currency: "IDR",
 		maximumFractionDigits: 2,
 	}).format(amount);
+}
+
+function formatOptionalIdrCurrency(amount: number | null | undefined): string {
+	return typeof amount === "number" ? formatIdrCurrency(amount) : "unavailable";
+}
+
+function formatPercent(value: number | null | undefined): string {
+	return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(1)}%` : "unknown";
+}
+
+function formatBytes(bytes: number): string {
+	const units = ["B", "KB", "MB", "GB"] as const;
+	let value = bytes;
+	let unitIndex = 0;
+	while (value >= 1024 && unitIndex < units.length - 1) {
+		value /= 1024;
+		unitIndex++;
+	}
+	return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+type NeosantaraUsageSnapshot = {
+	billingModel: "pay_as_you_go";
+	currency: "IDR";
+	balanceIdr?: number;
+	monthlySpendIdr?: number;
+	updatedAt?: string;
+};
+
+type NeosantaraUsageResult = {
+	snapshot: NeosantaraUsageSnapshot | null;
+	status: "connected" | "login required" | "unavailable";
+	detail?: string;
+};
+
+type CliUsagePayload = {
+	billing_model?: unknown;
+	currency?: unknown;
+	balance_idr?: unknown;
+	period_spend_idr?: unknown;
+	period?: {
+		reset_date?: unknown;
+		end_date?: unknown;
+	};
+};
+
+function normalizeNeosantaraApiBaseUrl(): string {
+	const raw =
+		process.env.NEOSANTARA_API_BASE_URL?.trim() ||
+		process.env.NEO_CODE_NEOSANTARA_API_BASE_URL?.trim() ||
+		"https://api.neosantara.xyz";
+	return raw.replace(/\/+$/, "").replace(/\/v1$/, "");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function numberFromUnknown(value: unknown): number | undefined {
+	if (typeof value === "number" && Number.isFinite(value)) return value;
+	if (typeof value === "string") {
+		const parsed = Number(value);
+		if (Number.isFinite(parsed)) return parsed;
+	}
+	return undefined;
+}
+
+function parseCliUsagePayload(payload: unknown): CliUsagePayload | null {
+	if (!isRecord(payload)) return null;
+	const data = isRecord(payload.data) ? payload.data : payload;
+	return data as CliUsagePayload;
+}
+
+async function getNeosantaraBackendUsageSnapshot(): Promise<NeosantaraUsageResult> {
+	const apiKey = await AuthStorage.create().getApiKey("neosantara", { includeFallback: false });
+	if (!apiKey) {
+		return { snapshot: null, status: "login required" };
+	}
+
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), 10_000);
+	try {
+		const response = await fetch(`${normalizeNeosantaraApiBaseUrl()}/v1/cli/usage`, {
+			method: "GET",
+			headers: {
+				Authorization: `Bearer ${apiKey}`,
+				"User-Agent": getNeosantaraUserAgent(),
+			},
+			signal: controller.signal,
+		});
+		const payload = await response.json().catch(() => null);
+
+		if (response.status === 401) {
+			return { snapshot: null, status: "login required" };
+		}
+		if (!response.ok) {
+			return { snapshot: null, status: "unavailable", detail: `HTTP ${response.status}` };
+		}
+
+		const data = parseCliUsagePayload(payload);
+		if (!data) {
+			return { snapshot: null, status: "unavailable", detail: "invalid response" };
+		}
+
+		return {
+			snapshot: {
+				billingModel: data.billing_model === "pay_as_you_go" ? "pay_as_you_go" : "pay_as_you_go",
+				currency: data.currency === "IDR" ? "IDR" : "IDR",
+				balanceIdr: numberFromUnknown(data.balance_idr),
+				monthlySpendIdr: numberFromUnknown(data.period_spend_idr),
+				updatedAt:
+					typeof data.period?.reset_date === "string"
+						? data.period.reset_date
+						: typeof data.period?.end_date === "string"
+							? data.period.end_date
+							: undefined,
+			},
+			status: "connected",
+		};
+	} catch (error) {
+		const detail = error instanceof Error && error.name === "AbortError" ? "timeout" : undefined;
+		return { snapshot: null, status: "unavailable", detail };
+	} finally {
+		clearTimeout(timeout);
+	}
 }
 
 function isExpandable(obj: unknown): obj is Expandable {
@@ -250,7 +387,9 @@ export class InteractiveMode {
 	private workingMessage: string | undefined = undefined;
 	private workingVisible = true;
 	private workingIndicatorOptions: LoaderIndicatorOptions | undefined = undefined;
-	private readonly defaultWorkingMessage = "Working...";
+	private readonly defaultWorkingMessages = ["ngulik", "ngetik", "ngritik", "ngoprek"];
+	private defaultWorkingMessageIndex = 0;
+	private defaultWorkingMessageTimer: ReturnType<typeof setInterval> | undefined = undefined;
 	private readonly defaultHiddenThinkingLabel = "Thinking...";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
 
@@ -269,6 +408,9 @@ export class InteractiveMode {
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
+	private pendingToolGroups = new Map<string, ToolActivityGroupComponent>();
+	private activeToolExecutionIds = new Set<string>();
+	private currentToolActivityGroup?: ToolActivityGroupComponent;
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
@@ -574,7 +716,16 @@ export class InteractiveMode {
 
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
-			const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
+			const model = this.session.model;
+			const modelLabel = model ? `${model.provider}/${model.name || model.id}` : "model not selected";
+			const cwdLabel = this.formatCompactDisplayPath(this.sessionManager.getCwd());
+			const title = theme.bold(theme.fg("accent", `${APP_TITLE} v${this.version}`));
+			const welcome = [
+				theme.fg("accent", `╭─ ${title}`),
+				theme.fg("muted", `│ ${modelLabel}`),
+				theme.fg("muted", `│ ${cwdLabel}`),
+				theme.fg("accent", "╰─ ready"),
+			].join("\n");
 
 			// Build startup instructions using keybinding hint helpers
 			const hint = (keybinding: AppKeybinding, description: string) => keyHint(keybinding, description);
@@ -589,7 +740,7 @@ export class InteractiveMode {
 				hint("app.thinking.cycle", "to cycle thinking level"),
 				rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "to cycle models"),
 				hint("app.model.select", "to select model"),
-				hint("app.tools.expand", "to expand tools"),
+				hint("app.tools.expand", "to expand tool output"),
 				hint("app.thinking.toggle", "to expand thinking"),
 				hint("app.editor.external", "for external editor"),
 				rawKeyHint("/", "for commands"),
@@ -605,19 +756,19 @@ export class InteractiveMode {
 				rawKeyHint(`${keyText("app.clear")}/${keyText("app.exit")}`, "clear/exit"),
 				rawKeyHint("/", "commands"),
 				rawKeyHint("!", "bash"),
-				hint("app.tools.expand", "more"),
+				hint("app.tools.expand", "expand tools"),
 			].join(theme.fg("muted", " · "));
 			const compactOnboarding = theme.fg(
 				"dim",
-				`Press ${keyText("app.tools.expand")} to show full startup help and loaded resources.`,
+				`Press ${keyText("app.tools.expand")} to expand startup help and raw tool output.`,
 			);
 			const onboarding = theme.fg(
 				"dim",
-				`NAI Code can explain its own features and look up its docs. Ask it how to use or extend NAI Code.`,
+				`${APP_TITLE} can explain its own features and look up its docs. Ask it how to use or extend ${APP_TITLE}.`,
 			);
 			this.builtInHeader = new ExpandableText(
-				() => `${logo}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
-				() => `${logo}\n${expandedInstructions}\n\n${onboarding}`,
+				() => `${welcome}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
+				() => `${welcome}\n${expandedInstructions}\n\n${onboarding}`,
 				this.getStartupExpansionState(),
 				1,
 				0,
@@ -763,7 +914,7 @@ export class InteractiveMode {
 	}
 
 	private async checkForPackageUpdates(): Promise<string[]> {
-		if (process.env.NAI_CODE_OFFLINE) {
+		if (process.env.NEO_CODE_OFFLINE) {
 			return [];
 		}
 
@@ -821,7 +972,7 @@ export class InteractiveMode {
 		}
 
 		if (extendedKeysFormat === "xterm") {
-			return "tmux extended-keys-format is xterm. NAI Code works best with csi-u. Add `set -g extended-keys-format csi-u` to ~/.tmux.conf and restart tmux.";
+			return "tmux extended-keys-format is xterm. Neo Code works best with csi-u. Add `set -g extended-keys-format csi-u` to ~/.tmux.conf and restart tmux.";
 		}
 
 		return undefined;
@@ -838,28 +989,27 @@ export class InteractiveMode {
 		}
 
 		const lastVersion = this.settingsManager.getLastChangelogVersion();
-		const changelogPath = getChangelogPath();
-		const entries = parseChangelog(changelogPath);
+		const entries = getAllChangelogEntries();
 
 		if (!lastVersion) {
 			// Fresh install - record the version, send telemetry, don't show changelog
 			this.settingsManager.setLastChangelogVersion(VERSION);
-			this.reportInstallTelemetry(VERSION);
+			this.reportInstallTelemetry(VERSION, "fresh_install");
 			return undefined;
 		}
 
 		const newEntries = getNewEntries(entries, lastVersion);
 		if (newEntries.length > 0) {
 			this.settingsManager.setLastChangelogVersion(VERSION);
-			this.reportInstallTelemetry(VERSION);
+			this.reportInstallTelemetry(VERSION, "update");
 			return newEntries.map((e) => e.content).join("\n\n");
 		}
 
 		return undefined;
 	}
 
-	private reportInstallTelemetry(version: string): void {
-		if (process.env.NAI_CODE_OFFLINE) {
+	private reportInstallTelemetry(version: string, event: InstallTelemetryEvent): void {
+		if (process.env.NEO_CODE_OFFLINE) {
 			return;
 		}
 
@@ -867,10 +1017,15 @@ export class InteractiveMode {
 			return;
 		}
 
-		void fetch(`https://api.neosantara.xyz/api/report-install?version=${encodeURIComponent(version)}`, {
+		const payload = buildInstallTelemetryPayload(version, event, detectInstallMethod());
+		void fetch("https://api.neosantara.xyz/api/report-install", {
+			method: "POST",
 			headers: {
 				"User-Agent": getNeosantaraUserAgent(version),
+				"Content-Type": "application/json",
+				accept: "application/json",
 			},
+			body: JSON.stringify(payload),
 			signal: AbortSignal.timeout(5000),
 		})
 			.then(() => undefined)
@@ -898,6 +1053,19 @@ export class InteractiveMode {
 		}
 
 		return result;
+	}
+
+	private formatCompactDisplayPath(p: string, maxLength = 76): string {
+		const display = this.formatDisplayPath(p).replace(/\\/g, "/");
+		if (display.length <= maxLength) return display;
+
+		const parts = display.split("/").filter(Boolean);
+		const prefix = display.startsWith("~/") ? "~/" : display.startsWith("/") ? "/" : "";
+		const tail = parts.slice(-2).join("/");
+		const compact = `${prefix}…/${tail}`;
+		if (compact.length <= maxLength) return compact;
+		const basename = parts.at(-1) || display;
+		return basename.length <= maxLength ? `…/${basename}` : `…${basename.slice(-(maxLength - 1))}`;
 	}
 
 	private formatExtensionDisplayPath(path: string): string {
@@ -1083,7 +1251,11 @@ export class InteractiveMode {
 		}
 
 		if (source === "cli") {
-			return { label: "path", scopeLabel: scope === "temporary" ? "temp" : undefined, color: "muted" };
+			return {
+				label: "path",
+				scopeLabel: scope === "temporary" ? "temp" : undefined,
+				color: "muted",
+			};
 		}
 
 		const scopeLabel =
@@ -1337,7 +1509,10 @@ export class InteractiveMode {
 			const skills = skillsResult.skills;
 			if (skills.length > 0) {
 				const groups = this.buildScopeGroups(
-					skills.map((skill) => ({ path: skill.filePath, sourceInfo: skill.sourceInfo })),
+					skills.map((skill) => ({
+						path: skill.filePath,
+						sourceInfo: skill.sourceInfo,
+					})),
 				);
 				const skillList = this.formatScopeGroups(groups, {
 					formatPath: (item) => this.formatDisplayPath(item.path),
@@ -1350,7 +1525,10 @@ export class InteractiveMode {
 			const templates = this.session.promptTemplates;
 			if (templates.length > 0) {
 				const groups = this.buildScopeGroups(
-					templates.map((template) => ({ path: template.filePath, sourceInfo: template.sourceInfo })),
+					templates.map((template) => ({
+						path: template.filePath,
+						sourceInfo: template.sourceInfo,
+					})),
 				);
 				const templateByPath = new Map(templates.map((t) => [t.filePath, t]));
 				const templateList = this.formatScopeGroups(groups, {
@@ -1423,7 +1601,11 @@ export class InteractiveMode {
 			const extensionErrors = this.session.resourceLoader.getExtensions().errors;
 			if (extensionErrors.length > 0) {
 				for (const error of extensionErrors) {
-					extensionDiagnostics.push({ type: "error", message: error.error, path: error.path });
+					extensionDiagnostics.push({
+						type: "error",
+						message: error.error,
+						path: error.path,
+					});
 				}
 			}
 
@@ -1652,7 +1834,64 @@ export class InteractiveMode {
 	}
 
 	private getWorkingLoaderMessage(): string {
-		return this.workingMessage ?? this.defaultWorkingMessage;
+		return this.workingMessage ?? this.getDefaultWorkingMessageText();
+	}
+
+	private getDefaultWorkingMessageText(): string {
+		const label = this.defaultWorkingMessages[this.defaultWorkingMessageIndex % this.defaultWorkingMessages.length];
+		return `${label}...`;
+	}
+
+	private rotateDefaultWorkingMessage(): void {
+		if (!this.loadingAnimation || this.workingMessage !== undefined) return;
+		this.defaultWorkingMessageIndex = (this.defaultWorkingMessageIndex + 1) % this.defaultWorkingMessages.length;
+		this.loadingAnimation.setMessage(
+			`${this.getDefaultWorkingMessageText()} (${keyText("app.interrupt")} to interrupt)`,
+			this.getWorkingIndicatorOptions(),
+		);
+		this.updateWorkingStalledState();
+	}
+
+	private startDefaultWorkingMessageRotation(): void {
+		this.stopDefaultWorkingMessageRotation();
+		if (!this.loadingAnimation || this.workingMessage !== undefined) return;
+		this.defaultWorkingMessageTimer = setInterval(() => {
+			this.rotateDefaultWorkingMessage();
+		}, 2200);
+	}
+
+	private stopDefaultWorkingMessageRotation(): void {
+		if (!this.defaultWorkingMessageTimer) return;
+		clearInterval(this.defaultWorkingMessageTimer);
+		this.defaultWorkingMessageTimer = undefined;
+	}
+
+	private getDefaultWorkingIndicatorOptions(mode: WorkingLoaderMode = "responding"): LoaderIndicatorOptions {
+		return {
+			frames: CLAUDE_STYLE_SPINNER_FRAMES.map((frame) => theme.fg("accent", frame)),
+			intervalMs: 120,
+			mode,
+			shimmer: mode !== "tool-use",
+			shimmerDirection: mode === "tool-input" ? "left-to-right" : "right-to-left",
+			shimmerIntervalMs: 200,
+			shimmerColorFn: (text) => theme.fg("accent", text),
+			stalledDetection: true,
+			stalledWarningColorFn: (text) => theme.fg("warning", text),
+			stalledColorFn: (text) => theme.fg("error", text),
+		};
+	}
+
+	private getWorkingIndicatorOptions(mode: WorkingLoaderMode = "responding"): LoaderIndicatorOptions {
+		const defaults = this.getDefaultWorkingIndicatorOptions(mode);
+		if (!this.workingIndicatorOptions) return defaults;
+
+		return {
+			...defaults,
+			...this.workingIndicatorOptions,
+			mode: this.workingIndicatorOptions.mode ?? mode,
+			shimmer: this.workingIndicatorOptions.shimmer ?? defaults.shimmer,
+			shimmerDirection: this.workingIndicatorOptions.shimmerDirection ?? defaults.shimmerDirection,
+		};
 	}
 
 	private createWorkingLoader(): Loader {
@@ -1661,11 +1900,56 @@ export class InteractiveMode {
 			(spinner) => theme.fg("accent", spinner),
 			(text) => theme.fg("muted", text),
 			this.getWorkingLoaderMessage(),
-			this.workingIndicatorOptions,
+			this.getWorkingIndicatorOptions(),
 		);
 	}
 
+	private getStreamingProgressValue(message: AssistantMessage | undefined = this.streamingMessage): number {
+		if (!message) return 0;
+		return message.content.reduce((total, content) => {
+			if (content.type === "text") return total + content.text.length;
+			if (content.type === "thinking") return total + content.thinking.length;
+			return total;
+		}, 0);
+	}
+
+	private updateWorkingStalledState(message: AssistantMessage | undefined = this.streamingMessage): void {
+		this.loadingAnimation?.setStalledDetectionState(
+			this.getStreamingProgressValue(message),
+			this.activeToolExecutionIds.size > 0,
+		);
+	}
+
+	private setToolInputWorkingMessage(toolName: string, args: any): void {
+		if (this.workingMessage !== undefined || !this.loadingAnimation) return;
+		this.loadingAnimation.setMessage(
+			`${formatToolInputLoadingMessage(toolName, args)} (${keyText("app.interrupt")} to interrupt)`,
+			this.getWorkingIndicatorOptions("tool-input"),
+		);
+		this.updateWorkingStalledState();
+	}
+
+	private setToolUseWorkingMessage(toolName: string, args: any): void {
+		if (this.workingMessage !== undefined || !this.loadingAnimation) return;
+		this.loadingAnimation.setMessage(
+			`${formatToolLoadingMessage(toolName, args)} (${keyText("app.interrupt")} to interrupt)`,
+			this.getWorkingIndicatorOptions("tool-use"),
+		);
+		this.updateWorkingStalledState();
+	}
+
+	private restoreDefaultWorkingMessage(): void {
+		if (this.workingMessage !== undefined || !this.loadingAnimation) return;
+		this.loadingAnimation.setMessage(
+			`${this.getDefaultWorkingMessageText()} (${keyText("app.interrupt")} to interrupt)`,
+			this.getWorkingIndicatorOptions(),
+		);
+		this.startDefaultWorkingMessageRotation();
+		this.updateWorkingStalledState();
+	}
+
 	private stopWorkingLoader(): void {
+		this.stopDefaultWorkingMessageRotation();
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
 			this.loadingAnimation = undefined;
@@ -1684,13 +1968,14 @@ export class InteractiveMode {
 			this.statusContainer.clear();
 			this.loadingAnimation = this.createWorkingLoader();
 			this.statusContainer.addChild(this.loadingAnimation);
+			this.startDefaultWorkingMessageRotation();
 		}
 		this.ui.requestRender();
 	}
 
 	private setWorkingIndicator(options?: LoaderIndicatorOptions): void {
 		this.workingIndicatorOptions = options;
-		this.loadingAnimation?.setIndicator(options);
+		this.loadingAnimation?.setIndicator(this.getWorkingIndicatorOptions());
 		this.ui.requestRender();
 	}
 
@@ -1790,7 +2075,11 @@ export class InteractiveMode {
 		this.workingVisible = true;
 		this.setWorkingIndicator();
 		if (this.loadingAnimation) {
-			this.loadingAnimation.setMessage(`${this.defaultWorkingMessage} (${keyText("app.interrupt")} to interrupt)`);
+			this.loadingAnimation.setMessage(
+				`${this.getDefaultWorkingMessageText()} (${keyText("app.interrupt")} to interrupt)`,
+				this.getWorkingIndicatorOptions(),
+			);
+			this.startDefaultWorkingMessageRotation();
 		}
 		this.setHiddenThinkingLabel();
 	}
@@ -1939,8 +2228,16 @@ export class InteractiveMode {
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
 			setWorkingMessage: (message) => {
 				this.workingMessage = message;
+				if (message === undefined) {
+					this.startDefaultWorkingMessageRotation();
+				} else {
+					this.stopDefaultWorkingMessageRotation();
+				}
 				if (this.loadingAnimation) {
-					this.loadingAnimation.setMessage(message ?? this.defaultWorkingMessage);
+					this.loadingAnimation.setMessage(
+						message ?? this.getDefaultWorkingMessageText(),
+						this.getWorkingIndicatorOptions(),
+					);
 				}
 			},
 			setWorkingVisible: (visible) => this.setWorkingVisible(visible),
@@ -2019,7 +2316,11 @@ export class InteractiveMode {
 					this.hideExtensionSelector();
 					resolve(undefined);
 				},
-				{ tui: this.ui, timeout: opts?.timeout, onToggleToolsExpanded: () => this.toggleToolOutputExpansion() },
+				{
+					tui: this.ui,
+					timeout: opts?.timeout,
+					onToggleToolsExpanded: () => this.toggleToolOutputExpansion(),
+				},
 			);
 
 			this.editorContainer.clear();
@@ -2417,7 +2718,7 @@ export class InteractiveMode {
 			// Write to temp file
 			const tmpDir = os.tmpdir();
 			const ext = extensionForImageMimeType(image.mimeType) ?? "png";
-			const fileName = `nai-clipboard-${crypto.randomUUID()}.${ext}`;
+			const fileName = `neo-clipboard-${crypto.randomUUID()}.${ext}`;
 			const filePath = path.join(tmpDir, fileName);
 			fs.writeFileSync(filePath, Buffer.from(image.bytes));
 
@@ -2437,6 +2738,51 @@ export class InteractiveMode {
 			// Handle commands
 			if (text === "/settings") {
 				this.showSettingsSelector();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/status") {
+				this.handleStatusCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/usage") {
+				this.editor.setText("");
+				await this.handleUsageCommand();
+				return;
+			}
+			if (text === "/context") {
+				this.handleContextCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/doctor") {
+				this.handleDoctorCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/permissions" || text.startsWith("/permissions ")) {
+				this.handlePermissionsCommand(text);
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/diff" || text.startsWith("/diff ")) {
+				this.handleDiffCommand(text);
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/agents" || text.startsWith("/agents ") || text === "/memory" || text.startsWith("/memory ")) {
+				await this.handleAgentsCommand(text);
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/skills" || text.startsWith("/skills ")) {
+				await this.handleSkillsCommand(text);
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/hooks") {
+				this.handleHooksCommand();
 				this.editor.setText("");
 				return;
 			}
@@ -2616,6 +2962,43 @@ export class InteractiveMode {
 		});
 	}
 
+	private createToolExecutionComponent(toolName: string, toolCallId: string, args: any): ToolExecutionComponent {
+		const component = new ToolExecutionComponent(
+			toolName,
+			toolCallId,
+			args,
+			{
+				showImages: this.settingsManager.getShowImages(),
+				imageWidthCells: this.settingsManager.getImageWidthCells(),
+			},
+			this.getRegisteredToolDefinition(toolName),
+			this.ui,
+			this.sessionManager.getCwd(),
+		);
+		component.setExpanded(this.toolOutputExpanded);
+		return component;
+	}
+
+	private getOrCreateCurrentToolGroup(): ToolActivityGroupComponent {
+		if (!this.currentToolActivityGroup) {
+			this.currentToolActivityGroup = new ToolActivityGroupComponent(this.toolOutputExpanded);
+			this.chatContainer.addChild(this.currentToolActivityGroup);
+		}
+		return this.currentToolActivityGroup;
+	}
+
+	private attachToolToGroup(
+		toolName: string,
+		toolCallId: string,
+		args: any,
+		component: ToolExecutionComponent,
+		group = this.getOrCreateCurrentToolGroup(),
+	): ToolActivityGroupComponent {
+		group.addTool(toolName, toolCallId, args, component);
+		this.pendingToolGroups.set(toolCallId, group);
+		return group;
+	}
+
 	private async handleEvent(event: AgentSessionEvent): Promise<void> {
 		if (!this.isInitialized) {
 			await this.init();
@@ -2626,6 +3009,9 @@ export class InteractiveMode {
 		switch (event.type) {
 			case "agent_start":
 				this.pendingTools.clear();
+				this.pendingToolGroups.clear();
+				this.activeToolExecutionIds.clear();
+				this.currentToolActivityGroup = undefined;
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
 				}
@@ -2647,6 +3033,7 @@ export class InteractiveMode {
 				if (this.workingVisible) {
 					this.loadingAnimation = this.createWorkingLoader();
 					this.statusContainer.addChild(this.loadingAnimation);
+					this.updateWorkingStalledState();
 				}
 				this.ui.requestRender();
 				break;
@@ -2676,6 +3063,7 @@ export class InteractiveMode {
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
+					this.currentToolActivityGroup = undefined;
 					this.streamingComponent = new AssistantMessageComponent(
 						undefined,
 						this.hideThinkingBlock,
@@ -2693,30 +3081,24 @@ export class InteractiveMode {
 				if (this.streamingComponent && event.message.role === "assistant") {
 					this.streamingMessage = event.message;
 					this.streamingComponent.updateContent(this.streamingMessage);
+					this.updateWorkingStalledState(this.streamingMessage);
 
 					for (const content of this.streamingMessage.content) {
 						if (content.type === "toolCall") {
-							if (!this.pendingTools.has(content.id)) {
-								const component = new ToolExecutionComponent(
+							this.setToolInputWorkingMessage(content.name, content.arguments);
+							const existing = this.pendingTools.get(content.id);
+							if (!existing) {
+								const component = this.createToolExecutionComponent(
 									content.name,
 									content.id,
 									content.arguments,
-									{
-										showImages: this.settingsManager.getShowImages(),
-										imageWidthCells: this.settingsManager.getImageWidthCells(),
-									},
-									this.getRegisteredToolDefinition(content.name),
-									this.ui,
-									this.sessionManager.getCwd(),
 								);
-								component.setExpanded(this.toolOutputExpanded);
-								this.chatContainer.addChild(component);
 								this.pendingTools.set(content.id, component);
+								this.attachToolToGroup(content.name, content.id, content.arguments, component);
 							} else {
-								const component = this.pendingTools.get(content.id);
-								if (component) {
-									component.updateArgs(content.arguments);
-								}
+								const group = this.pendingToolGroups.get(content.id);
+								if (group) group.updateToolArgs(content.id, content.arguments);
+								else existing.updateArgs(content.arguments);
 							}
 						}
 					}
@@ -2743,13 +3125,17 @@ export class InteractiveMode {
 						if (!errorMessage) {
 							errorMessage = this.streamingMessage.errorMessage || "Error";
 						}
-						for (const [, component] of this.pendingTools.entries()) {
-							component.updateResult({
+						for (const [toolCallId, component] of this.pendingTools.entries()) {
+							const result = {
 								content: [{ type: "text", text: errorMessage }],
 								isError: true,
-							});
+							};
+							const group = this.pendingToolGroups.get(toolCallId);
+							if (group) group.updateToolResult(toolCallId, result);
+							else component.updateResult(result);
 						}
 						this.pendingTools.clear();
+						this.pendingToolGroups.clear();
 					} else {
 						// Args are now complete - trigger diff computation for edit tools
 						for (const [, component] of this.pendingTools.entries()) {
@@ -2764,49 +3150,53 @@ export class InteractiveMode {
 				break;
 
 			case "tool_execution_start": {
+				this.activeToolExecutionIds.add(event.toolCallId);
+				this.setToolUseWorkingMessage(event.toolName, event.args);
 				let component = this.pendingTools.get(event.toolCallId);
 				if (!component) {
-					component = new ToolExecutionComponent(
-						event.toolName,
-						event.toolCallId,
-						event.args,
-						{
-							showImages: this.settingsManager.getShowImages(),
-							imageWidthCells: this.settingsManager.getImageWidthCells(),
-						},
-						this.getRegisteredToolDefinition(event.toolName),
-						this.ui,
-						this.sessionManager.getCwd(),
-					);
-					component.setExpanded(this.toolOutputExpanded);
-					this.chatContainer.addChild(component);
+					component = this.createToolExecutionComponent(event.toolName, event.toolCallId, event.args);
 					this.pendingTools.set(event.toolCallId, component);
+					this.attachToolToGroup(event.toolName, event.toolCallId, event.args, component);
 				}
-				component.markExecutionStarted();
+				this.pendingToolGroups.get(event.toolCallId)?.markExecutionStarted(event.toolCallId);
 				this.ui.requestRender();
 				break;
 			}
 
 			case "tool_execution_update": {
+				this.activeToolExecutionIds.add(event.toolCallId);
+				this.updateWorkingStalledState();
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
-					component.updateResult({ ...event.partialResult, isError: false }, true);
+					const result = { ...event.partialResult, isError: false };
+					const group = this.pendingToolGroups.get(event.toolCallId);
+					if (group) group.updateToolResult(event.toolCallId, result, true);
+					else component.updateResult(result, true);
 					this.ui.requestRender();
 				}
 				break;
 			}
 
 			case "tool_execution_end": {
+				this.activeToolExecutionIds.delete(event.toolCallId);
+				this.updateWorkingStalledState();
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
-					component.updateResult({ ...event.result, isError: event.isError });
+					const result = { ...event.result, isError: event.isError };
+					const group = this.pendingToolGroups.get(event.toolCallId);
+					if (group) group.updateToolResult(event.toolCallId, result);
+					else component.updateResult(result);
 					this.pendingTools.delete(event.toolCallId);
+					this.pendingToolGroups.delete(event.toolCallId);
+					if (this.pendingTools.size === 0) this.restoreDefaultWorkingMessage();
+					this.updateWorkingStalledState();
 					this.ui.requestRender();
 				}
 				break;
 			}
 
 			case "agent_end":
+				this.activeToolExecutionIds.clear();
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
 				}
@@ -2821,6 +3211,8 @@ export class InteractiveMode {
 					this.streamingMessage = undefined;
 				}
 				this.pendingTools.clear();
+				this.pendingToolGroups.clear();
+				this.currentToolActivityGroup = undefined;
 
 				await this.checkShutdownRequested();
 
@@ -3093,7 +3485,10 @@ export class InteractiveMode {
 		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
 	): void {
 		this.pendingTools.clear();
+		this.pendingToolGroups.clear();
+		this.currentToolActivityGroup = undefined;
 		const renderedPendingTools = new Map<string, ToolExecutionComponent>();
+		const renderedPendingToolGroups = new Map<string, ToolActivityGroupComponent>();
 
 		if (options.updateFooter) {
 			this.footer.invalidate();
@@ -3104,23 +3499,16 @@ export class InteractiveMode {
 			// Assistant messages need special handling for tool calls
 			if (message.role === "assistant") {
 				this.addMessageToChat(message);
-				// Render tool call components
+				let group: ToolActivityGroupComponent | undefined;
+				// Render tool call components in one collapsed activity group
 				for (const content of message.content) {
 					if (content.type === "toolCall") {
-						const component = new ToolExecutionComponent(
-							content.name,
-							content.id,
-							content.arguments,
-							{
-								showImages: this.settingsManager.getShowImages(),
-								imageWidthCells: this.settingsManager.getImageWidthCells(),
-							},
-							this.getRegisteredToolDefinition(content.name),
-							this.ui,
-							this.sessionManager.getCwd(),
-						);
-						component.setExpanded(this.toolOutputExpanded);
-						this.chatContainer.addChild(component);
+						if (!group) {
+							group = new ToolActivityGroupComponent(this.toolOutputExpanded);
+							this.chatContainer.addChild(group);
+						}
+						const component = this.createToolExecutionComponent(content.name, content.id, content.arguments);
+						group.addTool(content.name, content.id, content.arguments, component);
 
 						if (message.stopReason === "aborted" || message.stopReason === "error") {
 							let errorMessage: string;
@@ -3133,9 +3521,13 @@ export class InteractiveMode {
 							} else {
 								errorMessage = message.errorMessage || "Error";
 							}
-							component.updateResult({ content: [{ type: "text", text: errorMessage }], isError: true });
+							group.updateToolResult(content.id, {
+								content: [{ type: "text", text: errorMessage }],
+								isError: true,
+							});
 						} else {
 							renderedPendingTools.set(content.id, component);
+							renderedPendingToolGroups.set(content.id, group);
 						}
 					}
 				}
@@ -3143,8 +3535,11 @@ export class InteractiveMode {
 				// Match tool results to pending tool components
 				const component = renderedPendingTools.get(message.toolCallId);
 				if (component) {
-					component.updateResult(message);
+					const group = renderedPendingToolGroups.get(message.toolCallId);
+					if (group) group.updateToolResult(message.toolCallId, message);
+					else component.updateResult(message);
 					renderedPendingTools.delete(message.toolCallId);
+					renderedPendingToolGroups.delete(message.toolCallId);
 				}
 			} else {
 				// All other messages use standard rendering
@@ -3154,6 +3549,8 @@ export class InteractiveMode {
 
 		for (const [toolCallId, component] of renderedPendingTools) {
 			this.pendingTools.set(toolCallId, component);
+			const group = renderedPendingToolGroups.get(toolCallId);
+			if (group) this.pendingToolGroups.set(toolCallId, group);
 		}
 		this.ui.requestRender();
 	}
@@ -3264,7 +3661,7 @@ export class InteractiveMode {
 		try {
 			this.ui.stop();
 		} catch {}
-		console.error("NAI Code exiting due to uncaughtException:");
+		console.error("Neo Code exiting due to uncaughtException:");
 		console.error(error);
 		process.exit(1);
 	}
@@ -3310,7 +3707,7 @@ export class InteractiveMode {
 
 		// Restore the terminal before the process dies on any uncaught throw.
 		// Without this, an unhandled exception from extension code (or anywhere
-		// in NAI Code) leaves the terminal in raw mode with no cursor.
+		// in Neo Code) leaves the terminal in raw mode with no cursor.
 		const uncaughtExceptionHandler = (error: Error) => this.uncaughtCrash(error);
 		process.prependListener("uncaughtException", uncaughtExceptionHandler);
 		this.signalCleanupHandlers.push(() => process.off("uncaughtException", uncaughtExceptionHandler));
@@ -3485,7 +3882,7 @@ export class InteractiveMode {
 		}
 
 		const currentText = this.editor.getExpandedText?.() ?? this.editor.getText();
-		const tmpFile = path.join(os.tmpdir(), `nai-editor-${Date.now()}.nai.md`);
+		const tmpFile = path.join(os.tmpdir(), `neo-editor-${Date.now()}.neo.md`);
 
 		try {
 			// Write current content to temp file
@@ -3548,11 +3945,7 @@ export class InteractiveMode {
 	showNewVersionNotification(newVersion: string): void {
 		const action = theme.fg("accent", `${APP_NAME} update`);
 		const updateInstruction = theme.fg("muted", `New version ${newVersion} is available. Run `) + action;
-		const changelogUrl = "https://github.com/neosantara/nai-code/blob/main/packages/coding-agent/CHANGELOG.md";
-		const changelogLink = getCapabilities().hyperlinks
-			? hyperlink(theme.fg("accent", "open changelog"), changelogUrl)
-			: theme.fg("accent", changelogUrl);
-		const changelogLine = theme.fg("muted", "Changelog: ") + changelogLink;
+		const changelogLine = theme.fg("muted", "Changelog: Run ") + theme.fg("accent", "/changelog");
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new DynamicBorder((text) => theme.fg("warning", text)));
@@ -3824,7 +4217,7 @@ export class InteractiveMode {
 					onShowImagesChange: (enabled) => {
 						this.settingsManager.setShowImages(enabled);
 						for (const child of this.chatContainer.children) {
-							if (child instanceof ToolExecutionComponent) {
+							if (child instanceof ToolExecutionComponent || child instanceof ToolActivityGroupComponent) {
 								child.setShowImages(enabled);
 							}
 						}
@@ -3832,7 +4225,7 @@ export class InteractiveMode {
 					onImageWidthCellsChange: (width) => {
 						this.settingsManager.setImageWidthCells(width);
 						for (const child of this.chatContainer.children) {
-							if (child instanceof ToolExecutionComponent) {
+							if (child instanceof ToolExecutionComponent || child instanceof ToolActivityGroupComponent) {
 								child.setImageWidthCells(width);
 							}
 						}
@@ -4649,7 +5042,10 @@ export class InteractiveMode {
 				throw new Error("API key cannot be empty.");
 			}
 
-			this.session.modelRegistry.authStorage.set(providerId, { type: "api_key", key: apiKey });
+			this.session.modelRegistry.authStorage.set(providerId, {
+				type: "api_key",
+				key: apiKey,
+			});
 
 			restoreEditor();
 			await this.completeProviderAuthentication(providerId, providerName, "api_key", previousModel);
@@ -4964,7 +5360,9 @@ export class InteractiveMode {
 	private async handleShareCommand(): Promise<void> {
 		// Check if gh is available and logged in
 		try {
-			const authResult = spawnSync("gh", ["auth", "status"], { encoding: "utf-8" });
+			const authResult = spawnSync("gh", ["auth", "status"], {
+				encoding: "utf-8",
+			});
 			if (authResult.status !== 0) {
 				this.showError("GitHub CLI is not logged in. Run 'gh auth login' first.");
 				return;
@@ -5012,7 +5410,11 @@ export class InteractiveMode {
 		};
 
 		try {
-			const result = await new Promise<{ stdout: string; stderr: string; code: number | null }>((resolve) => {
+			const result = await new Promise<{
+				stdout: string;
+				stderr: string;
+				code: number | null;
+			}>((resolve) => {
 				proc = spawn("gh", ["gist", "create", "--public=false", tmpFile]);
 				let stdout = "";
 				let stderr = "";
@@ -5127,9 +5529,561 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	private handleStatusCommand(): void {
+		const stats = this.session.getSessionStats();
+		const model = this.session.model;
+		const providerId = model?.provider;
+		const providerName = providerId ? this.session.modelRegistry.getProviderDisplayName(providerId) : "Not selected";
+		const authStatus = providerId ? this.session.modelRegistry.getProviderAuthStatus(providerId) : undefined;
+		const authLabel = authStatus?.configured
+			? authStatus.source
+				? `${authStatus.source}${authStatus.label ? ` (${authStatus.label})` : ""}`
+				: "configured"
+			: "not configured";
+		const contextUsage = stats.contextUsage;
+		const contextLabel = contextUsage
+			? `${contextUsage.tokens?.toLocaleString() ?? "unknown"} / ${contextUsage.contextWindow.toLocaleString()} tokens (${contextUsage.percent !== null ? `${contextUsage.percent.toFixed(1)}%` : "?"})`
+			: "unknown";
+		const sessionName = this.sessionManager.getSessionName();
+
+		let info = `${theme.bold("Neo Code Status")}\n\n`;
+		info += `${theme.fg("dim", "Version:")} ${this.version}\n`;
+		info += `${theme.fg("dim", "Workspace:")} ${this.formatCompactDisplayPath(this.sessionManager.getCwd())}\n`;
+		if (sessionName) {
+			info += `${theme.fg("dim", "Session:")} ${sessionName}\n`;
+		}
+		info += `${theme.fg("dim", "Session ID:")} ${stats.sessionId}\n\n`;
+		info += `${theme.bold("Model")}\n`;
+		info += `${theme.fg("dim", "Provider:")} ${providerName}\n`;
+		info += `${theme.fg("dim", "Model:")} ${model ? model.name || model.id : "not selected"}\n`;
+		info += `${theme.fg("dim", "Auth:")} ${authLabel}\n`;
+		info += `${theme.fg("dim", "Context:")} ${contextLabel}\n\n`;
+		info += `${theme.bold("Current Session Usage")}\n`;
+		info += `${theme.fg("dim", "Tokens:")} ${stats.tokens.total.toLocaleString()} total (${stats.tokens.input.toLocaleString()} input, ${stats.tokens.output.toLocaleString()} output)\n`;
+		info += `${theme.fg("dim", "Cost:")} ${formatIdrCurrency(stats.cost)}\n`;
+		info += `${theme.fg("dim", "Billing:")} Use /usage for account billing`;
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(info, 1, 0));
+		this.ui.requestRender();
+	}
+
+	private async handleUsageCommand(): Promise<void> {
+		const stats = this.session.getSessionStats();
+		const backendUsage = await getNeosantaraBackendUsageSnapshot();
+		const accountUsage = backendUsage.snapshot;
+		const backendStatus = backendUsage.detail
+			? `${backendUsage.status} (${backendUsage.detail})`
+			: backendUsage.status;
+
+		let info = `${theme.bold("Neosantara Usage")}\n\n`;
+		info += `${theme.bold("Current CLI Session")}\n`;
+		info += `${theme.fg("dim", "Input tokens:")} ${stats.tokens.input.toLocaleString()}\n`;
+		info += `${theme.fg("dim", "Output tokens:")} ${stats.tokens.output.toLocaleString()}\n`;
+		if (stats.tokens.cacheRead > 0) {
+			info += `${theme.fg("dim", "Cache read:")} ${stats.tokens.cacheRead.toLocaleString()}\n`;
+		}
+		if (stats.tokens.cacheWrite > 0) {
+			info += `${theme.fg("dim", "Cache write:")} ${stats.tokens.cacheWrite.toLocaleString()}\n`;
+		}
+		info += `${theme.fg("dim", "Total tokens:")} ${stats.tokens.total.toLocaleString()}\n`;
+		info += `${theme.fg("dim", "Estimated cost:")} ${formatIdrCurrency(stats.cost)}\n\n`;
+		info += `${theme.bold("Account Billing")}\n`;
+		info += `${theme.fg("dim", "Mode:")} Pay as you go\n`;
+		info += `${theme.fg("dim", "Currency:")} Rupiah (IDR)\n`;
+		info += `${theme.fg("dim", "Balance:")} ${formatOptionalIdrCurrency(accountUsage?.balanceIdr)}\n`;
+		info += `${theme.fg("dim", "Period spend:")} ${formatOptionalIdrCurrency(accountUsage?.monthlySpendIdr)}\n`;
+		info += `${theme.fg("dim", "Backend:")} ${backendStatus}`;
+		if (accountUsage?.updatedAt) {
+			info += `\n${theme.fg("dim", "Updated:")} ${accountUsage.updatedAt}`;
+		}
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(info, 1, 0));
+		this.ui.requestRender();
+	}
+
+	private formatContextUsageBar(percent: number | null | undefined): string {
+		const width = 20;
+		if (typeof percent !== "number" || !Number.isFinite(percent)) {
+			return "[????????????????????]";
+		}
+		const clamped = Math.max(0, Math.min(100, percent));
+		const filled = Math.round((clamped / 100) * width);
+		return `[${"█".repeat(filled)}${"░".repeat(width - filled)}]`;
+	}
+
+	private getContextHealthLabel(percent: number | null | undefined): string {
+		if (typeof percent !== "number" || !Number.isFinite(percent)) return theme.fg("warning", "unknown");
+		if (percent >= 90) return theme.fg("error", "critical");
+		if (percent >= 75) return theme.fg("warning", "high");
+		return theme.fg("success", "healthy");
+	}
+
+	private handleContextCommand(): void {
+		const stats = this.session.getSessionStats();
+		const contextUsage = stats.contextUsage;
+		const compaction = this.settingsManager.getCompactionSettings();
+		const model = this.session.model;
+		const contextWindow = contextUsage?.contextWindow ?? model?.contextWindow ?? null;
+		const tokens = contextUsage?.tokens ?? null;
+		const available =
+			typeof tokens === "number" && typeof contextWindow === "number" ? Math.max(0, contextWindow - tokens) : null;
+		const compactAt =
+			typeof contextWindow === "number" ? Math.max(0, contextWindow - compaction.reserveTokens) : null;
+		const reservePercent =
+			typeof contextWindow === "number" && contextWindow > 0
+				? (compaction.reserveTokens / contextWindow) * 100
+				: null;
+
+		let info = `${theme.bold("Context Usage")}\n\n`;
+		info += `${this.formatContextUsageBar(contextUsage?.percent)} ${formatPercent(contextUsage?.percent)} ${this.getContextHealthLabel(contextUsage?.percent)}\n\n`;
+		info += `${theme.bold("Model window")}\n`;
+		info += `${theme.fg("dim", "Model:")} ${model ? `${model.provider}/${model.name || model.id}` : "not selected"}\n`;
+		info += `${theme.fg("dim", "Context window:")} ${typeof contextWindow === "number" ? contextWindow.toLocaleString() : "unknown"} tokens\n`;
+		info += `${theme.fg("dim", "Estimated used:")} ${typeof tokens === "number" ? tokens.toLocaleString() : "unknown until next model response"}\n`;
+		info += `${theme.fg("dim", "Estimated remaining:")} ${typeof available === "number" ? available.toLocaleString() : "unknown"} tokens\n\n`;
+		info += `${theme.bold("Compaction")}\n`;
+		info += `${theme.fg("dim", "Auto compact:")} ${compaction.enabled ? "enabled" : "disabled"}\n`;
+		info += `${theme.fg("dim", "Reserve:")} ${compaction.reserveTokens.toLocaleString()} tokens (${formatPercent(reservePercent)})\n`;
+		info += `${theme.fg("dim", "Keep recent:")} ${compaction.keepRecentTokens.toLocaleString()} tokens\n`;
+		info += `${theme.fg("dim", "Compact around:")} ${typeof compactAt === "number" ? compactAt.toLocaleString() : "unknown"} used tokens\n\n`;
+		info += `${theme.bold("Session shape")}\n`;
+		info += `${theme.fg("dim", "Messages:")} ${stats.totalMessages.toLocaleString()} total (${stats.userMessages} user, ${stats.assistantMessages} assistant)\n`;
+		info += `${theme.fg("dim", "Tool activity:")} ${stats.toolCalls.toLocaleString()} calls, ${stats.toolResults.toLocaleString()} results\n`;
+		info += `${theme.fg("dim", "Token source:")} latest API usage + estimated trailing messages`;
+		if (tokens === null) {
+			info += `\n${theme.fg("warning", "Note:")} Context is unknown after compaction until the next successful assistant response.`;
+		}
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(info, 1, 0));
+		this.ui.requestRender();
+	}
+
+	private formatDoctorLine(label: string, status: "ok" | "warn" | "fail", detail: string): string {
+		const marker =
+			status === "ok"
+				? theme.fg("success", "✓")
+				: status === "warn"
+					? theme.fg("warning", "!")
+					: theme.fg("error", "✗");
+		return `${marker} ${theme.fg("dim", label)} ${detail}`;
+	}
+
+	private getCommandCheck(command: string, args: string[] = ["--version"]): { ok: boolean; value: string } {
+		try {
+			const result = spawnSync(command, args, {
+				cwd: this.sessionManager.getCwd(),
+				encoding: "utf8",
+				stdio: "pipe",
+				timeout: 2000,
+			});
+			if (result.error) {
+				return { ok: false, value: result.error.message };
+			}
+			const text = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim().split("\n")[0]?.trim();
+			return {
+				ok: result.status === 0,
+				value: text || `exit ${result.status ?? "unknown"}`,
+			};
+		} catch (error) {
+			return {
+				ok: false,
+				value: error instanceof Error ? error.message : String(error),
+			};
+		}
+	}
+
+	private handleDoctorCommand(): void {
+		const stats = this.session.getSessionStats();
+		const model = this.session.model;
+		const providerId = model?.provider;
+		const authStatus = providerId ? this.session.modelRegistry.getProviderAuthStatus(providerId) : undefined;
+		const extensionErrors = this.session.resourceLoader.getExtensions().errors.map((error) => ({
+			type: "error" as const,
+			message: error.error,
+			path: error.path,
+		}));
+		const resourceDiagnostics = [
+			...this.runtimeHost.diagnostics,
+			...extensionErrors,
+			...this.session.resourceLoader.getSkills().diagnostics,
+			...this.session.resourceLoader.getPrompts().diagnostics,
+			...this.session.resourceLoader.getThemes().diagnostics,
+		];
+		const errors = resourceDiagnostics.filter((diagnostic) => diagnostic.type === "error");
+		const warnings = resourceDiagnostics.filter(
+			(diagnostic) => diagnostic.type === "warning" || diagnostic.type === "collision",
+		);
+		const git = this.getCommandCheck("git");
+		const rgPath = getToolPath("rg");
+		const fdPath = getToolPath("fd");
+		const memory = process.memoryUsage();
+
+		let info = `${theme.bold("Neo Code Doctor")}\n\n`;
+		info += `${theme.bold("Runtime")}\n`;
+		info += `${this.formatDoctorLine("Node:", "ok", process.version)}\n`;
+		info += `${this.formatDoctorLine("Platform:", "ok", `${process.platform}/${process.arch}`)}\n`;
+		info += `${this.formatDoctorLine("Workspace:", fs.existsSync(this.sessionManager.getCwd()) ? "ok" : "fail", this.sessionManager.getCwd())}\n`;
+		info += `${this.formatDoctorLine("Agent dir:", fs.existsSync(getAgentDir()) ? "ok" : "warn", getAgentDir())}\n`;
+		info += `${this.formatDoctorLine("Session file:", stats.sessionFile ? "ok" : "warn", stats.sessionFile ?? "in-memory session")}\n\n`;
+		info += `${theme.bold("Provider")}\n`;
+		info += `${this.formatDoctorLine("Model:", model ? "ok" : "fail", model ? `${model.provider}/${model.name || model.id}` : "not selected")}\n`;
+		info += `${this.formatDoctorLine("Auth:", authStatus?.configured ? "ok" : "warn", authStatus?.configured ? authStatus.source || "configured" : "not configured")}\n\n`;
+		info += `${theme.bold("Local tools")}\n`;
+		info += `${this.formatDoctorLine("git:", git.ok ? "ok" : "warn", git.value)}\n`;
+		info += `${this.formatDoctorLine("rg:", rgPath ? "ok" : "warn", rgPath ?? "not found; grep/search tool may be slower or unavailable")}\n`;
+		info += `${this.formatDoctorLine("fd:", fdPath ? "ok" : "warn", fdPath ?? "not found; file autocomplete may be degraded")}\n\n`;
+		info += `${theme.bold("Resources")}\n`;
+		info += `${this.formatDoctorLine("Diagnostics:", errors.length > 0 ? "fail" : warnings.length > 0 ? "warn" : "ok", `${errors.length} errors, ${warnings.length} warnings`)}\n`;
+		for (const diagnostic of [...errors, ...warnings].slice(0, 5)) {
+			info += `  - ${diagnostic.message}${"path" in diagnostic && diagnostic.path ? ` (${diagnostic.path})` : ""}\n`;
+		}
+		if (errors.length + warnings.length > 5) {
+			info += `  - ${errors.length + warnings.length - 5} more diagnostics hidden\n`;
+		}
+		info += `\n${theme.bold("Session")}\n`;
+		info += `${this.formatDoctorLine("Context:", stats.contextUsage?.percent && stats.contextUsage.percent >= 90 ? "warn" : "ok", formatPercent(stats.contextUsage?.percent))}\n`;
+		info += `${this.formatDoctorLine("Memory RSS:", memory.rss > 1024 * 1024 * 1024 ? "warn" : "ok", formatBytes(memory.rss))}\n`;
+		info += `\n${theme.fg("dim", "Tip:")} Use /status for account/model summary and /context for context details.`;
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(info, 1, 0));
+		this.ui.requestRender();
+	}
+
+	private addPlainInfoBlock(info: string): void {
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(info, 1, 0));
+		this.ui.requestRender();
+	}
+
+	private normalizeToolNames(rawNames: string[]): string[] {
+		return rawNames
+			.flatMap((name) => name.split(","))
+			.map((name) => name.trim())
+			.filter((name) => name.length > 0);
+	}
+
+	private getToolPermissionPresetTools(preset: ToolPermissionPreset): string[] {
+		const allNames = new Set(this.session.getAllTools().map((tool) => tool.name));
+		const keep = (names: string[]): string[] => names.filter((name) => allNames.has(name));
+		switch (preset) {
+			case "default":
+				return keep(["read", "bash", "edit", "write"]);
+			case "read-only":
+				return keep(["read", "grep", "find", "ls"]);
+			case "full":
+				return [...allNames].sort((a, b) => a.localeCompare(b));
+			case "no-tools":
+				return [];
+		}
+	}
+
+	private formatToolSource(source: string | undefined, scope: string | undefined): string {
+		if (!source && !scope) return "unknown";
+		if (!scope) return source ?? "unknown";
+		if (!source) return scope;
+		return `${source}/${scope}`;
+	}
+
+	private handlePermissionsCommand(text: string): void {
+		const args = text.slice("/permissions".length).trim().split(/\s+/).filter(Boolean);
+		const activeBefore = new Set(this.session.getActiveToolNames());
+		const allTools = this.session.getAllTools().sort((a, b) => a.name.localeCompare(b.name));
+		const allNames = new Set(allTools.map((tool) => tool.name));
+		let notice: string | undefined;
+
+		if (args.length > 0) {
+			const action = args[0]?.toLowerCase();
+			if (action === "default" || action === "read-only" || action === "full" || action === "no-tools") {
+				const preset = action as ToolPermissionPreset;
+				this.session.setActiveToolsByName(this.getToolPermissionPresetTools(preset));
+				notice = `Applied preset: ${preset}. Changes affect the next agent turn.`;
+			} else if (action === "allow" || action === "enable" || action === "add") {
+				const requested = this.normalizeToolNames(args.slice(1));
+				const unknown = requested.filter((name) => !allNames.has(name));
+				const next = new Set(activeBefore);
+				for (const name of requested) {
+					if (allNames.has(name)) next.add(name);
+				}
+				this.session.setActiveToolsByName([...next]);
+				notice = `Enabled: ${requested.filter((name) => allNames.has(name)).join(", ") || "none"}.${unknown.length ? ` Unknown: ${unknown.join(", ")}.` : ""}`;
+			} else if (action === "deny" || action === "disable" || action === "remove") {
+				const requested = this.normalizeToolNames(args.slice(1));
+				const next = new Set(activeBefore);
+				for (const name of requested) next.delete(name);
+				this.session.setActiveToolsByName([...next]);
+				notice = `Disabled: ${requested.join(", ") || "none"}. Changes affect the next agent turn.`;
+			} else {
+				notice = `Unknown permissions action: ${action}. Use allow, deny, default, read-only, full, or no-tools.`;
+			}
+		}
+
+		const active = new Set(this.session.getActiveToolNames());
+		let info = `${theme.bold("Neo Code Permissions")}`;
+		if (notice) {
+			info += `\n${theme.fg("muted", notice)}`;
+		}
+		info += `\n\n${theme.bold("Tool exposure")}`;
+		info += `\n${theme.fg("dim", "Scope:")} current session; active tools are sent to the model on the next turn`;
+		info += `\n${theme.fg("dim", "Presets:")} /permissions default · /permissions read-only · /permissions full · /permissions no-tools`;
+		info += `\n${theme.fg("dim", "Edit:")} /permissions allow <tool> · /permissions deny <tool>\n`;
+		for (const tool of allTools) {
+			const enabled = active.has(tool.name);
+			const marker = enabled ? theme.fg("success", "✓") : theme.fg("muted", "○");
+			const source = this.formatToolSource(tool.sourceInfo?.source, tool.sourceInfo?.scope);
+			info += `\n${marker} ${theme.bold(tool.name)} ${theme.fg("dim", `[${source}]`)}`;
+			if (tool.description) {
+				info += `\n  ${theme.fg("muted", tool.description)}`;
+			}
+		}
+
+		this.addPlainInfoBlock(info);
+	}
+
+	private runGit(
+		args: string[],
+		timeout = 5000,
+	): { ok: boolean; stdout: string; stderr: string; status: number | null } {
+		const result = spawnSync("git", args, {
+			cwd: this.sessionManager.getCwd(),
+			encoding: "utf8",
+			stdio: "pipe",
+			timeout,
+		});
+		return {
+			ok: result.status === 0,
+			stdout: result.stdout ?? "",
+			stderr: result.stderr ?? "",
+			status: result.status,
+		};
+	}
+
+	private truncateLargeText(text: string, maxChars: number): string {
+		if (text.length <= maxChars) return text;
+		return `${text.slice(0, maxChars)}\n\n${theme.fg("warning", `[truncated ${text.length - maxChars} characters]`)}`;
+	}
+
+	private handleDiffCommand(text: string): void {
+		const args = text.slice("/diff".length).trim().split(/\s+/).filter(Boolean);
+		const showStatOnly = args.includes("--stat") || args.includes("stat");
+		const gitCheck = this.runGit(["rev-parse", "--show-toplevel"]);
+		if (!gitCheck.ok) {
+			this.addPlainInfoBlock(
+				`${theme.bold("Workspace Diff")}\n\n${theme.fg("warning", "No Git repository detected.")} /diff uses Git so it can safely show staged and unstaged workspace changes.`,
+			);
+			return;
+		}
+
+		const status = this.runGit(["status", "--short"]);
+		const stagedStat = this.runGit(["diff", "--cached", "--stat", "--"]);
+		const unstagedStat = this.runGit(["diff", "--stat", "--"]);
+		const stagedDiff = showStatOnly ? { stdout: "" } : this.runGit(["diff", "--cached", "--no-ext-diff", "--"]);
+		const unstagedDiff = showStatOnly ? { stdout: "" } : this.runGit(["diff", "--no-ext-diff", "--"]);
+		const hasChanges = status.stdout.trim().length > 0;
+
+		let info = `${theme.bold("Workspace Diff")}\n\n`;
+		info += `${theme.fg("dim", "Repo:")} ${this.formatCompactDisplayPath(gitCheck.stdout.trim())}\n`;
+		if (!hasChanges) {
+			info += `${theme.fg("success", "No staged or unstaged changes.")}`;
+			this.addPlainInfoBlock(info);
+			return;
+		}
+
+		info += `${theme.bold("Status")}\n${status.stdout.trim()}\n`;
+		const statText = [
+			stagedStat.stdout.trim() && `Staged:\n${stagedStat.stdout.trim()}`,
+			unstagedStat.stdout.trim() && `Unstaged:\n${unstagedStat.stdout.trim()}`,
+		]
+			.filter(Boolean)
+			.join("\n\n");
+		if (statText) {
+			info += `\n${theme.bold("Stat")}\n${statText}\n`;
+		}
+		if (showStatOnly) {
+			this.addPlainInfoBlock(info.trimEnd());
+			return;
+		}
+
+		const renderedSections: string[] = [];
+		if (stagedDiff.stdout.trim()) {
+			renderedSections.push(`${theme.bold("Staged changes")}\n${renderDiff(stagedDiff.stdout.trim())}`);
+		}
+		if (unstagedDiff.stdout.trim()) {
+			renderedSections.push(`${theme.bold("Unstaged changes")}\n${renderDiff(unstagedDiff.stdout.trim())}`);
+		}
+		if (renderedSections.length === 0) {
+			info += `\n${theme.fg("warning", "Only untracked files are present; Git diff has no file content to show.")}`;
+		} else {
+			info += `\n${this.truncateLargeText(renderedSections.join("\n\n"), 60000)}`;
+		}
+		this.addPlainInfoBlock(info.trimEnd());
+	}
+
+	private formatAgentsFilePath(filePath: string): string {
+		const cwd = this.sessionManager.getCwd();
+		const relative = path.relative(cwd, filePath);
+		if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+			return relative || path.basename(filePath);
+		}
+		return this.formatCompactDisplayPath(filePath);
+	}
+
+	private createAgentsTemplate(): string {
+		return `# AGENTS.md\n\nProject instructions for Neo Code and other coding agents.\n\n## Project overview\n- TODO: Describe what this project does.\n\n## Development commands\n- TODO: Add build/test/lint commands.\n\n## Coding style\n- TODO: Add formatting, naming, and architecture rules.\n\n## Safety and permissions\n- Ask before destructive file operations.\n- Prefer small, reviewable diffs.\n\n## Notes for Neosantara\n- Keep responses practical and paste-ready.\n`;
+	}
+
+	private async handleAgentsCommand(text: string): Promise<void> {
+		const commandName = text.startsWith("/memory") ? "/memory" : "/agents";
+		const args = text.slice(commandName.length).trim().split(/\s+/).filter(Boolean);
+		const action = args[0]?.toLowerCase();
+		const targetPath = path.join(this.sessionManager.getCwd(), "AGENTS.md");
+
+		if (action === "init") {
+			if (fs.existsSync(targetPath)) {
+				this.addPlainInfoBlock(
+					`${theme.bold("Project Instructions")}\n\n${theme.fg("warning", "AGENTS.md already exists:")} ${targetPath}`,
+				);
+				return;
+			}
+			fs.writeFileSync(targetPath, this.createAgentsTemplate(), "utf8");
+			await this.session.reload();
+			this.addPlainInfoBlock(
+				`${theme.bold("Project Instructions")}\n\n${theme.fg("success", "Created:")} ${targetPath}\n${theme.fg("dim", "Reloaded resources so AGENTS.md is included in the next turn.")}`,
+			);
+			return;
+		}
+
+		const agentsFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
+		let info = `${theme.bold("Project Instructions")}`;
+		info += `\n${theme.fg("dim", "Source:")} AGENTS.md files from user agent dir and workspace ancestors`;
+		info += `\n${theme.fg("dim", "Commands:")} /agents init · /agents show · /memory\n`;
+		if (agentsFiles.length === 0) {
+			info += `\n${theme.fg("warning", "No AGENTS.md loaded.")} Run /agents init to create one in this workspace.`;
+			this.addPlainInfoBlock(info);
+			return;
+		}
+
+		for (const [index, file] of agentsFiles.entries()) {
+			info += `\n${theme.bold(`${index + 1}. ${this.formatAgentsFilePath(file.path)}`)}`;
+			if (action === "show") {
+				info += `\n${file.content.trim() || theme.fg("muted", "(empty)")}\n`;
+			} else {
+				const preview = file.content.trim().split("\n").slice(0, 6).join("\n");
+				info += `\n${theme.fg("muted", preview || "(empty)")}`;
+				if (file.content.trim().split("\n").length > 6) {
+					info += `\n${theme.fg("dim", "  … use /agents show for full content")}`;
+				}
+			}
+		}
+		this.addPlainInfoBlock(info.trimEnd());
+	}
+
+	private handleHooksCommand(): void {
+		const extensions = this.session.resourceLoader.getExtensions().extensions;
+		let info = `${theme.bold("Extension Hooks")}`;
+		info += `\n${theme.fg("dim", "Events:")} existing Neo extension event system; this command only reports registered handlers`;
+		info += `\n${theme.fg("dim", "Docs:")} extension hooks can listen to agent, tool, model, context, input, and session events\n`;
+		if (extensions.length === 0) {
+			info += `\n${theme.fg("muted", "No extensions loaded.")}`;
+			this.addPlainInfoBlock(info);
+			return;
+		}
+
+		for (const ext of extensions) {
+			const handlerSummary = [...ext.handlers.entries()]
+				.filter(([, handlers]) => handlers.length > 0)
+				.map(([event, handlers]) => `${event}×${handlers.length}`)
+				.sort((a, b) => a.localeCompare(b));
+			const commandNames = [...ext.commands.keys()].sort((a, b) => a.localeCompare(b));
+			const toolNames = [...ext.tools.keys()].sort((a, b) => a.localeCompare(b));
+			const shortcutNames = [...ext.shortcuts.keys()].sort((a, b) => a.localeCompare(b));
+			info += `\n${theme.bold(this.formatCompactDisplayPath(ext.path))}`;
+			info += `\n  ${theme.fg("dim", "Hooks:")} ${handlerSummary.length ? handlerSummary.join(", ") : "none"}`;
+			info += `\n  ${theme.fg("dim", "Commands:")} ${commandNames.length ? commandNames.map((name) => `/${name}`).join(", ") : "none"}`;
+			info += `\n  ${theme.fg("dim", "Tools:")} ${toolNames.length ? toolNames.join(", ") : "none"}`;
+			info += `\n  ${theme.fg("dim", "Shortcuts:")} ${shortcutNames.length ? shortcutNames.join(", ") : "none"}`;
+		}
+		this.addPlainInfoBlock(info);
+	}
+
+	private formatSkillsList(): string {
+		const skills = this.session.resourceLoader.getSkills().skills;
+		if (skills.length === 0) {
+			return `${theme.bold("Skills")}\n\n${theme.fg("muted", "No skills loaded.")}\n${theme.fg("dim", "Install with:")} /skills install <source>`;
+		}
+
+		let info = `${theme.bold("Skills")}`;
+		info += `\n${theme.fg("dim", "Install:")} /skills install <source> [-l|--local]`;
+		info += `\n${theme.fg("dim", "Invoke:")} /skill:<name>`;
+		info += `\n${theme.fg("dim", "Setting:")} Register skills as /skill:name commands controls invocation autocomplete only.\n`;
+		for (const skill of [...skills].sort((left, right) => left.name.localeCompare(right.name))) {
+			info += `\n${theme.bold(skill.name)} ${theme.fg("dim", `(/skill:${skill.name})`)}`;
+			info += `\n  ${theme.fg("muted", skill.description)}`;
+			info += `\n  ${theme.fg("dim", this.formatCompactDisplayPath(skill.filePath))}`;
+		}
+		return info;
+	}
+
+	private async handleSkillsCommand(text: string): Promise<void> {
+		const command = parseSkillsCommand(text);
+
+		if (command.action === "help") {
+			this.addPlainInfoBlock(
+				[
+					theme.bold("Skills"),
+					"",
+					`${theme.fg("dim", "Install:")} /skills install <source> [-l|--local]`,
+					`${theme.fg("dim", "List:")} /skills list`,
+					`${theme.fg("dim", "Invoke:")} /skill:<name>`,
+					"",
+					"Installing adds a package/resource to settings, reloads resources, then loaded skills can be invoked with /skill:<name>.",
+				].join("\n"),
+			);
+			return;
+		}
+
+		if (command.action === "list") {
+			this.addPlainInfoBlock(this.formatSkillsList());
+			return;
+		}
+
+		if (command.action === "error") {
+			this.showError(command.message);
+			return;
+		}
+		if (command.action !== "install") {
+			return;
+		}
+
+		const packageManager = new DefaultPackageManager({
+			cwd: this.sessionManager.getCwd(),
+			agentDir: getAgentDir(),
+			settingsManager: this.settingsManager,
+		});
+		packageManager.setProgressCallback((event) => {
+			if (event.type === "start") {
+				this.showStatus(event.message ?? `Installing ${command.source}...`);
+			}
+		});
+
+		try {
+			await packageManager.installAndPersist(command.source, { local: command.local });
+			await this.session.reload();
+			this.setupAutocompleteProvider();
+			const scope = command.local ? "project" : "user";
+			this.addPlainInfoBlock(
+				`${theme.bold("Skills")}\n\n${theme.fg("success", `Installed ${command.source} (${scope}).`)}\n${theme.fg("dim", "Resources reloaded. Use /skills list to see loaded skills.")}`,
+			);
+		} catch (error) {
+			this.showError(`Failed to install skill package: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
 	private handleChangelogCommand(): void {
-		const changelogPath = getChangelogPath();
-		const allEntries = parseChangelog(changelogPath);
+		const allEntries = getAllChangelogEntries();
 
 		const changelogMarkdown =
 			allEntries.length > 0

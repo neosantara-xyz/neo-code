@@ -1,13 +1,13 @@
-# NAI Code Monorepo
+# Neo Code Monorepo
 
-NAI Code (Neosantara Code) is a Neosantara-first coding agent CLI.
+Neo Code is a Neosantara-first coding agent CLI.
 
 ## Packages
 
 | Package | Purpose |
 | --- | --- |
 | `@neosantara/ai` | OpenAI-compatible transport for Neosantara using the `openai` SDK only. |
-| `@neosantara/code` | `nai` CLI/TUI coding agent. |
+| `@neosantara/code` | `neo` CLI/TUI coding agent. |
 | `@neosantara/agent-core` | Agent loop/runtime primitives. |
 | `@neosantara/tui` | Terminal UI primitives. |
 
@@ -17,7 +17,7 @@ NAI Code (Neosantara Code) is a Neosantara-first coding agent CLI.
 npm install --ignore-scripts
 npm run build
 npm link --workspace @neosantara/code
-nai login
+neo login
 ```
 
-Device login stores credentials in `~/.neosantara-code/agent/auth.json`.
+Device login stores credentials in `~/.neo-code/agent/auth.json`.

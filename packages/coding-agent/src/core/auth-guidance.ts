@@ -5,7 +5,7 @@ const UNKNOWN_PROVIDER = "unknown";
 
 export function getProviderLoginHelp(): string {
 	return [
-		"Run `nai login` to log in with Neosantara device authorization, or use NAI_API_KEY/NEOSANTARA_API_KEY. See:",
+		"Run `neo login` to log in with Neosantara device authorization, or use NEOSANTARA_API_KEY. See:",
 		`  ${join(getDocsPath(), "providers.md")}`,
 		`  ${join(getDocsPath(), "models.md")}`,
 	].join("\n");

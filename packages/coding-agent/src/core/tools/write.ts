@@ -9,6 +9,12 @@ import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/type
 import { withFileMutationQueue } from "./file-mutation-queue.js";
 import { resolveToCwd } from "./path-utils.js";
 import { invalidArgText, normalizeDisplayText, replaceTabs, shortenPath, str } from "./render-utils.js";
+import {
+	formatToolActivityLine,
+	formatToolActivityResultLine,
+	summarizeToolCall,
+	summarizeToolResult,
+} from "./tool-activity.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 
 const writeSchema = Type.Object({
@@ -139,6 +145,9 @@ function formatWriteCall(
 	const path = rawPath !== null ? shortenPath(rawPath) : null;
 	const invalidArg = invalidArgText(theme);
 	let text = `${theme.fg("toolTitle", theme.bold("write"))} ${path === null ? invalidArg : path ? theme.fg("accent", path) : theme.fg("toolOutput", "...")}`;
+	if (!options.expanded) {
+		return theme.fg("toolTitle", theme.bold(formatToolActivityLine("write", args)));
+	}
 
 	if (fileContent === null) {
 		text += `\n\n${theme.fg("error", "[invalid content arg - expected string]")}`;
@@ -162,9 +171,14 @@ function formatWriteCall(
 }
 
 function formatWriteResult(
+	args: { path?: string; file_path?: string; content?: string } | undefined,
 	result: { content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>; isError?: boolean },
+	options: ToolRenderResultOptions,
 	theme: typeof import("../../modes/interactive/theme/theme.js").theme,
 ): string | undefined {
+	if (!result.isError && !options.expanded) {
+		return `\n${theme.fg("muted", formatToolActivityResultLine("write", args, result))}`;
+	}
 	if (!result.isError) {
 		return undefined;
 	}
@@ -191,6 +205,23 @@ export function createWriteToolDefinition(
 		promptSnippet: "Create or overwrite files",
 		promptGuidelines: ["Use write only for new files or complete rewrites."],
 		parameters: writeSchema,
+		isSearchOrReadCommand(args) {
+			const activity = summarizeToolCall("write", args);
+			return {
+				isSearch: activity.kind === "search",
+				isRead: activity.kind === "read",
+				isList: activity.kind === "list",
+			};
+		},
+		getToolUseSummary(args) {
+			return summarizeToolCall("write", args).compact;
+		},
+		getActivityDescription(args) {
+			return summarizeToolCall("write", args).title;
+		},
+		renderToolResultSummary(result, args, context) {
+			return summarizeToolResult("write", args, result as any, context).label;
+		},
 		async execute(
 			_toolCallId,
 			{ path, content }: { path: string; content: string },
@@ -262,8 +293,8 @@ export function createWriteToolDefinition(
 			);
 			return component;
 		},
-		renderResult(result, _options, theme, context) {
-			const output = formatWriteResult({ ...result, isError: context.isError }, theme);
+		renderResult(result, options, theme, context) {
+			const output = formatWriteResult(context.args, { ...result, isError: context.isError }, options, theme);
 			if (!output) {
 				const component = (context.lastComponent as Container | undefined) ?? new Container();
 				component.clear();

@@ -8,7 +8,7 @@ const installScriptPath = resolve(__dirname, "../../../install.sh");
 const tempDirs: string[] = [];
 
 function createTempDir(): string {
-	const dir = mkdtempSync(join(tmpdir(), "nai-install-script-test-"));
+	const dir = mkdtempSync(join(tmpdir(), "neo-install-script-test-"));
 	tempDirs.push(dir);
 	return dir;
 }
@@ -41,10 +41,10 @@ describe("install.sh", () => {
 			cwd,
 		);
 
-		expect(output).toContain("https://code.neosantara.xyz/releases/v0.74.0/nai-linux-x64.tar.gz");
-		expect(output).toContain("NAI Code Installer");
+		expect(output).toContain("https://code.neosantara.xyz/releases/v0.74.0/neo-linux-x64.tar.gz");
+		expect(output).toContain("Neo Code Installer");
 		expect(output).toContain("[1/3] Downloading");
-		expect(output).toContain(`ln -s ${home}/.local/nai/nai ${home}/.local/bin/nai`);
+		expect(output).toContain(`ln -s ${home}/.local/neo/neo ${home}/.local/bin/neo`);
 	});
 
 	it("falls back to a source archive on Termux in release mode", () => {
@@ -62,7 +62,7 @@ describe("install.sh", () => {
 		);
 
 		expect(output).toContain("Termux detected; using prebuilt npm bundle");
-		expect(output).toContain("https://code.neosantara.xyz/releases/v0.74.0/nai-termux-npm-bundle.tar.gz");
+		expect(output).toContain("https://code.neosantara.xyz/releases/v0.74.0/neo-termux-npm-bundle.tar.gz");
 		expect(output).toContain("[1/3] Downloading");
 		expect(output).toContain("[2/3] Extracting installer bundle");
 		expect(output).toContain(
@@ -78,11 +78,11 @@ describe("install.sh", () => {
 			["--release", "--version", "v0.74.0", "--dry-run"],
 			{
 				HOME: home,
-				NAI_CODE_DOWNLOAD_BASE_URL: "",
+				NEO_CODE_DOWNLOAD_BASE_URL: "",
 			},
 			cwd,
 		);
 
-		expect(output).toContain("https://github.com/neosantara/nai-code/releases/download/v0.74.0/nai-linux-x64.tar.gz");
+		expect(output).toContain("https://github.com/neosantara/neo-code/releases/download/v0.74.0/neo-linux-x64.tar.gz");
 	});
 });

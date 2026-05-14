@@ -2,7 +2,7 @@
  * Credential storage for API keys and OAuth tokens.
  * Handles loading, saving, and refreshing credentials from auth.json.
  *
- * Uses file locking to prevent race conditions when multiple NAI Code instances
+ * Uses file locking to prevent race conditions when multiple Neo Code instances
  * try to refresh tokens simultaneously.
  */
 
@@ -395,7 +395,7 @@ export class AuthStorage {
 
 	/**
 	 * Refresh OAuth token with backend locking to prevent race conditions.
-	 * Multiple NAI Code instances may try to refresh simultaneously when tokens expire.
+	 * Multiple Neo Code instances may try to refresh simultaneously when tokens expire.
 	 */
 	private async refreshOAuthTokenWithLock(
 		providerId: OAuthProviderId,

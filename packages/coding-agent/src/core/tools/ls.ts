@@ -7,6 +7,12 @@ import { keyHint } from "../../modes/interactive/components/keybinding-hints.js"
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { resolveToCwd } from "./path-utils.js";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
+import {
+	formatToolActivityLine,
+	formatToolActivityResultLine,
+	summarizeToolCall,
+	summarizeToolResult,
+} from "./tool-activity.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 
@@ -73,6 +79,9 @@ function formatLsResult(
 	showImages: boolean,
 ): string {
 	const output = getTextOutput(result, showImages).trim();
+	if (!options.expanded) {
+		return `\n${theme.fg("muted", formatToolActivityResultLine("ls", undefined, result))}`;
+	}
 	let text = "";
 	if (output) {
 		const lines = output.split("\n");
@@ -107,6 +116,23 @@ export function createLsToolDefinition(
 		description: `List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to ${DEFAULT_LIMIT} entries or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
 		promptSnippet: "List directory contents",
 		parameters: lsSchema,
+		isSearchOrReadCommand(args) {
+			const activity = summarizeToolCall("ls", args);
+			return {
+				isSearch: activity.kind === "search",
+				isRead: activity.kind === "read",
+				isList: activity.kind === "list",
+			};
+		},
+		getToolUseSummary(args) {
+			return summarizeToolCall("ls", args).compact;
+		},
+		getActivityDescription(args) {
+			return summarizeToolCall("ls", args).title;
+		},
+		renderToolResultSummary(result, args, context) {
+			return summarizeToolResult("ls", args, result as any, context).label;
+		},
 		async execute(
 			_toolCallId,
 			{ path, limit }: { path?: string; limit?: number },
@@ -213,7 +239,11 @@ export function createLsToolDefinition(
 		},
 		renderCall(args, theme, context) {
 			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-			text.setText(formatLsCall(args, theme));
+			text.setText(
+				context.expanded
+					? formatLsCall(args, theme)
+					: theme.fg("toolTitle", theme.bold(formatToolActivityLine("ls", args))),
+			);
 			return text;
 		},
 		renderResult(result, options, theme, context) {

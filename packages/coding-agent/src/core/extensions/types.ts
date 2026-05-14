@@ -111,6 +111,18 @@ export interface WorkingIndicatorOptions {
 	frames?: string[];
 	/** Frame interval in milliseconds for animated indicators. */
 	intervalMs?: number;
+	/** Add a Claude Code-style glimmer sweep across the message text. */
+	shimmer?: boolean;
+	/** Direction of the glimmer sweep. Claude Code uses right-to-left while responding/tool-use, left-to-right while requesting/tool-input. */
+	shimmerDirection?: "left-to-right" | "right-to-left";
+	/** Frame interval in milliseconds for the glimmer sweep. */
+	shimmerIntervalMs?: number;
+	/** Number of terminal cells highlighted by the glimmer sweep. */
+	shimmerWidth?: number;
+	/** Color used for the glimmer segment. Falls back to the message color when omitted. */
+	shimmerColorFn?: (str: string) => string;
+	/** Claude Code-like message mode. Tool-input glimmers while arguments are being prepared; tool-use pulses the whole message while the tool is executing. */
+	mode?: "responding" | "requesting" | "tool-input" | "tool-use";
 }
 
 /** Wrap the current autocomplete provider with additional behavior. */
@@ -316,7 +328,7 @@ export interface ExtensionContext {
 	abort(): void;
 	/** Whether there are queued messages waiting */
 	hasPendingMessages(): boolean;
-	/** Gracefully shutdown NAI Code and exit. Available in all contexts. */
+	/** Gracefully shutdown Neo Code and exit. Available in all contexts. */
 	shutdown(): void;
 	/** Get current context usage for the active model. */
 	getContextUsage(): ContextUsage | undefined;
@@ -423,6 +435,12 @@ export interface ToolRenderContext<TState = any, TArgs = any> {
 /**
  * Tool definition for registerTool().
  */
+export interface ToolActivityClassifierResult {
+	isSearch: boolean;
+	isRead: boolean;
+	isList?: boolean;
+}
+
 export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = unknown, TState = any> {
 	/** Tool name (used in LLM tool calls) */
 	name: string;
@@ -438,6 +456,19 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	parameters: TParams;
 	/** Controls whether ToolExecutionComponent renders the standard colored shell or the tool renders its own framing. */
 	renderShell?: "default" | "self";
+
+	/** Optional Claude Code-style metadata for compact tool activity UIs. */
+	isSearchOrReadCommand?: (args: Static<TParams>) => ToolActivityClassifierResult;
+	/** One-line description of this tool call for collapsed transcripts. */
+	getToolUseSummary?: (args: Static<TParams>) => string | null;
+	/** Short in-progress activity label for loaders/status rows. */
+	getActivityDescription?: (args: Static<TParams>) => string | null;
+	/** One-line result summary for collapsed transcripts. */
+	renderToolResultSummary?: (
+		result: AgentToolResult<TDetails>,
+		args: Static<TParams>,
+		context: Pick<ToolRenderContext<TState, Static<TParams>>, "isError" | "isPartial" | "showImages">,
+	) => string | null;
 
 	/** Optional compatibility shim to prepare raw tool call arguments before schema validation. Must return an object conforming to TParams. */
 	prepareArguments?: (args: unknown) => Static<TParams>;
@@ -629,7 +660,7 @@ export interface BeforeAgentStartEvent {
 	images?: ImageContent[];
 	/** The fully assembled system prompt string. */
 	systemPrompt: string;
-	/** Structured options used to build the system prompt. Extensions can inspect this to understand what NAI Code loaded without re-discovering resources. */
+	/** Structured options used to build the system prompt. Extensions can inspect this to understand what Neo Code loaded without re-discovering resources. */
 	systemPromptOptions: BuildSystemPromptOptions;
 }
 
@@ -1252,7 +1283,7 @@ export interface ExtensionAPI {
 	 *
 	 * @example
 	 * // Register a new provider with custom models
-	 * naiApi.registerProvider("my-proxy", {
+	 * neoApi.registerProvider("my-proxy", {
 	 *   baseUrl: "https://proxy.example.com",
 	 *   apiKey: "PROXY_API_KEY",
 	 *   api: "openai-responses",
@@ -1271,13 +1302,13 @@ export interface ExtensionAPI {
 	 *
 	 * @example
 	 * // Override baseUrl for an existing provider
-	 * naiApi.registerProvider("neosantara", {
+	 * neoApi.registerProvider("neosantara", {
 	 *   baseUrl: "https://proxy.example.com"
 	 * });
 	 *
 	 * @example
 	 * // Register provider with OAuth support
-	 * naiApi.registerProvider("corporate-ai", {
+	 * neoApi.registerProvider("corporate-ai", {
 	 *   baseUrl: "https://ai.corp.com",
 	 *   api: "openai-responses",
 	 *   models: [...],
@@ -1302,7 +1333,7 @@ export interface ExtensionAPI {
 	 * the initial load phase.
 	 *
 	 * @example
-	 * naiApi.unregisterProvider("my-proxy");
+	 * neoApi.unregisterProvider("my-proxy");
 	 */
 	unregisterProvider(name: string): void;
 
@@ -1314,7 +1345,7 @@ export interface ExtensionAPI {
 // Provider Registration Types
 // ============================================================================
 
-/** Configuration for registering a provider via naiApi.registerProvider(). */
+/** Configuration for registering a provider via neoApi.registerProvider(). */
 export interface ProviderConfig {
 	/** Display name for the provider in UI. */
 	name?: string;
@@ -1359,7 +1390,7 @@ export interface ProviderModelConfig {
 	baseUrl?: string;
 	/** Whether the model supports extended thinking. */
 	reasoning: boolean;
-	/** Maps NAI Code thinking levels to provider/model-specific values; null marks a level unsupported. */
+	/** Maps Neo Code thinking levels to provider/model-specific values; null marks a level unsupported. */
 	thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
 	/** Supported input types. */
 	input: ("text" | "image")[];
@@ -1376,7 +1407,7 @@ export interface ProviderModelConfig {
 }
 
 /** Extension factory function type. Supports both sync and async initialization. */
-export type ExtensionFactory = (naiApi: ExtensionAPI) => void | Promise<void>;
+export type ExtensionFactory = (neoApi: ExtensionAPI) => void | Promise<void>;
 
 // ============================================================================
 // Loaded Extension Types
@@ -1466,7 +1497,7 @@ export interface ExtensionRuntimeState {
 }
 
 /**
- * Action implementations for NAI Code extension API methods.
+ * Action implementations for Neo Code extension API methods.
  * Provided to runner.initialize(), copied into the shared runtime.
  */
 export interface ExtensionActions {

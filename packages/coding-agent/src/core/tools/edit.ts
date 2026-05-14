@@ -20,6 +20,12 @@ import {
 import { withFileMutationQueue } from "./file-mutation-queue.js";
 import { resolveToCwd } from "./path-utils.js";
 import { invalidArgText, shortenPath, str } from "./render-utils.js";
+import {
+	formatToolActivityLine,
+	formatToolActivityResultLine,
+	summarizeToolCall,
+	summarizeToolResult,
+} from "./tool-activity.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 
 type EditPreview = EditDiffResult | EditDiffError;
@@ -305,6 +311,23 @@ export function createEditToolDefinition(
 		],
 		parameters: editSchema,
 		renderShell: "self",
+		isSearchOrReadCommand(args) {
+			const activity = summarizeToolCall("edit", args);
+			return {
+				isSearch: activity.kind === "search",
+				isRead: activity.kind === "read",
+				isList: activity.kind === "list",
+			};
+		},
+		getToolUseSummary(args) {
+			return summarizeToolCall("edit", args).compact;
+		},
+		getActivityDescription(args) {
+			return summarizeToolCall("edit", args).title;
+		},
+		renderToolResultSummary(result, args, context) {
+			return summarizeToolResult("edit", args, result as any, context).label;
+		},
 		prepareArguments: prepareEditArguments,
 		async execute(_toolCallId, input: EditToolInput, signal?: AbortSignal, _onUpdate?, _ctx?) {
 			const { path, edits } = validateEditInput(input);
@@ -418,6 +441,9 @@ export function createEditToolDefinition(
 			);
 		},
 		renderCall(args, theme, context) {
+			if (!context.expanded) {
+				return new Text(theme.fg("toolTitle", theme.bold(formatToolActivityLine("edit", args))), 0, 0);
+			}
 			const component = getEditCallRenderComponent(context.state, context.lastComponent);
 			const previewInput = getRenderablePreviewInput(args as RenderableEditArgs | undefined);
 			const argsKey = previewInput
@@ -444,7 +470,12 @@ export function createEditToolDefinition(
 
 			return buildEditCallComponent(component, args, theme);
 		},
-		renderResult(result, _options, theme, context) {
+		renderResult(result, options, theme, context) {
+			if (!options.expanded && !context.isError) {
+				const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+				text.setText(`\n${theme.fg("muted", formatToolActivityResultLine("edit", context.args, result))}`);
+				return text;
+			}
 			const callComponent = context.state.callComponent;
 			const previewInput = getRenderablePreviewInput(context.args as RenderableEditArgs | undefined);
 			const argsKey = previewInput

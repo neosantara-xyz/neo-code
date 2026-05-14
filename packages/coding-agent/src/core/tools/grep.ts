@@ -10,6 +10,12 @@ import { ensureTool } from "../../utils/tools-manager.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { resolveToCwd } from "./path-utils.js";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
+import {
+	formatToolActivityLine,
+	formatToolActivityResultLine,
+	summarizeToolCall,
+	summarizeToolResult,
+} from "./tool-activity.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import {
 	DEFAULT_MAX_BYTES,
@@ -94,6 +100,9 @@ function formatGrepResult(
 	showImages: boolean,
 ): string {
 	const output = getTextOutput(result, showImages).trim();
+	if (!options.expanded) {
+		return `\n${theme.fg("muted", formatToolActivityResultLine("grep", undefined, result))}`;
+	}
 	let text = "";
 	if (output) {
 		const lines = output.split("\n");
@@ -130,6 +139,23 @@ export function createGrepToolDefinition(
 		description: `Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to ${DEFAULT_LIMIT} matches or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Long lines are truncated to ${GREP_MAX_LINE_LENGTH} chars.`,
 		promptSnippet: "Search file contents for patterns (respects .gitignore)",
 		parameters: grepSchema,
+		isSearchOrReadCommand(args) {
+			const activity = summarizeToolCall("grep", args);
+			return {
+				isSearch: activity.kind === "search",
+				isRead: activity.kind === "read",
+				isList: activity.kind === "list",
+			};
+		},
+		getToolUseSummary(args) {
+			return summarizeToolCall("grep", args).compact;
+		},
+		getActivityDescription(args) {
+			return summarizeToolCall("grep", args).title;
+		},
+		renderToolResultSummary(result, args, context) {
+			return summarizeToolResult("grep", args, result as any, context).label;
+		},
 		async execute(
 			_toolCallId,
 			{
@@ -368,7 +394,11 @@ export function createGrepToolDefinition(
 		},
 		renderCall(args, theme, context) {
 			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-			text.setText(formatGrepCall(args, theme));
+			text.setText(
+				context.expanded
+					? formatGrepCall(args, theme)
+					: theme.fg("toolTitle", theme.bold(formatToolActivityLine("grep", args))),
+			);
 			return text;
 		},
 		renderResult(result, options, theme, context) {

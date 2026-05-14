@@ -1,6 +1,6 @@
 {
 	"name": "@neosantara/ai",
-	"version": "0.74.0",
+	"version": "0.74.5",
 	"description": "Neosantara OpenAI-compatible AI provider package",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -56,7 +56,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/neosantara/nai-code.git",
+		"url": "git+https://github.com/neosantara/neo-code.git",
 		"directory": "packages/ai"
 	},
 	"engines": {

@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Install NAI Code from this source tree, GitHub release assets, or a release
+# Install Neo Code from this source tree, GitHub release assets, or a release
 # source archive for environments like Termux that need a local Node.js build.
 #
 # Termux note: GitHub release binaries are built for normal Linux glibc/macos/windows.
@@ -14,35 +14,35 @@
 
 set -eu
 
-DEFAULT_REPO="neosantara/nai-code"
+DEFAULT_REPO="neosantara/neo-code"
 DEFAULT_DOWNLOAD_BASE_URL="https://code.neosantara.xyz"
-REPO="${NAI_CODE_REPO:-$DEFAULT_REPO}"
-if [ "${NAI_CODE_DOWNLOAD_BASE_URL+x}" = "x" ]; then
-  DOWNLOAD_BASE_URL="${NAI_CODE_DOWNLOAD_BASE_URL}"
+REPO="${NEO_CODE_REPO:-$DEFAULT_REPO}"
+if [ "${NEO_CODE_DOWNLOAD_BASE_URL+x}" = "x" ]; then
+  DOWNLOAD_BASE_URL="${NEO_CODE_DOWNLOAD_BASE_URL}"
 else
   DOWNLOAD_BASE_URL="$DEFAULT_DOWNLOAD_BASE_URL"
 fi
-VERSION="${NAI_CODE_VERSION:-latest}"
-MODE="${NAI_CODE_INSTALL_MODE:-auto}"
+VERSION="${NEO_CODE_VERSION:-latest}"
+MODE="${NEO_CODE_INSTALL_MODE:-auto}"
 TERMUX_PREFIX="${PREFIX:-}"
-PREFIX="${NAI_CODE_INSTALL_PREFIX:-$HOME/.local}"
-BIN_DIR="${NAI_CODE_INSTALL_BIN_DIR:-}"
+PREFIX="${NEO_CODE_INSTALL_PREFIX:-$HOME/.local}"
+BIN_DIR="${NEO_CODE_INSTALL_BIN_DIR:-}"
 DRY_RUN=0
 NO_BUILD=0
 FORCE=0
 
 print_header() {
   printf '\n%s\n' '========================================'
-  printf '%s\n' '  NAI Code Installer'
+  printf '%s\n' '  Neo Code Installer'
   printf '%s\n' '========================================'
 }
 
 bundle_install_url() {
   release_ref="$1"
   if [ -n "$DOWNLOAD_BASE_URL" ]; then
-    printf '%s/releases/%s/nai-termux-npm-bundle.tar.gz' "$DOWNLOAD_BASE_URL" "$release_ref"
+    printf '%s/releases/%s/neo-termux-npm-bundle.tar.gz' "$DOWNLOAD_BASE_URL" "$release_ref"
   else
-    printf 'https://github.com/%s/releases/download/%s/nai-termux-npm-bundle.tar.gz' "$REPO" "$release_ref"
+    printf 'https://github.com/%s/releases/download/%s/neo-termux-npm-bundle.tar.gz' "$REPO" "$release_ref"
   fi
 }
 
@@ -51,7 +51,7 @@ err() { printf 'error: %s\n' "$*" >&2; }
 
 usage() {
   cat <<USAGE
-Install NAI Code
+Install Neo Code
 
 Usage:
   ./install.sh [options]
@@ -63,9 +63,9 @@ Options:
   --repo owner/name     GitHub repo for GitHub fallback mode. Default: $DEFAULT_REPO
   --version vX.Y.Z      Release tag for release mode. Default: latest
   --prefix DIR          Install prefix for release mode. Default: ~/.local
-  --bin-dir DIR         Directory for the nai command. Default: Termux \$PREFIX/bin or ~/.local/bin
+  --bin-dir DIR         Directory for the neo command. Default: Termux \$PREFIX/bin or ~/.local/bin
   --no-build            In source mode, skip npm run build and only link existing dist.
-  --force               Overwrite an existing nai command/symlink.
+  --force               Overwrite an existing neo command/symlink.
   --dry-run             Print commands without running them.
   -h, --help            Show this help.
 
@@ -74,7 +74,7 @@ Recommended:
 
 Termux recommended:
   curl -fsSL https://code.neosantara.xyz/install.sh | sh
-  nai login
+  neo login
 USAGE
 }
 
@@ -126,7 +126,7 @@ prepare_npm_cache() {
     return
   fi
 
-  cache_root="${TMPDIR:-/tmp}/nai-code-npm-cache"
+  cache_root="${TMPDIR:-/tmp}/neo-code-npm-cache"
   run mkdir -p "$cache_root"
   export NPM_CONFIG_CACHE="$cache_root"
 }
@@ -170,10 +170,10 @@ install_source_tree() {
   fi
 
   bin="$(resolve_bin_dir)"
-  log "    Installing nai command to $bin"
+  log "    Installing neo command to $bin"
   run mkdir -p "$bin"
 
-  target="$bin/nai"
+  target="$bin/neo"
   if [ -e "$target" ] || [ -L "$target" ]; then
     if [ "$FORCE" = "1" ]; then
       run rm -f "$target"
@@ -187,11 +187,11 @@ install_source_tree() {
   run ln -s "$cli_path" "$target"
 
   log ""
-  log "    NAI Code installed."
-  log "    Run: nai login"
-  if ! command -v nai >/dev/null 2>&1 && [ "$DRY_RUN" != "1" ]; then
+  log "    Neo Code installed."
+  log "    Run: neo login"
+  if ! command -v neo >/dev/null 2>&1 && [ "$DRY_RUN" != "1" ]; then
     log ""
-    log "Add this to your shell profile if nai is not found:"
+    log "Add this to your shell profile if neo is not found:"
     log "  export PATH=\"$bin:\$PATH\""
   fi
 }
@@ -223,13 +223,13 @@ platform_asset() {
     *) err "unsupported architecture for release mode: $arch"; exit 1 ;;
   esac
 
-  printf 'nai-%s-%s.tar.gz' "$os_name" "$arch_name"
+  printf 'neo-%s-%s.tar.gz' "$os_name" "$arch_name"
 }
 
 source_archive_url() {
   tag="$1"
   if [ -n "$DOWNLOAD_BASE_URL" ]; then
-    printf '%s/releases/%s/nai-code-source.tar.gz' "$DOWNLOAD_BASE_URL" "$tag"
+    printf '%s/releases/%s/neo-code-source.tar.gz' "$DOWNLOAD_BASE_URL" "$tag"
   else
     printf 'https://github.com/%s/archive/refs/tags/%s.tar.gz' "$REPO" "$tag"
   fi
@@ -295,7 +295,7 @@ install_release_source_archive() {
   fi
 
   url="$(source_archive_url "$release_ref")"
-  tmp="${TMPDIR:-/tmp}/nai-code-install-$$"
+  tmp="${TMPDIR:-/tmp}/neo-code-install-$$"
   src_dir="$tmp/src"
 
   log "[1/4] Downloading $url"
@@ -327,24 +327,24 @@ install_termux_bundle() {
   fi
 
   url="$(bundle_install_url "$release_ref")"
-  tmp="${TMPDIR:-/tmp}/nai-code-install-$$"
+  tmp="${TMPDIR:-/tmp}/neo-code-install-$$"
   bundle_dir="$tmp/bundle"
 
   log "[1/3] Downloading $url"
   run mkdir -p "$bundle_dir"
   run mkdir -p "$TERMUX_PREFIX/bin"
-  download "$url" "$tmp/nai-termux-npm-bundle.tar.gz"
+  download "$url" "$tmp/neo-termux-npm-bundle.tar.gz"
 
   log "[2/3] Extracting installer bundle"
-  run tar -xzf "$tmp/nai-termux-npm-bundle.tar.gz" -C "$bundle_dir"
+  run tar -xzf "$tmp/neo-termux-npm-bundle.tar.gz" -C "$bundle_dir"
 
   prepare_npm_cache
-  log "[3/3] Installing NAI Code into $TERMUX_PREFIX"
+  log "[3/3] Installing Neo Code into $TERMUX_PREFIX"
   run sh -c "cd \"$bundle_dir\" && npm_config_prefix=\"$TERMUX_PREFIX\" npm install -g --no-fund --no-audit ./neosantara-ai.tgz ./neosantara-agent-core.tgz ./neosantara-tui.tgz ./neosantara-code.tgz"
 
   log ""
-  log "    NAI Code installed for Termux."
-  log "    Run: nai login"
+  log "    Neo Code installed for Termux."
+  log "    Run: neo login"
   log "    Cleaning up temporary installer bundle"
   run rm -rf "$tmp"
 }
@@ -368,7 +368,7 @@ install_release() {
   fi
 
   url="$(release_asset_url "$release_ref" "$asset")"
-  tmp="${TMPDIR:-/tmp}/nai-code-install-$$"
+  tmp="${TMPDIR:-/tmp}/neo-code-install-$$"
   prefix="$PREFIX"
   bin="$(resolve_bin_dir)"
 
@@ -383,13 +383,13 @@ install_release() {
     return
   fi
 
-  log "[2/3] Installing to $prefix/nai"
-  run rm -rf "$prefix/nai"
+  log "[2/3] Installing to $prefix/neo"
+  run rm -rf "$prefix/neo"
   run mkdir -p "$prefix"
   run tar -xzf "$tmp/$asset" -C "$prefix"
 
   run mkdir -p "$bin"
-  target="$bin/nai"
+  target="$bin/neo"
   if [ -e "$target" ] || [ -L "$target" ]; then
     if [ "$FORCE" = "1" ]; then
       run rm -f "$target"
@@ -398,12 +398,12 @@ install_release() {
       exit 1
     fi
   fi
-  run ln -s "$prefix/nai/nai" "$target"
+  run ln -s "$prefix/neo/neo" "$target"
   run rm -rf "$tmp"
 
   log ""
-  log "[3/3] NAI Code installed from $release_ref."
-  log "    Run: nai login"
+  log "[3/3] Neo Code installed from $release_ref."
+  log "    Run: neo login"
 }
 
 while [ "$#" -gt 0 ]; do

@@ -423,10 +423,10 @@ export interface MainOptions {
 
 export async function main(args: string[], options?: MainOptions) {
 	resetTimings();
-	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.NAI_CODE_OFFLINE);
+	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.NEO_CODE_OFFLINE);
 	if (offlineMode) {
-		process.env.NAI_CODE_OFFLINE = "1";
-		process.env.NAI_CODE_SKIP_VERSION_CHECK = "1";
+		process.env.NEO_CODE_OFFLINE = "1";
+		process.env.NEO_CODE_SKIP_VERSION_CHECK = "1";
 	}
 
 	if (args[0] === "login") {
@@ -670,9 +670,9 @@ export async function main(args: string[], options?: MainOptions) {
 		process.exit(1);
 	}
 
-	const startupBenchmark = isTruthyEnvFlag(process.env.NAI_CODE_STARTUP_BENCHMARK);
+	const startupBenchmark = isTruthyEnvFlag(process.env.NEO_CODE_STARTUP_BENCHMARK);
 	if (startupBenchmark && appMode !== "interactive") {
-		console.error(chalk.red("Error: NAI_CODE_STARTUP_BENCHMARK only supports interactive mode"));
+		console.error(chalk.red("Error: NEO_CODE_STARTUP_BENCHMARK only supports interactive mode"));
 		process.exit(1);
 	}
 

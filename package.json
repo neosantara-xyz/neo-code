@@ -1,18 +1,20 @@
 {
-	"name": "neosantara-code-monorepo",
+	"name": "neo-code-monorepo",
 	"private": true,
 	"type": "module",
 	"workspaces": [
 		"packages/*"
 	],
 	"scripts": {
-		"clean": "npm run clean --workspaces",
+		"clean": "npm run clean --workspaces && npm run clean:termux-tarballs",
+		"clean:termux-tarballs": "shx rm -f neosantara-ai-*.tgz neosantara-agent-core-*.tgz neosantara-code-*.tgz neosantara-tui-*.tgz",
 		"build": "cd packages/tui && npm run build && cd ../ai && npm run build && cd ../agent && npm run build && cd ../coding-agent && npm run build",
 		"dev": "concurrently --names \"ai,agent,coding-agent,tui\" --prefix-colors \"cyan,yellow,red,magenta\" \"cd packages/ai && npm run dev\" \"cd packages/agent && npm run dev\" \"cd packages/coding-agent && npm run dev\" \"cd packages/tui && npm run dev\"",
 		"dev:tsc": "cd packages/ai && npm run dev:tsc",
 		"check": "biome check --write --error-on-warnings . && tsgo --noEmit",
 		"check:browser-smoke": "node scripts/check-browser-smoke.mjs",
 		"build:termux-bundle": "bash scripts/build-termux-bundle.sh",
+		"build:install-assets": "npm run build && npm run build:termux-bundle && npm --prefix .. run sync:neo-code-install",
 		"profile:tui": "node scripts/profile-coding-agent-node.mjs --mode tui",
 		"profile:rpc": "node scripts/profile-coding-agent-node.mjs --mode rpc",
 		"test": "npm --prefix packages/tui test && npm --prefix packages/agent test && npm --prefix packages/ai test && npm --prefix packages/coding-agent test",
@@ -20,6 +22,7 @@
 		"version:minor": "npm version minor -ws --no-git-tag-version && node scripts/sync-versions.js && shx rm -rf node_modules packages/*/node_modules package-lock.json && npm install",
 		"version:major": "npm version major -ws --no-git-tag-version && node scripts/sync-versions.js && shx rm -rf node_modules packages/*/node_modules package-lock.json && npm install",
 		"version:set": "npm version -ws",
+		"bump": "node scripts/bump.mjs",
 		"prepublishOnly": "npm run clean && npm run build && npm run check",
 		"publish": "npm run prepublishOnly && npm publish -ws --access public",
 		"publish:dry": "npm run prepublishOnly && npm publish -ws --access public --dry-run",

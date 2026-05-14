@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Build NAI Code binaries for all platforms locally.
+# Build Neo Code binaries for all platforms locally.
 # Mirrors .github/workflows/build-binaries.yml
 #
 # Usage:
@@ -12,11 +12,11 @@
 #
 # Output:
 #   packages/coding-agent/binaries/
-#     nai-darwin-arm64.tar.gz
-#     nai-darwin-x64.tar.gz
-#     nai-linux-x64.tar.gz
-#     nai-linux-arm64.tar.gz
-#     nai-windows-x64.zip
+#     neo-darwin-arm64.tar.gz
+#     neo-darwin-x64.tar.gz
+#     neo-linux-x64.tar.gz
+#     neo-linux-arm64.tar.gz
+#     neo-windows-x64.zip
 
 set -euo pipefail
 
@@ -102,9 +102,9 @@ for platform in "${PLATFORMS[@]}"; do
     # call site has a try/catch fallback. For Windows builds, we copy the
     # appropriate .node file alongside the binary below.
     if [[ "$platform" == "windows-x64" ]]; then
-        bun build --compile --external koffi --target=bun-$platform ./dist/bun/cli.js --outfile binaries/$platform/nai.exe
+        bun build --compile --external koffi --target=bun-$platform ./dist/bun/cli.js --outfile binaries/$platform/neo.exe
     else
-        bun build --compile --external koffi --target=bun-$platform ./dist/bun/cli.js --outfile binaries/$platform/nai
+        bun build --compile --external koffi --target=bun-$platform ./dist/bun/cli.js --outfile binaries/$platform/neo
     fi
 done
 
@@ -139,12 +139,12 @@ cd binaries
 for platform in "${PLATFORMS[@]}"; do
     if [[ "$platform" == "windows-x64" ]]; then
         # Windows (zip)
-        echo "Creating nai-$platform.zip..."
-        (cd $platform && zip -r ../nai-$platform.zip .)
+        echo "Creating neo-$platform.zip..."
+        (cd $platform && zip -r ../neo-$platform.zip .)
     else
         # Unix platforms (tar.gz) - use wrapper directory for mise compatibility
-        echo "Creating nai-$platform.tar.gz..."
-        mv $platform nai && tar -czf nai-$platform.tar.gz nai && mv nai $platform
+        echo "Creating neo-$platform.tar.gz..."
+        mv $platform neo && tar -czf neo-$platform.tar.gz neo && mv neo $platform
     fi
 done
 
@@ -153,9 +153,9 @@ echo "==> Extracting archives for testing..."
 for platform in "${PLATFORMS[@]}"; do
     rm -rf $platform
     if [[ "$platform" == "windows-x64" ]]; then
-        mkdir -p $platform && (cd $platform && unzip -q ../nai-$platform.zip)
+        mkdir -p $platform && (cd $platform && unzip -q ../neo-$platform.zip)
     else
-        tar -xzf nai-$platform.tar.gz && mv nai $platform
+        tar -xzf neo-$platform.tar.gz && mv neo $platform
     fi
 done
 
@@ -166,5 +166,5 @@ ls -lh *.tar.gz *.zip 2>/dev/null || true
 echo ""
 echo "Extracted directories for testing:"
 for platform in "${PLATFORMS[@]}"; do
-    echo "  binaries/$platform/nai"
+    echo "  binaries/$platform/neo"
 done

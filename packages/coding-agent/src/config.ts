@@ -269,7 +269,7 @@ export function getSelfUpdateUnavailableInstruction(
 ): string {
 	const method = detectInstallMethod();
 	if (method === "bun-binary") {
-		return `Download from: https://github.com/neosantara/nai-code/releases/latest`;
+		return `Download from: https://github.com/neosantara/neo-code/releases/latest`;
 	}
 	const command = getSelfUpdateCommandForMethod(method, packageName, updatePackageName, npmCommand);
 	if (command) {
@@ -302,7 +302,7 @@ export function getUpdateInstruction(packageName: string): string {
  */
 export function getPackageDir(): string {
 	// Allow override via environment variable (useful for Nix/Guix where store paths tokenize poorly)
-	const envDir = process.env.NAI_CODE_PACKAGE_DIR;
+	const envDir = process.env.NEO_CODE_PACKAGE_DIR;
 	if (envDir) {
 		if (envDir === "~") return homedir();
 		if (envDir.startsWith("~/")) return homedir() + envDir.slice(1);
@@ -381,6 +381,11 @@ export function getChangelogPath(): string {
 	return resolve(join(getPackageDir(), "CHANGELOG.md"));
 }
 
+/** Get path to releases/NOTES.md */
+export function getReleaseNotesPath(): string {
+	return resolve(join(getPackageDir(), "..", "..", "releases", "NOTES.md"));
+}
+
 /**
  * Get path to built-in interactive assets directory.
  * - For Bun binary: assets/ next to executable
@@ -418,14 +423,16 @@ const pkg = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8")) as PackageJs
 
 const neosantaraConfigName: string | undefined = pkg.neosantaraConfig?.name;
 export const PACKAGE_NAME: string = pkg.name || "@neosantara/code";
-export const APP_NAME: string = neosantaraConfigName || "nai";
-export const APP_TITLE: string = "NAI Code";
-export const CONFIG_DIR_NAME: string = pkg.neosantaraConfig?.configDir || ".neosantara-code";
+export const APP_NAME: string = neosantaraConfigName || "neo";
+export const APP_TITLE: string = "Neo Code";
+export const CONFIG_DIR_NAME: string = pkg.neosantaraConfig?.configDir || ".neo-code";
 export const VERSION: string = pkg.version || "0.0.0";
 
-// e.g., NAI_CODING_AGENT_DIR
-export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
-export const ENV_SESSION_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_SESSION_DIR`;
+// Stable Neo Code environment names. Do not derive these from APP_NAME because
+// APP_NAME is the short command (`neo`), while the documented public prefix is
+// `NEO_CODE_*`. This repo is not published yet, so there is no NAI legacy alias.
+export const ENV_AGENT_DIR = "NEO_CODE_CODING_AGENT_DIR";
+export const ENV_SESSION_DIR = "NEO_CODE_CODING_AGENT_SESSION_DIR";
 
 export function expandTildePath(path: string): string {
 	if (path === "~") return homedir();
@@ -437,15 +444,15 @@ const DEFAULT_SHARE_VIEWER_URL = "https://app.neosantara.xyz/session/";
 
 /** Get the share viewer URL for a gist ID */
 export function getShareViewerUrl(gistId: string): string {
-	const baseUrl = process.env.NAI_CODE_SHARE_VIEWER_URL || DEFAULT_SHARE_VIEWER_URL;
+	const baseUrl = process.env.NEO_CODE_SHARE_VIEWER_URL || DEFAULT_SHARE_VIEWER_URL;
 	return `${baseUrl}#${gistId}`;
 }
 
 // =============================================================================
-// User Config Paths (~/.neosantara-code/agent/*)
+// User Config Paths (~/.neo-code/agent/*)
 // =============================================================================
 
-/** Get the agent config directory (e.g., ~/.neosantara-code/agent/) */
+/** Get the agent config directory (e.g., ~/.neo-code/agent/) */
 export function getAgentDir(): string {
 	const envDir = process.env[ENV_AGENT_DIR];
 	if (envDir) {

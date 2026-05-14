@@ -14,6 +14,12 @@ import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { resolveReadPath } from "./path-utils.js";
 import { getTextOutput, invalidArgText, replaceTabs, shortenPath, str } from "./render-utils.js";
+import {
+	formatToolActivityLine,
+	formatToolActivityResultLine,
+	summarizeToolCall,
+	summarizeToolResult,
+} from "./tool-activity.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 
@@ -173,8 +179,11 @@ function formatReadResult(
 	cwd: string,
 	isError: boolean,
 ): string {
-	if (!options.expanded && !isError && getCompactReadClassification(args, cwd)) {
-		return "";
+	if (!options.expanded && !isError) {
+		if (getCompactReadClassification(args, cwd)) {
+			return "";
+		}
+		return `\n${theme.fg("muted", formatToolActivityResultLine("read", args, result))}`;
 	}
 
 	const rawPath = str(args?.file_path ?? args?.path);
@@ -216,6 +225,23 @@ export function createReadToolDefinition(
 		promptSnippet: "Read file contents",
 		promptGuidelines: ["Use read to examine files instead of cat or sed."],
 		parameters: readSchema,
+		isSearchOrReadCommand(args) {
+			const activity = summarizeToolCall("read", args);
+			return {
+				isSearch: activity.kind === "search",
+				isRead: activity.kind === "read",
+				isList: activity.kind === "list",
+			};
+		},
+		getToolUseSummary(args) {
+			return summarizeToolCall("read", args).compact;
+		},
+		getActivityDescription(args) {
+			return summarizeToolCall("read", args).title;
+		},
+		renderToolResultSummary(result, args, context) {
+			return summarizeToolResult("read", args, result as any, context).label;
+		},
 		async execute(
 			_toolCallId,
 			{ path, offset, limit }: { path: string; offset?: number; limit?: number },
@@ -344,7 +370,11 @@ export function createReadToolDefinition(
 			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
 			const classification = !context.expanded ? getCompactReadClassification(args, context.cwd) : undefined;
 			text.setText(
-				classification ? formatCompactReadCall(classification, args, theme) : formatReadCall(args, theme),
+				classification
+					? formatCompactReadCall(classification, args, theme)
+					: context.expanded
+						? formatReadCall(args, theme)
+						: theme.fg("toolTitle", theme.bold(formatToolActivityLine("read", args))),
 			);
 			return text;
 		},

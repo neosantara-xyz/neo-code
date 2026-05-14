@@ -208,7 +208,7 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} install <source> [-l]     Install extension source and add to settings
   ${APP_NAME} remove <source> [-l]      Remove extension source from settings
   ${APP_NAME} uninstall <source> [-l]   Alias for remove
-  ${APP_NAME} update [source|self|nai]   Update NAI Code and installed extensions
+  ${APP_NAME} update [source|self|neo]   Update Neo Code and installed extensions
   ${APP_NAME} list                      List installed extensions from settings
   ${APP_NAME} config                    Open TUI to enable/disable package resources
   ${APP_NAME} login                     Log in to Neosantara with device authorization
@@ -217,7 +217,7 @@ ${chalk.bold("Commands:")}
 ${chalk.bold("Options:")}
   --provider <name>              Provider name (default: neosantara)
   --model <pattern>              Model pattern or ID (supports "provider/id" and optional ":<thinking>")
-  --api-key <key>                API key/token (defaults to nai login, auth.json, or env vars)
+  --api-key <key>                API key/token (defaults to neo login, auth.json, or env vars)
   --system-prompt <text>         System prompt (default: coding assistant prompt)
   --append-system-prompt <text>  Append text or file contents to the system prompt (can be used multiple times)
   --mode <mode>                  Output mode: text (default), json, or rpc
@@ -247,7 +247,7 @@ ${chalk.bold("Options:")}
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
   --verbose                      Force verbose startup (overrides quietStartup setting)
-  --offline                      Disable startup network operations (same as NAI_CODE_OFFLINE=1)
+  --offline                      Disable startup network operations (same as NEO_CODE_OFFLINE=1)
   --help, -h                     Show this help
   --version, -v                  Show version number
 
@@ -304,16 +304,15 @@ ${chalk.bold("Examples:")}
   ${APP_NAME} --export session.jsonl output.html
 
 ${chalk.bold("Environment Variables:")}
-  NEOSANTARA_API_BASE_URL         - Override auth API base URL for nai login
-  NAI_CODE_NEOSANTARA_API_BASE_URL      - Override auth API base URL for nai login
-  NAI_API_KEY                     - Neosantara API key
-  NEOSANTARA_API_KEY              - Neosantara API key alternative
+  ${"NEOSANTARA_API_BASE_URL".padEnd(32)} - Override auth API base URL for neo login
+  ${"NEO_CODE_NEOSANTARA_API_BASE_URL".padEnd(32)} - Override auth API base URL for neo login
+  ${"NEOSANTARA_API_KEY".padEnd(32)} - Neosantara API key
   ${ENV_AGENT_DIR.padEnd(32)} - Config directory (default: ~/${CONFIG_DIR_NAME}/agent)
   ${ENV_SESSION_DIR.padEnd(32)} - Session storage directory (overridden by --session-dir)
-  NAI_CODE_PACKAGE_DIR                   - Override package directory (for Nix/Guix store paths)
-  NAI_CODE_OFFLINE                       - Disable startup network operations when set to 1/true/yes
-  NAI_CODE_TELEMETRY                     - Override install telemetry when set to 1/true/yes or 0/false/no
-  NAI_CODE_SHARE_VIEWER_URL              - Base URL for /share command (default: https://app.neosantara.xyz/session/)
+  NEO_CODE_PACKAGE_DIR                   - Override package directory (for Nix/Guix store paths)
+  NEO_CODE_OFFLINE                       - Disable startup network operations when set to 1/true/yes
+  NEO_CODE_TELEMETRY                     - Override install telemetry when set to 1/true/yes or 0/false/no
+  NEO_CODE_SHARE_VIEWER_URL              - Base URL for /share command (default: https://app.neosantara.xyz/session/)
 
 ${chalk.bold("Built-in Tool Names:")}
   read   - Read file contents

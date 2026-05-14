@@ -172,20 +172,20 @@ function printDeviceInstructions(stdout: Pick<typeof process.stdout, "write">, d
 }
 
 function printLoginHelp(stdout: Pick<typeof process.stdout, "write">): void {
-	stdout.write(`${chalk.bold("Usage:")}\n  nai login [--api-base <url>]\n\n`);
+	stdout.write(`${chalk.bold("Usage:")}\n  neo login [--api-base <url>]\n\n`);
 	stdout.write("Log in to Neosantara using Device Authorization Flow.\n\n");
 	stdout.write(`${chalk.bold("Options:")}\n`);
 	stdout.write("  --api-base <url>     Auth API base URL (default: https://api.neosantara.xyz)\n");
 	stdout.write("  --help, -h           Show this help\n\n");
 	stdout.write(`${chalk.bold("Environment:")}\n`);
 	stdout.write("  NEOSANTARA_API_BASE_URL  Override auth API base URL\n");
-	stdout.write("  NAI_CODE_NEOSANTARA_API_BASE_URL  Override auth API base URL\n");
+	stdout.write("  NEO_CODE_NEOSANTARA_API_BASE_URL  Override auth API base URL\n");
 }
 
 function parseLoginArgs(args: string[]): ParsedLoginArgs {
 	let help = false;
 	let apiBaseUrl = normalizeBaseUrl(
-		process.env.NEOSANTARA_API_BASE_URL || process.env.NAI_CODE_NEOSANTARA_API_BASE_URL,
+		process.env.NEOSANTARA_API_BASE_URL || process.env.NEO_CODE_NEOSANTARA_API_BASE_URL,
 	);
 
 	for (let index = 1; index < args.length; index++) {
@@ -276,7 +276,7 @@ export async function loginWithNeosantaraDeviceAuth(
 ): Promise<DeviceLoginResult> {
 	const provider = options.provider ?? DEFAULT_PROVIDER;
 	const apiBaseUrl = normalizeBaseUrl(
-		options.apiBaseUrl || process.env.NEOSANTARA_API_BASE_URL || process.env.NAI_CODE_NEOSANTARA_API_BASE_URL,
+		options.apiBaseUrl || process.env.NEOSANTARA_API_BASE_URL || process.env.NEO_CODE_NEOSANTARA_API_BASE_URL,
 	);
 	const fetchImpl = options.fetchImpl ?? globalThis.fetch;
 	if (!fetchImpl) {
@@ -321,7 +321,7 @@ export async function runNeosantaraDeviceLogin(args: string[], options: DeviceLo
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		stderr.write(`${chalk.red(`Error: ${message}`)}\n`);
-		stderr.write("Use 'nai login --help' for usage.\n");
+		stderr.write("Use 'neo login --help' for usage.\n");
 		process.exitCode = 1;
 		return;
 	}

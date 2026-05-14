@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "fs";
+import { getChangelogPath, getReleaseNotesPath } from "../config.js";
 
 export interface ChangelogEntry {
 	major: number;
@@ -36,7 +37,7 @@ export function parseChangelog(changelogPath: string): ChangelogEntry[] {
 				}
 
 				// Try to parse version from this line
-				const versionMatch = line.match(/##\s+\[?(\d+)\.(\d+)\.(\d+)\]?/);
+				const versionMatch = line.match(/##\s+\[?v?(\d+)\.(\d+)\.(\d+)\]?/);
 				if (versionMatch) {
 					currentVersion = {
 						major: Number.parseInt(versionMatch[1], 10),
@@ -95,5 +96,21 @@ export function getNewEntries(entries: ChangelogEntry[], lastVersion: string): C
 	return entries.filter((entry) => compareVersions(entry, last) > 0);
 }
 
-// Re-export getChangelogPath from paths.ts for convenience
-export { getChangelogPath } from "../config.js";
+export function getAllChangelogEntries(): ChangelogEntry[] {
+	const pkgEntries = parseChangelog(getChangelogPath());
+	const releaseEntries = parseChangelog(getReleaseNotesPath());
+
+	const seenVersions = new Set<string>();
+	const merged: ChangelogEntry[] = [];
+	for (const entry of [...pkgEntries, ...releaseEntries]) {
+		const key = `${entry.major}.${entry.minor}.${entry.patch}`;
+		if (!seenVersions.has(key)) {
+			merged.push(entry);
+			seenVersions.add(key);
+		}
+	}
+	return merged;
+}
+
+// Re-export path helpers from config.ts for convenience
+export { getChangelogPath, getReleaseNotesPath } from "../config.js";

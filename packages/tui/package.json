@@ -1,7 +1,7 @@
 {
 	"name": "@neosantara/tui",
-	"version": "0.74.0",
-	"description": "Neosantara Code terminal UI primitives",
+	"version": "0.74.5",
+	"description": "Neo Code terminal UI primitives",
 	"type": "module",
 	"main": "dist/index.js",
 	"scripts": {
@@ -28,7 +28,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/neosantara/nai-code.git",
+		"url": "git+https://github.com/neosantara/neo-code.git",
 		"directory": "packages/tui"
 	},
 	"engines": {

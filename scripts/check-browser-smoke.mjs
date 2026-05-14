@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "esbuild";
 
-const outputPath = join(tmpdir(), "nai-browser-smoke.js");
-const errorLogPath = join(tmpdir(), "nai-browser-smoke-errors.log");
+const outputPath = join(tmpdir(), "neo-browser-smoke.js");
+const errorLogPath = join(tmpdir(), "neo-browser-smoke-errors.log");
 
 try {
 	await build({

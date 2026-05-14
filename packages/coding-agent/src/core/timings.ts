@@ -1,9 +1,9 @@
 /**
  * Central timing instrumentation for startup profiling.
- * Enable with NAI_CODE_TIMING=1 environment variable.
+ * Enable with NEO_CODE_TIMING=1 environment variable.
  */
 
-const ENABLED = process.env.NAI_CODE_TIMING === "1";
+const ENABLED = process.env.NEO_CODE_TIMING === "1";
 const timings: Array<{ label: string; ms: number }> = [];
 let lastTime = Date.now();
 

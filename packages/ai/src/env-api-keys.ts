@@ -35,7 +35,7 @@ function getProcEnv(key: string): string | undefined {
 
 function getApiKeyEnvVars(provider: string): readonly string[] | undefined {
 	const envMap: Record<string, readonly string[]> = {
-		neosantara: ["NAI_API_KEY", "NEOSANTARA_API_KEY"],
+		neosantara: ["NEOSANTARA_API_KEY"],
 	};
 
 	return envMap[provider];
@@ -58,7 +58,7 @@ export function findEnvKeys(provider: string): string[] | undefined {
 }
 
 /**
- * Get API key for provider from known environment variables, e.g. OPENAI_API_KEY.
+ * Get API key for provider from known environment variables, e.g. NEOSANTARA_API_KEY.
  *
  * Will not return API keys for providers that require OAuth tokens.
  */

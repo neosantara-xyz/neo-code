@@ -84,7 +84,7 @@ function getGroupLabel(metadata: PathMetadata): string {
 				? `User (${formatBaseDir(metadata.baseDir)})`
 				: `Project (${formatBaseDir(metadata.baseDir)})`;
 		}
-		return metadata.scope === "user" ? "User (~/.neosantara-code/agent/)" : "Project (.neosantara-code/)";
+		return metadata.scope === "user" ? "User (~/.neo-code/agent/)" : "Project (.neo-code/)";
 	}
 	return metadata.scope === "user" ? "User settings" : "Project settings";
 }

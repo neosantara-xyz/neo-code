@@ -39,7 +39,7 @@ const UPDATE_CHECK_CONCURRENCY = 4;
 const GIT_UPDATE_CONCURRENCY = 4;
 
 function isOfflineModeEnabled(): boolean {
-	const value = process.env.NAI_CODE_OFFLINE;
+	const value = process.env.NEO_CODE_OFFLINE;
 	if (!value) return false;
 	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
 }
@@ -1813,7 +1813,7 @@ export class DefaultPackageManager implements PackageManager {
 		this.ensureGitIgnore(installRoot);
 		const packageJsonPath = join(installRoot, "package.json");
 		if (!existsSync(packageJsonPath)) {
-			const pkgJson = { name: "nai-code-extensions", private: true };
+			const pkgJson = { name: "neo-code-extensions", private: true };
 			writeFileSync(packageJsonPath, JSON.stringify(pkgJson, null, 2), "utf-8");
 		}
 	}
@@ -1890,7 +1890,7 @@ export class DefaultPackageManager implements PackageManager {
 			.update(`${prefix}-${suffix ?? ""}`)
 			.digest("hex")
 			.slice(0, 8);
-		return join(tmpdir(), "nai-code-extensions", prefix, hash, suffix ?? "");
+		return join(tmpdir(), "neo-code-extensions", prefix, hash, suffix ?? "");
 	}
 
 	private getBaseDirForScope(scope: SourceScope): string {
@@ -2182,7 +2182,7 @@ export class DefaultPackageManager implements PackageManager {
 			}
 		};
 
-		// Project extensions from .neosantara-code/
+		// Project extensions from .neo-code/
 		addResources(
 			"extensions",
 			collectAutoExtensionEntries(projectDirs.extensions),
@@ -2191,7 +2191,7 @@ export class DefaultPackageManager implements PackageManager {
 			projectBaseDir,
 		);
 
-		// Project skills from .neosantara-code/
+		// Project skills from .neo-code/
 		addResources(
 			"skills",
 			collectAutoSkillEntries(projectDirs.skills, "neosantara"),
@@ -2231,7 +2231,7 @@ export class DefaultPackageManager implements PackageManager {
 			projectBaseDir,
 		);
 
-		// User extensions from ~/.neosantara-code/agent/
+		// User extensions from ~/.neo-code/agent/
 		addResources(
 			"extensions",
 			collectAutoExtensionEntries(userDirs.extensions),
@@ -2240,7 +2240,7 @@ export class DefaultPackageManager implements PackageManager {
 			globalBaseDir,
 		);
 
-		// User skills from ~/.neosantara-code/agent/
+		// User skills from ~/.neo-code/agent/
 		addResources(
 			"skills",
 			collectAutoSkillEntries(userDirs.skills, "neosantara"),

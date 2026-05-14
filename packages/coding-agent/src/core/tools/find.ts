@@ -10,6 +10,12 @@ import { ensureTool } from "../../utils/tools-manager.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { resolveToCwd } from "./path-utils.js";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
+import {
+	formatToolActivityLine,
+	formatToolActivityResultLine,
+	summarizeToolCall,
+	summarizeToolResult,
+} from "./tool-activity.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 
@@ -86,6 +92,9 @@ function formatFindResult(
 	showImages: boolean,
 ): string {
 	const output = getTextOutput(result, showImages).trim();
+	if (!options.expanded) {
+		return `\n${theme.fg("muted", formatToolActivityResultLine("find", undefined, result))}`;
+	}
 	let text = "";
 	if (output) {
 		const lines = output.split("\n");
@@ -120,6 +129,23 @@ export function createFindToolDefinition(
 		description: `Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to ${DEFAULT_LIMIT} results or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
 		promptSnippet: "Find files by glob pattern (respects .gitignore)",
 		parameters: findSchema,
+		isSearchOrReadCommand(args) {
+			const activity = summarizeToolCall("find", args);
+			return {
+				isSearch: activity.kind === "search",
+				isRead: activity.kind === "read",
+				isList: activity.kind === "list",
+			};
+		},
+		getToolUseSummary(args) {
+			return summarizeToolCall("find", args).compact;
+		},
+		getActivityDescription(args) {
+			return summarizeToolCall("find", args).title;
+		},
+		renderToolResultSummary(result, args, context) {
+			return summarizeToolResult("find", args, result as any, context).label;
+		},
 		async execute(
 			_toolCallId,
 			{ pattern, path: searchDir, limit }: { pattern: string; path?: string; limit?: number },
@@ -354,7 +380,11 @@ export function createFindToolDefinition(
 		},
 		renderCall(args, theme, context) {
 			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-			text.setText(formatFindCall(args, theme));
+			text.setText(
+				context.expanded
+					? formatFindCall(args, theme)
+					: theme.fg("toolTitle", theme.bold(formatToolActivityLine("find", args))),
+			);
 			return text;
 		},
 		renderResult(result, options, theme, context) {

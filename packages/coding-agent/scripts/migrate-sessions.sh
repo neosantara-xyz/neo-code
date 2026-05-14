@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 #
-# Migrate sessions from ~/.neosantara-code/agent/*.jsonl to proper session directories.
+# Migrate sessions from ~/.neo-code/agent/*.jsonl to proper session directories.
 # This fixes sessions created by the bug in v0.30.0 where sessions were
-# saved to ~/.neosantara-code/agent/ instead of ~/.neosantara-code/agent/sessions/<encoded-cwd>/.
+# saved to ~/.neo-code/agent/ instead of ~/.neo-code/agent/sessions/<encoded-cwd>/.
 #
 # Usage: ./migrate-sessions.sh [--dry-run]
 #
 
 set -e
 
-AGENT_DIR="${NAI_AGENT_DIR:-$HOME/.neosantara-code/agent}"
+AGENT_DIR="${NEO_AGENT_DIR:-$HOME/.neo-code/agent}"
 DRY_RUN=false
 
 if [[ "$1" == "--dry-run" ]]; then

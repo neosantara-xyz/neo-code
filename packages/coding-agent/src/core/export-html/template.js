@@ -21,7 +21,7 @@
 
       // Parse URL parameters for deep linking: leafId and targetId
       // Check for injected params (when loaded in iframe via srcdoc) or use window.location
-      const injectedParams = document.querySelector('meta[name="nai-url-params"]');
+      const injectedParams = document.querySelector('meta[name="neo-url-params"]');
       const searchString = injectedParams ? injectedParams.content : window.location.search.substring(1);
       const urlParams = new URLSearchParams(searchString);
       const urlLeafId = urlParams.get('leafId');
@@ -569,6 +569,176 @@
         return p;
       }
 
+      function compactText(value, maxLength = 72) {
+        const text = String(value || '').replace(/\s+/g, ' ').trim();
+        if (text.length <= maxLength) return text;
+        return text.slice(0, Math.max(0, maxLength - 1)).trimEnd() + '…';
+      }
+
+      function outputDataLines(output) {
+        return String(output || '')
+          .replace(/\r/g, '')
+          .split('\n')
+          .map(line => line.trimEnd())
+          .filter(line => {
+            const trimmed = line.trim();
+            if (!trimmed) return false;
+            if (/^\[[^\]]+\]$/.test(trimmed)) return false;
+            if (/^No (?:files |matches )?found/i.test(trimmed)) return false;
+            if (/^\(no output\)$/i.test(trimmed)) return false;
+            if (/^\(empty directory\)$/i.test(trimmed)) return false;
+            return true;
+          });
+      }
+
+      function plural(count, singular, pluralForm = singular + 's') {
+        return `${count} ${count === 1 ? singular : pluralForm}`;
+      }
+
+      function getToolResultText(result) {
+        if (!result) return '';
+        return (result.content || [])
+          .filter(c => c.type === 'text')
+          .map(c => c.text || '')
+          .join('\n')
+          .replace(/\r/g, '');
+      }
+
+      const SEARCH_COMMAND_RE = /(?:^|[\s|;&({])(?:grep|egrep|fgrep|rg|ag|ack)\b/;
+      const FIND_COMMAND_RE = /(?:^|[\s|;&({])(?:find|fd|git\s+ls-files)\b/;
+      const LIST_COMMAND_RE = /(?:^|[\s|;&({])(?:ls|tree)\b/;
+      const READ_COMMAND_RE = /(?:^|[\s|;&({])(?:cat|head|tail|sed)\b/;
+      const TEST_COMMAND_RE = /(?:^|[\s|;&({])(?:npm|pnpm|yarn|bun)\s+(?:test|run\s+test)|(?:^|[\s|;&({])(?:vitest|jest|mocha|node\s+--test|pytest)\b/;
+
+      function compactBashSearch(command) {
+        const quoted = command.match(/(?:grep|egrep|fgrep|rg|ag|ack)\s+(?:-[^\s]+\s+)*(?:--\s+)?(["'])(.*?)\1/);
+        if (quoted?.[2]) return `search ${compactText(quoted[2], 42)}`;
+        const regex = command.match(/-E\s+(["'])(.*?)\1/);
+        if (regex?.[2]) return `search ${compactText(regex[2], 42)}`;
+        return 'search files';
+      }
+
+      function compactBashCommand(command) {
+        const normalized = String(command || '').replace(/\s+/g, ' ').trim();
+        if (!normalized) return { kind: 'command', title: 'Running command', compact: '...' };
+        if (SEARCH_COMMAND_RE.test(normalized)) {
+          return { kind: 'search', title: 'Searching files', compact: compactBashSearch(normalized), isSearchOrRead: true };
+        }
+        if (FIND_COMMAND_RE.test(normalized)) {
+          return { kind: 'search', title: 'Finding files', compact: /\.tsx?\b|\.jsx?\b|\.py\b|\.md\b/.test(normalized) ? 'find source files' : 'find files', isSearchOrRead: true };
+        }
+        if (LIST_COMMAND_RE.test(normalized)) {
+          const match = normalized.match(/(?:ls|tree)\s+(?:-[^\s]+\s+)*([^|;&]+)?/);
+          return { kind: 'list', title: 'Listing files', compact: `list ${compactText(match?.[1]?.trim() || '.', 42)}`, isSearchOrRead: true };
+        }
+        if (READ_COMMAND_RE.test(normalized)) {
+          return { kind: 'read', title: 'Reading files', compact: compactText(normalized, 56), isSearchOrRead: true };
+        }
+        if (TEST_COMMAND_RE.test(normalized)) {
+          return { kind: 'command', title: 'Running tests', compact: compactText(normalized, 86), isSearchOrRead: false };
+        }
+        return { kind: 'command', title: 'Running command', compact: compactText(normalized, 86), isSearchOrRead: false };
+      }
+
+      function summarizeToolCallCompact(name, args) {
+        args = args || {};
+        switch (name) {
+          case 'bash':
+            return compactBashCommand(args.command || '');
+          case 'grep':
+            return {
+              kind: 'search',
+              title: 'Searching files',
+              compact: `grep /${compactText(args.pattern || '...', 44)}/ in ${shortenPath(String(args.path || '.'))}`,
+              isSearchOrRead: true,
+            };
+          case 'find':
+            return {
+              kind: 'search',
+              title: 'Finding files',
+              compact: `find ${compactText(args.pattern || 'files', 44)} in ${shortenPath(String(args.path || '.'))}`,
+              isSearchOrRead: true,
+            };
+          case 'read':
+            return {
+              kind: 'read',
+              title: 'Reading file',
+              compact: `read ${shortenPath(String(args.file_path || args.path || 'file'))}`,
+              isSearchOrRead: true,
+            };
+          case 'ls':
+            return {
+              kind: 'list',
+              title: 'Listing files',
+              compact: `list ${shortenPath(String(args.path || '.'))}`,
+              isSearchOrRead: true,
+            };
+          case 'write':
+            return {
+              kind: 'write',
+              title: 'Writing file',
+              compact: `write ${shortenPath(String(args.file_path || args.path || 'file'))}`,
+              isSearchOrRead: false,
+            };
+          case 'edit':
+            return {
+              kind: 'edit',
+              title: 'Editing file',
+              compact: `edit ${shortenPath(String(args.file_path || args.path || 'file'))}`,
+              isSearchOrRead: false,
+            };
+          default:
+            return { kind: 'other', title: `Using ${name}`, compact: name, isSearchOrRead: false };
+        }
+      }
+
+      function summarizeToolResultCompact(name, args, result) {
+        if (!result) return { label: 'running…', status: 'running' };
+        const output = getToolResultText(result).trim();
+        if (result.isError) return { label: compactText(output || 'failed', 90), status: 'error' };
+        const lines = outputDataLines(output);
+        const lineSummary = (noun, emptyLabel) => lines.length === 0
+          ? { label: emptyLabel, status: 'neutral' }
+          : { label: plural(lines.length, noun), status: 'success' };
+
+        switch (name) {
+          case 'bash': {
+            const activity = summarizeToolCallCompact(name, args);
+            if (activity.kind === 'search') return lineSummary('match', 'no matches');
+            if (activity.kind === 'list') return lineSummary('entry', 'no entries');
+            if (activity.kind === 'read') return lineSummary('line', 'no output');
+            const exitCode = typeof result.details?.exitCode === 'number' ? `exit ${result.details.exitCode}` : 'done';
+            return { label: exitCode, status: 'success' };
+          }
+          case 'grep':
+            return lineSummary('match', 'no matches');
+          case 'find':
+            return lineSummary('file', 'no files');
+          case 'ls':
+            return lineSummary('entry', 'empty directory');
+          case 'read':
+            return { label: lines.length > 0 ? plural(lines.length, 'line') : 'read', status: 'success' };
+          case 'write':
+            return { label: 'written', status: 'success' };
+          case 'edit': {
+            const edits = Array.isArray(args?.edits) ? args.edits.length : 1;
+            return { label: `${edits} ${edits === 1 ? 'edit' : 'edits'} applied`, status: 'success' };
+          }
+          default:
+            return { label: output ? compactText(output, 90) : 'done', status: 'success' };
+        }
+      }
+
+      function toolActivityGroupTitle(calls) {
+        const activities = calls.map(call => summarizeToolCallCompact(call.name, call.arguments || {}));
+        if (activities.length === 0) return 'Working';
+        if (activities.every(activity => activity.isSearchOrRead)) return 'Inspecting project';
+        if (activities.some(activity => activity.kind === 'write' || activity.kind === 'edit')) return 'Updating files';
+        if (activities.some(activity => activity.title === 'Running tests')) return 'Running tests';
+        if (activities.every(activity => activity.kind === 'command')) return 'Running commands';
+        return 'Working';
+      }
+
       function formatToolCall(name, args) {
         switch (name) {
           case 'read': {
@@ -914,6 +1084,9 @@
         let html = `<div class="tool-execution ${statusClass}">`;
         const args = call.arguments || {};
         const name = call.name;
+        const activity = summarizeToolCallCompact(name, args);
+        const summary = summarizeToolResultCompact(name, args, result);
+        html += `<div class="tool-compact-line"><span class="tool-activity-dot">✦</span> <span class="tool-name">${escapeHtml(activity.compact)}</span> <span class="tool-result-summary ${escapeHtml(summary.status)}">→ ${escapeHtml(summary.label)}</span></div>`;
 
         const invalidArg = '<span class="tool-error">[invalid arg]</span>';
 
@@ -1047,6 +1220,30 @@
         return html;
       }
 
+      function renderToolActivityGroup(calls) {
+        if (!calls.length) return '';
+        const hasPending = calls.some(call => !findToolResult(call.id));
+        const title = toolActivityGroupTitle(calls);
+        let html = `<div class="tool-activity-group ${hasPending ? 'pending' : 'success'}">`;
+        html += `<div class="tool-activity-title">● ${escapeHtml(title)}${hasPending ? '…' : ''}</div>`;
+        html += '<div class="tool-activity-lines">';
+        calls.forEach((call, index) => {
+          const activity = summarizeToolCallCompact(call.name, call.arguments || {});
+          const result = findToolResult(call.id);
+          const summary = summarizeToolResultCompact(call.name, call.arguments || {}, result);
+          const branch = index === calls.length - 1 ? '└─' : '├─';
+          html += `<div class="tool-activity-line ${escapeHtml(summary.status)}"><span class="tool-tree-branch">${branch}</span> ${escapeHtml(activity.compact)} <span class="tool-result-summary ${escapeHtml(summary.status)}">→ ${escapeHtml(summary.label)}</span></div>`;
+        });
+        html += '</div>';
+        html += '<details class="tool-activity-raw"><summary>Raw tool output</summary>';
+        for (const call of calls) {
+          html += renderToolCall(call);
+        }
+        html += '</details>';
+        html += '</div>';
+        return html;
+      }
+
       /**
        * Download the session data as a JSONL file.
        * Reconstructs the original format: header line + entry lines.
@@ -1080,7 +1277,7 @@
        */
       function buildShareUrl(entryId) {
         // Check for injected base URL (used when loaded in iframe via srcdoc)
-        const baseUrlMeta = document.querySelector('meta[name="nai-share-base-url"]');
+        const baseUrlMeta = document.querySelector('meta[name="neo-share-base-url"]');
         const baseUrl = baseUrlMeta ? baseUrlMeta.content : window.location.href.split('?')[0];
 
         const url = new URL(window.location.href);
@@ -1239,10 +1436,9 @@
               }
             }
 
-            for (const block of msg.content) {
-              if (block.type === 'toolCall') {
-                html += renderToolCall(block);
-              }
+            const toolCalls = msg.content.filter(block => block.type === 'toolCall');
+            if (toolCalls.length > 0) {
+              html += renderToolActivityGroup(toolCalls);
             }
 
             if (msg.stopReason === 'aborted') {
@@ -1634,7 +1830,7 @@
       const overlay = document.getElementById('sidebar-overlay');
       const hamburger = document.getElementById('hamburger');
       const sidebarResizer = document.getElementById('sidebar-resizer');
-      const SIDEBAR_WIDTH_STORAGE_KEY = 'nai-share:v1:sidebar-width';
+      const SIDEBAR_WIDTH_STORAGE_KEY = 'neo-share:v1:sidebar-width';
       const MIN_CONTENT_WIDTH = 320;
 
       function isMobileLayout() {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Release script for nai-code
+ * Release script for neo-code
  *
  * Usage:
  *   node scripts/release.mjs <major|minor|patch>
