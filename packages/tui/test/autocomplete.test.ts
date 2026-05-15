@@ -427,6 +427,51 @@ describe("CombinedAutocompleteProvider", () => {
 		});
 	});
 
+	describe("@ file suggestions without fd", () => {
+		let baseDir = "";
+
+		beforeEach(() => {
+			baseDir = mkdtempSync(join(tmpdir(), "neo-autocomplete-no-fd-"));
+		});
+
+		afterEach(() => {
+			rmSync(baseDir, { recursive: true, force: true });
+		});
+
+		test("falls back to direct directory suggestions for empty @ query", async () => {
+			setupFolder(baseDir, {
+				dirs: ["src"],
+				files: {
+					"README.md": "readme",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, null);
+			const line = "@";
+			const result = await getSuggestions(provider, [line], 0, line.length);
+
+			const values = result?.items.map((item) => item.value).sort();
+			assert.deepStrictEqual(values, ["@README.md", "@src/"].sort());
+			assert.strictEqual(result?.prefix, "@");
+		});
+
+		test("filters fallback @ suggestions case insensitively", async () => {
+			setupFolder(baseDir, {
+				files: {
+					"README.md": "readme",
+					"package.json": "{}",
+				},
+			});
+
+			const provider = new CombinedAutocompleteProvider([], baseDir, null);
+			const line = "@re";
+			const result = await getSuggestions(provider, [line], 0, line.length);
+
+			const values = result?.items.map((item) => item.value);
+			assert.deepStrictEqual(values, ["@README.md"]);
+		});
+	});
+
 	describe("dot-slash path completion", () => {
 		let baseDir = "";
 

@@ -1,6 +1,6 @@
 {
 	"name": "@neosantara/code",
-	"version": "0.74.9",
+	"version": "0.74.10",
 	"description": "Neo Code coding agent CLI",
 	"type": "module",
 	"bin": {
@@ -48,9 +48,9 @@
 		"typebox": "^1.1.24",
 		"undici": "^7.19.1",
 		"yaml": "^2.8.2",
-		"@neosantara/ai": "^0.74.9",
-		"@neosantara/agent-core": "^0.74.9",
-		"@neosantara/tui": "^0.74.9"
+		"@neosantara/ai": "^0.74.10",
+		"@neosantara/agent-core": "^0.74.10",
+		"@neosantara/tui": "^0.74.10"
 	},
 	"overrides": {
 		"rimraf": "6.1.2"

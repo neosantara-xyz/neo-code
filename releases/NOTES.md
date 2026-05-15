@@ -32,3 +32,7 @@
 - mode: patch
 - notes: fix(changelog): ship release notes with package assets
 
+## v0.74.10 (2026-05-15)
+- mode: patch
+- notes: fix(tui): restore @ file suggestions without fd and remove redundant memory alias
+

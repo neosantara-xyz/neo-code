@@ -2780,7 +2780,7 @@ export class InteractiveMode {
 				await this.handleInitCommand();
 				return;
 			}
-			if (text === "/agents" || text.startsWith("/agents ") || text === "/memory" || text.startsWith("/memory ")) {
+			if (text === "/agents" || text.startsWith("/agents ")) {
 				await this.handleAgentsCommand(text);
 				this.editor.setText("");
 				return;
@@ -5962,8 +5962,7 @@ export class InteractiveMode {
 	}
 
 	private async handleAgentsCommand(text: string): Promise<void> {
-		const commandName = text.startsWith("/memory") ? "/memory" : "/agents";
-		const args = text.slice(commandName.length).trim().split(/\s+/).filter(Boolean);
+		const args = text.slice("/agents".length).trim().split(/\s+/).filter(Boolean);
 		const action = args[0]?.toLowerCase();
 		const targetPath = path.join(this.sessionManager.getCwd(), AGENTS_FILE_NAME);
 
@@ -5985,7 +5984,7 @@ export class InteractiveMode {
 		const agentsFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
 		let info = `${theme.bold("Project Instructions")}`;
 		info += `\n${theme.fg("dim", "Source:")} AGENTS.md files from user agent dir and workspace ancestors`;
-		info += `\n${theme.fg("dim", "Commands:")} /init · /agents init · /agents show · /memory\n`;
+		info += `\n${theme.fg("dim", "Commands:")} /init · /agents init · /agents show\n`;
 		if (agentsFiles.length === 0) {
 			info += `\n${theme.fg("warning", "No AGENTS.md loaded.")} Run /init to generate one with the agent, or /agents init for a starter template.`;
 			this.addPlainInfoBlock(info);

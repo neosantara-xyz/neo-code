@@ -25,7 +25,6 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "diff", description: "Show current Git workspace diff" },
 	{ name: "init", description: "Create an AGENTS.md contributor guide for this repository" },
 	{ name: "agents", description: "Show or initialize AGENTS.md project instructions" },
-	{ name: "memory", description: "Alias for /agents project instructions" },
 	{ name: "skills", description: "Install or list skills" },
 	{ name: "hooks", description: "Show extension hooks, commands, tools, and shortcuts" },
 	{ name: "model", description: "Select model (opens selector UI)" },

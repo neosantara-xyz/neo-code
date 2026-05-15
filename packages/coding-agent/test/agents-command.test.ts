@@ -11,4 +11,8 @@ describe("agents slash commands", () => {
 			description: "Create an AGENTS.md contributor guide for this repository",
 		});
 	});
+
+	it("does not expose the redundant /memory alias", () => {
+		expect(BUILTIN_SLASH_COMMANDS.map((command) => command.name)).not.toContain("memory");
+	});
 });

@@ -1,6 +1,6 @@
 {
 	"name": "@neosantara/tui",
-	"version": "0.74.9",
+	"version": "0.74.10",
 	"description": "Neo Code terminal UI primitives",
 	"type": "module",
 	"main": "dist/index.js",
