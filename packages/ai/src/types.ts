@@ -356,6 +356,8 @@ export interface OpenAIResponsesCompat {
 	sendSessionIdHeader?: boolean;
 	/** Whether the provider supports `prompt_cache_retention: "24h"`. Default: true. */
 	supportsLongCacheRetention?: boolean;
+	/** Whether the model supports sending Responses `reasoning` together with function tools. Default: true. */
+	supportsReasoningWithTools?: boolean;
 }
 
 // Model interface for the unified model system

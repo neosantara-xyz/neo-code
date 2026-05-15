@@ -79,6 +79,7 @@ import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-nam
 import type { ResourceDiagnostic } from "../../core/resource-loader.js";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
+import { getSkillDescription, getSkillDisplayName } from "../../core/skills.js";
 import { parseSkillsCommand } from "../../core/skills-command.js";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import type { SourceInfo } from "../../core/source-info.js";
@@ -643,7 +644,7 @@ export class InteractiveMode {
 				this.skillCommands.set(commandName, skill.filePath);
 				skillCommandList.push({
 					name: commandName,
-					description: this.prefixAutocompleteDescription(skill.description, skill.sourceInfo),
+					description: this.prefixAutocompleteDescription(getSkillDescription(skill), skill.sourceInfo),
 				});
 			}
 		}
@@ -1874,6 +1875,7 @@ export class InteractiveMode {
 			shimmer: mode !== "tool-use",
 			shimmerDirection: mode === "tool-input" ? "left-to-right" : "right-to-left",
 			shimmerIntervalMs: 200,
+			maxMessageWidth: 44,
 			shimmerColorFn: (text) => theme.fg("accent", text),
 			stalledDetection: true,
 			stalledWarningColorFn: (text) => theme.fg("warning", text),
@@ -6020,8 +6022,10 @@ export class InteractiveMode {
 		info += `\n${theme.fg("dim", "Invoke:")} /skill:<name>`;
 		info += `\n${theme.fg("dim", "Setting:")} Register skills as /skill:name commands controls invocation autocomplete only.\n`;
 		for (const skill of [...skills].sort((left, right) => left.name.localeCompare(right.name))) {
-			info += `\n${theme.bold(skill.name)} ${theme.fg("dim", `(/skill:${skill.name})`)}`;
-			info += `\n  ${theme.fg("muted", skill.description)}`;
+			const displayName = getSkillDisplayName(skill);
+			const nameSuffix = displayName === skill.name ? "" : ` ${theme.fg("dim", skill.name)}`;
+			info += `\n${theme.bold(displayName)}${nameSuffix} ${theme.fg("dim", `(/skill:${skill.name})`)}`;
+			info += `\n  ${theme.fg("muted", getSkillDescription(skill))}`;
 			info += `\n  ${theme.fg("dim", this.formatCompactDisplayPath(skill.filePath))}`;
 		}
 		return info;

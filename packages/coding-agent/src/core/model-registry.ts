@@ -69,6 +69,7 @@ const OpenAICompletionsCompatSchema = Type.Object({
 const OpenAIResponsesCompatSchema = Type.Object({
 	sendSessionIdHeader: Type.Optional(Type.Boolean()),
 	supportsLongCacheRetention: Type.Optional(Type.Boolean()),
+	supportsReasoningWithTools: Type.Optional(Type.Boolean()),
 });
 
 const ProviderCompatSchema = Type.Union([OpenAICompletionsCompatSchema, OpenAIResponsesCompatSchema]);

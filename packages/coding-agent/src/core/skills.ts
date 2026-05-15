@@ -2,8 +2,9 @@ import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import ignore from "ignore";
 import { homedir } from "os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "path";
+import { parse } from "yaml";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
-import { parseFrontmatter } from "../utils/frontmatter.js";
+import { parseFrontmatter, stripFrontmatter } from "../utils/frontmatter.js";
 import { canonicalizePath } from "../utils/paths.js";
 import type { ResourceDiagnostic } from "./diagnostics.js";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.js";
@@ -13,6 +14,9 @@ const MAX_NAME_LENGTH = 64;
 
 /** Max description length per spec */
 const MAX_DESCRIPTION_LENGTH = 1024;
+
+const METADATA_DIR_NAME = "agents";
+const METADATA_FILE_NAME = "openai.yaml";
 
 const IGNORE_FILE_NAMES = [".gitignore", ".ignore", ".fdignore"];
 
@@ -68,13 +72,25 @@ function addIgnoreRules(ig: IgnoreMatcher, dir: string, rootDir: string): void {
 export interface SkillFrontmatter {
 	name?: string;
 	description?: string;
+	metadata?: {
+		"short-description"?: string;
+		[key: string]: unknown;
+	};
 	"disable-model-invocation"?: boolean;
 	[key: string]: unknown;
+}
+
+export interface SkillInterfaceMetadata {
+	displayName?: string;
+	shortDescription?: string;
+	defaultPrompt?: string;
 }
 
 export interface Skill {
 	name: string;
 	description: string;
+	shortDescription?: string;
+	interface?: SkillInterfaceMetadata;
 	filePath: string;
 	baseDir: string;
 	sourceInfo: SourceInfo;
@@ -129,6 +145,97 @@ function validateDescription(description: string | undefined): string[] {
 	}
 
 	return errors;
+}
+
+function sanitizeSingleLine(value: string): string {
+	return value.replace(/\s+/g, " ").trim();
+}
+
+function readStringField(
+	value: unknown,
+	fieldPath: string,
+	maxLength: number,
+	metadataPath: string,
+	diagnostics: ResourceDiagnostic[],
+): string | undefined {
+	if (typeof value !== "string") {
+		return undefined;
+	}
+
+	const sanitized = sanitizeSingleLine(value);
+	if (!sanitized) {
+		return undefined;
+	}
+
+	if (sanitized.length > maxLength) {
+		diagnostics.push({
+			type: "warning",
+			message: `${fieldPath} exceeds ${maxLength} characters (${sanitized.length})`,
+			path: metadataPath,
+		});
+		return undefined;
+	}
+
+	return sanitized;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return undefined;
+	}
+	return value as Record<string, unknown>;
+}
+
+function loadSkillInterfaceMetadata(
+	skillDir: string,
+	diagnostics: ResourceDiagnostic[],
+): SkillInterfaceMetadata | undefined {
+	const metadataPath = join(skillDir, METADATA_DIR_NAME, METADATA_FILE_NAME);
+	if (!existsSync(metadataPath)) {
+		return undefined;
+	}
+
+	try {
+		const raw = readFileSync(metadataPath, "utf-8");
+		const parsed = asRecord(parse(raw));
+		const interfaceConfig = asRecord(parsed?.interface);
+		if (!interfaceConfig) {
+			return undefined;
+		}
+
+		const result: SkillInterfaceMetadata = {};
+		const displayName = readStringField(
+			interfaceConfig.display_name,
+			"interface.display_name",
+			MAX_NAME_LENGTH,
+			metadataPath,
+			diagnostics,
+		);
+		const shortDescription = readStringField(
+			interfaceConfig.short_description,
+			"interface.short_description",
+			MAX_DESCRIPTION_LENGTH,
+			metadataPath,
+			diagnostics,
+		);
+		const defaultPrompt = readStringField(
+			interfaceConfig.default_prompt,
+			"interface.default_prompt",
+			MAX_DESCRIPTION_LENGTH,
+			metadataPath,
+			diagnostics,
+		);
+
+		if (displayName) result.displayName = displayName;
+		if (shortDescription) result.shortDescription = shortDescription;
+		if (defaultPrompt) result.defaultPrompt = defaultPrompt;
+
+		return Object.keys(result).length > 0 ? result : undefined;
+	} catch (error) {
+		const message = error instanceof Error ? error.message : `failed to parse ${METADATA_FILE_NAME}`;
+		diagnostics.push({ type: "warning", message, path: metadataPath });
+		return undefined;
+	}
 }
 
 export interface LoadSkillsFromDirOptions {
@@ -290,6 +397,7 @@ function loadSkillFromFile(
 		const { frontmatter } = parseFrontmatter<SkillFrontmatter>(rawContent);
 		const skillDir = dirname(filePath);
 		const parentDirName = basename(skillDir);
+		const interfaceMetadata = loadSkillInterfaceMetadata(skillDir, diagnostics);
 
 		// Validate description
 		const descErrors = validateDescription(frontmatter.description);
@@ -315,6 +423,11 @@ function loadSkillFromFile(
 			skill: {
 				name,
 				description: frontmatter.description,
+				shortDescription:
+					typeof frontmatter.metadata?.["short-description"] === "string"
+						? sanitizeSingleLine(frontmatter.metadata["short-description"])
+						: undefined,
+				interface: interfaceMetadata,
 				filePath,
 				baseDir: skillDir,
 				sourceInfo: createSkillSourceInfo(filePath, skillDir, source),
@@ -327,6 +440,64 @@ function loadSkillFromFile(
 		diagnostics.push({ type: "warning", message, path: filePath });
 		return { skill: null, diagnostics };
 	}
+}
+
+function createSkillBlock(skill: Skill): string {
+	const content = readFileSync(skill.filePath, "utf-8");
+	const body = stripFrontmatter(content).trim();
+	const defaultPrompt = skill.interface?.defaultPrompt ? `${skill.interface.defaultPrompt}\n\n` : "";
+	return `<skill name="${escapeXml(skill.name)}" location="${escapeXml(skill.filePath)}">\nReferences are relative to ${skill.baseDir}.\n\n${defaultPrompt}${body}\n</skill>`;
+}
+
+function parseSlashSkillInvocation(text: string): { skillName: string; args: string } | undefined {
+	if (!text.startsWith("/skill:")) return undefined;
+	const spaceIndex = text.indexOf(" ");
+	const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
+	const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
+	return { skillName, args };
+}
+
+function findDollarSkillNames(text: string, skillsByName: Map<string, Skill>): string[] {
+	const names: string[] = [];
+	const seen = new Set<string>();
+	const mentionPattern = /(^|[\s([{])\$([a-z0-9][a-z0-9-]{0,63})(?=$|[\s.,;:!?)}\]])/g;
+	let match = mentionPattern.exec(text);
+	while (match !== null) {
+		const name = match[2];
+		if (skillsByName.has(name) && !seen.has(name)) {
+			seen.add(name);
+			names.push(name);
+		}
+		match = mentionPattern.exec(text);
+	}
+	return names;
+}
+
+export function expandSkillInvocationText(text: string, skills: Skill[]): string {
+	const skillsByName = new Map(skills.map((skill) => [skill.name, skill]));
+	const slashInvocation = parseSlashSkillInvocation(text);
+	if (slashInvocation) {
+		const skill = skillsByName.get(slashInvocation.skillName);
+		if (!skill) return text;
+		const skillBlock = createSkillBlock(skill);
+		return slashInvocation.args ? `${skillBlock}\n\n${slashInvocation.args}` : skillBlock;
+	}
+
+	const mentionedSkillNames = findDollarSkillNames(text, skillsByName);
+	if (mentionedSkillNames.length === 0) {
+		return text;
+	}
+
+	const skillBlocks = mentionedSkillNames.map((name) => createSkillBlock(skillsByName.get(name)!));
+	return `${skillBlocks.join("\n\n")}\n\n${text}`;
+}
+
+export function getSkillDisplayName(skill: Skill): string {
+	return skill.interface?.displayName ?? skill.name;
+}
+
+export function getSkillDescription(skill: Skill): string {
+	return skill.interface?.shortDescription ?? skill.shortDescription ?? skill.description;
 }
 
 /**

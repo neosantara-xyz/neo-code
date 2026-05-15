@@ -1,5 +1,5 @@
 import type { TUI } from "../tui.js";
-import { getSegmenter, visibleWidth } from "../utils.js";
+import { getSegmenter, truncateToWidth, visibleWidth } from "../utils.js";
 import { Text } from "./text.js";
 
 export type LoaderMessageMode = "responding" | "requesting" | "tool-input" | "tool-use";
@@ -20,6 +20,8 @@ export interface LoaderIndicatorOptions {
 	shimmerWidth?: number;
 	/** Color used for the glimmer segment. Falls back to the message color when omitted. */
 	shimmerColorFn?: (str: string) => string;
+	/** Maximum visible cells used for the message before coloring. Prevents long rotating labels from wrapping. */
+	maxMessageWidth?: number;
 	/** Claude Code-like message mode. Tool-use pulses the whole message instead of rendering a travelling glimmer; tool-input keeps a travelling glimmer while the model is still preparing arguments. */
 	mode?: LoaderMessageMode;
 	/** Fade the indicator/message toward warning/error when no stream progress arrives and no tools are active. */
@@ -63,6 +65,7 @@ export class Loader extends Text {
 	private shimmerIntervalMs = DEFAULT_SHIMMER_INTERVAL_MS;
 	private shimmerWidth = DEFAULT_SHIMMER_WIDTH;
 	private shimmerColorFn: ((str: string) => string) | undefined;
+	private maxMessageWidth: number | undefined;
 	private mode: LoaderMessageMode = "responding";
 	private animationStartMs = Date.now();
 	private stalledDetection = false;
@@ -126,6 +129,8 @@ export class Loader extends Text {
 		this.shimmerWidth =
 			indicator?.shimmerWidth && indicator.shimmerWidth > 0 ? indicator.shimmerWidth : DEFAULT_SHIMMER_WIDTH;
 		this.shimmerColorFn = indicator?.shimmerColorFn;
+		this.maxMessageWidth =
+			indicator?.maxMessageWidth && indicator.maxMessageWidth > 0 ? indicator.maxMessageWidth : undefined;
 		this.mode = indicator?.mode ?? "responding";
 		this.stalledDetection = indicator?.stalledDetection ?? false;
 		this.stalledAfterMs =
@@ -219,10 +224,17 @@ export class Loader extends Text {
 	}
 
 	private getMessageSegments(): MessageSegment[] {
-		return Array.from(getSegmenter().segment(this.message), ({ segment }) => ({
+		return Array.from(getSegmenter().segment(this.getDisplayMessage()), ({ segment }) => ({
 			segment,
 			width: visibleWidth(segment),
 		}));
+	}
+
+	private getDisplayMessage(): string {
+		if (!this.maxMessageWidth) {
+			return this.message;
+		}
+		return truncateToWidth(this.message, this.maxMessageWidth);
 	}
 
 	private getMessageWidth(segments: MessageSegment[]): number {
@@ -234,13 +246,14 @@ export class Loader extends Text {
 		const shimmerColorFn = this.getStatusColorFn(this.shimmerColorFn ?? this.messageColorFn);
 		const flashOpacity = (Math.sin((this.getElapsedMs() / 1000) * Math.PI) + 1) / 2;
 		const colorFn = flashOpacity > 0.5 ? shimmerColorFn : messageColorFn;
-		return colorFn(this.message);
+		return colorFn(this.getDisplayMessage());
 	}
 
 	private renderShimmerMessage(): string {
 		const messageColorFn = this.getStatusColorFn(this.messageColorFn);
-		if (!this.shimmer || !this.message || this.message.trim() === "") {
-			return messageColorFn(this.message);
+		const displayMessage = this.getDisplayMessage();
+		if (!this.shimmer || !displayMessage || displayMessage.trim() === "") {
+			return messageColorFn(displayMessage);
 		}
 
 		const shimmerColorFn = this.getStatusColorFn(this.shimmerColorFn ?? this.messageColorFn);

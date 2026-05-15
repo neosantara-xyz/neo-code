@@ -121,6 +121,8 @@ export interface WorkingIndicatorOptions {
 	shimmerWidth?: number;
 	/** Color used for the glimmer segment. Falls back to the message color when omitted. */
 	shimmerColorFn?: (str: string) => string;
+	/** Maximum visible cells used for the message before coloring. Prevents long rotating labels from wrapping. */
+	maxMessageWidth?: number;
 	/** Claude Code-like message mode. Tool-input glimmers while arguments are being prepared; tool-use pulses the whole message while the tool is executing. */
 	mode?: "responding" | "requesting" | "tool-input" | "tool-use";
 }

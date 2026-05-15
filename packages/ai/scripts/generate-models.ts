@@ -113,6 +113,9 @@ function buildModelLines(model: GeneratedModelEntry): string {
 	if (model.costCurrency !== "IDR") {
 		options.push(`costCurrency: ${JSON.stringify(model.costCurrency)}`);
 	}
+	if (model.id === "deepseek-v4-flash" || model.id === "deepseek-v4-pro") {
+		options.push("compat: { supportsReasoningWithTools: false }");
+	}
 
 	const optionsSuffix = options.length > 0 ? `, { ${options.join(", ")} }` : "";
 	return `\t\t${JSON.stringify(model.id)}: neosantaraModel(${JSON.stringify(model.id)}, ${JSON.stringify(model.name)}${optionsSuffix}),`;

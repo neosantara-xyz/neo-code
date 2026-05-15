@@ -111,6 +111,38 @@ describe("Loader", () => {
 			}
 		});
 	});
+
+	it("keeps the working loader to one stable line when the message changes length", () => {
+		const clock = { now: 0 };
+		withMockedDateNow(clock, () => {
+			const tui = new FakeTui();
+			const loader = new Loader(
+				tui as unknown as TUI,
+				(text) => `[${text}]`,
+				(text) => text,
+				"short",
+				{
+					frames: ["·"],
+					shimmer: true,
+					shimmerColorFn: (text) => text.toUpperCase(),
+					shimmerIntervalMs: 200,
+					maxMessageWidth: 18,
+				},
+			);
+
+			try {
+				clock.now = 2000;
+				loader.setMessage("checking a much longer status label");
+				const lines = loader.render(28);
+
+				assert.equal(lines.length, 2);
+				assert.match(lines.join("\n"), /checking a much/);
+				assert.match(lines.join("\n"), /\.\.\./);
+			} finally {
+				loader.stop();
+			}
+		});
+	});
 	it("fades the loader toward warning/error when streaming stalls without active tools", () => {
 		const clock = { now: 0 };
 		withMockedDateNow(clock, () => {

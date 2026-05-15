@@ -10,10 +10,13 @@ const context: Context = {
 	tools: [],
 };
 
-async function capturePayload(options: Parameters<typeof streamSimple>[2]) {
-	const model = getModel("neosantara", "grok-4.1-fast-reasoning");
+async function capturePayload(
+	options: Parameters<typeof streamSimple>[2],
+	model = getModel("neosantara", "grok-4.1-fast-reasoning"),
+	nextContext = context,
+) {
 	let payload: unknown;
-	const stream = streamSimple(model, context, {
+	const stream = streamSimple(model, nextContext, {
 		apiKey: "test-key",
 		...options,
 		onPayload: async (nextPayload) => {
@@ -84,5 +87,26 @@ describe("Neosantara model registry", () => {
 		const payload = await capturePayload({ reasoning: "high" });
 		expect(payload.reasoning).toEqual({ effort: "high", summary: "auto" });
 		expect(payload.include).toEqual(["reasoning.encrypted_content"]);
+	});
+
+	it("does not send reasoning with DeepSeek Responses tool requests", async () => {
+		const payload = await capturePayload({ reasoning: "medium" }, getModel("neosantara", "deepseek-v4-flash"), {
+			...context,
+			tools: [
+				{
+					name: "list_files",
+					description: "List files",
+					parameters: {
+						type: "object",
+						properties: { path: { type: "string" } },
+						required: ["path"],
+						additionalProperties: false,
+					},
+				},
+			],
+		});
+		expect(payload.reasoning).toBeUndefined();
+		expect(payload.include).toBeUndefined();
+		expect(payload.tools).toHaveLength(1);
 	});
 });
