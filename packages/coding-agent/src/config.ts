@@ -383,7 +383,13 @@ export function getChangelogPath(): string {
 
 /** Get path to releases/NOTES.md */
 export function getReleaseNotesPath(): string {
-	return resolve(join(getPackageDir(), "..", "..", "releases", "NOTES.md"));
+	const packageDir = getPackageDir();
+	const candidates = [
+		join(packageDir, "dist", "releases", "NOTES.md"),
+		join(packageDir, "releases", "NOTES.md"),
+		join(packageDir, "..", "..", "releases", "NOTES.md"),
+	];
+	return resolve(candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]);
 }
 
 /**

@@ -58,6 +58,7 @@ import {
 } from "../../config.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.js";
+import { AGENTS_FILE_NAME, INIT_AGENTS_PROMPT } from "../../core/agents-command.js";
 import { AuthStorage } from "../../core/auth-storage.js";
 import type {
 	AutocompleteProviderFactory,
@@ -2771,6 +2772,12 @@ export class InteractiveMode {
 			if (text === "/diff" || text.startsWith("/diff ")) {
 				this.handleDiffCommand(text);
 				this.editor.setText("");
+				return;
+			}
+			if (text === "/init") {
+				this.editor.addToHistory?.(text);
+				this.editor.setText("");
+				await this.handleInitCommand();
 				return;
 			}
 			if (text === "/agents" || text.startsWith("/agents ") || text === "/memory" || text.startsWith("/memory ")) {
@@ -5937,11 +5944,28 @@ export class InteractiveMode {
 		return `# AGENTS.md\n\nProject instructions for Neo Code and other coding agents.\n\n## Project overview\n- TODO: Describe what this project does.\n\n## Development commands\n- TODO: Add build/test/lint commands.\n\n## Coding style\n- TODO: Add formatting, naming, and architecture rules.\n\n## Safety and permissions\n- Ask before destructive file operations.\n- Prefer small, reviewable diffs.\n\n## Notes for Neosantara\n- Keep responses practical and paste-ready.\n`;
 	}
 
+	private async handleInitCommand(): Promise<void> {
+		if (this.session.isStreaming || this.session.isCompacting) {
+			this.showWarning("/init is unavailable while Neo Code is already working.");
+			return;
+		}
+
+		const targetPath = path.join(this.sessionManager.getCwd(), AGENTS_FILE_NAME);
+		if (fs.existsSync(targetPath)) {
+			this.addPlainInfoBlock(
+				`${theme.bold("Project Instructions")}\n\n${theme.fg("warning", `${AGENTS_FILE_NAME} already exists here.`)} Skipping /init to avoid overwriting it.\n${theme.fg("dim", this.formatCompactDisplayPath(targetPath))}`,
+			);
+			return;
+		}
+
+		await this.session.prompt(INIT_AGENTS_PROMPT);
+	}
+
 	private async handleAgentsCommand(text: string): Promise<void> {
 		const commandName = text.startsWith("/memory") ? "/memory" : "/agents";
 		const args = text.slice(commandName.length).trim().split(/\s+/).filter(Boolean);
 		const action = args[0]?.toLowerCase();
-		const targetPath = path.join(this.sessionManager.getCwd(), "AGENTS.md");
+		const targetPath = path.join(this.sessionManager.getCwd(), AGENTS_FILE_NAME);
 
 		if (action === "init") {
 			if (fs.existsSync(targetPath)) {
@@ -5961,9 +5985,9 @@ export class InteractiveMode {
 		const agentsFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
 		let info = `${theme.bold("Project Instructions")}`;
 		info += `\n${theme.fg("dim", "Source:")} AGENTS.md files from user agent dir and workspace ancestors`;
-		info += `\n${theme.fg("dim", "Commands:")} /agents init · /agents show · /memory\n`;
+		info += `\n${theme.fg("dim", "Commands:")} /init · /agents init · /agents show · /memory\n`;
 		if (agentsFiles.length === 0) {
-			info += `\n${theme.fg("warning", "No AGENTS.md loaded.")} Run /agents init to create one in this workspace.`;
+			info += `\n${theme.fg("warning", "No AGENTS.md loaded.")} Run /init to generate one with the agent, or /agents init for a starter template.`;
 			this.addPlainInfoBlock(info);
 			return;
 		}

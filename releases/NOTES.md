@@ -24,3 +24,11 @@
 - mode: patch
 - notes: feat(skills): support Codex-style metadata and stabilize working loader shimmer
 
+## v0.74.8 (2026-05-15)
+- mode: patch
+- notes: feat(agents): add Codex-style init command for AGENTS.md
+
+## v0.74.9 (2026-05-15)
+- mode: patch
+- notes: fix(changelog): ship release notes with package assets
+

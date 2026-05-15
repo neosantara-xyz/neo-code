@@ -23,6 +23,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "doctor", description: "Run local Neo Code health checks" },
 	{ name: "permissions", description: "Show or change active tool permissions for the next turn" },
 	{ name: "diff", description: "Show current Git workspace diff" },
+	{ name: "init", description: "Create an AGENTS.md contributor guide for this repository" },
 	{ name: "agents", description: "Show or initialize AGENTS.md project instructions" },
 	{ name: "memory", description: "Alias for /agents project instructions" },
 	{ name: "skills", description: "Install or list skills" },
