@@ -4,6 +4,7 @@
 
 import { ProcessTerminal, setKeybindings, TUI } from "@neosantara/tui";
 import { KeybindingsManager } from "../core/keybindings.js";
+import { exitAfterCleanup } from "../core/process-lifecycle.js";
 import type { SessionInfo, SessionListProgress } from "../core/session-manager.js";
 import { SessionSelectorComponent } from "../modes/interactive/components/session-selector.js";
 
@@ -39,7 +40,7 @@ export async function selectSession(
 			},
 			() => {
 				ui.stop();
-				process.exit(0);
+				exitAfterCleanup(0);
 			},
 			() => ui.requestRender(),
 			{ showRenameHint: false, keybindings },

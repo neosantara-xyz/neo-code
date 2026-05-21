@@ -9,10 +9,11 @@ import { minimatch } from "minimatch";
 import { isValidThinkingLevel } from "../cli/args.js";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
 import type { ModelRegistry } from "./model-registry.js";
+import { exitAfterCleanup } from "./process-lifecycle.js";
 
 /** Default model IDs for each known provider */
 export const defaultModelPerProvider: Record<KnownProvider, string> = {
-	neosantara: "grok-4.1-fast-non-reasoning",
+	neosantara: "grok-4.1-fast-reasoning",
 };
 
 export interface ScopedModel {
@@ -482,7 +483,7 @@ export async function findInitialModel(options: {
 		});
 		if (resolved.error) {
 			console.error(chalk.red(resolved.error));
-			process.exit(1);
+			exitAfterCleanup(1);
 		}
 		if (resolved.model) {
 			return { model: resolved.model, thinkingLevel: DEFAULT_THINKING_LEVEL, fallbackMessage: undefined };

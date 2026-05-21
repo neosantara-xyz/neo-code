@@ -36,3 +36,298 @@
 - mode: patch
 - notes: fix(tui): restore @ file suggestions without fd and remove redundant memory alias
 
+## v0.74.11 (2026-05-15)
+- mode: patch
+- notes: fix(approval): freeze tool activity shimmer while permission prompts are focused
+
+## v0.74.12 (2026-05-15)
+- mode: patch
+- notes: feat(mode): add Claude-style Shift+Tab mode cycling and approval copy
+
+## v0.74.13 (2026-05-15)
+- mode: patch
+- notes: fix(plan-mode): align plan mode inspection permissions and system prompt with Claude-style planning
+
+## v0.74.14 (2026-05-15)
+- mode: patch
+- notes: feat(plan): add ExitPlanMode approval handoff for plan-mode implementation flow
+
+## v0.74.15 (2026-05-16)
+- mode: patch
+- notes: feat(plan): add Claude-style ExitPlanMode approval dialog and reliable changelog rendering
+
+## v0.74.16 (2026-05-16)
+- mode: patch
+- notes: feat(welcome): adapt Claude-style startup welcome with context and changelog
+
+## v0.74.17 (2026-05-16)
+- mode: patch
+- notes: fix(permissions): expose read-only inspection tools in default and accept-edits modes
+
+## v0.74.18 (2026-05-16)
+- mode: patch
+- notes: fix(permissions): prefer dedicated read-only tools over bash inspection
+
+## v0.74.19 (2026-05-16)
+- mode: patch
+- notes: feat(welcome): warn when Neo Code starts in the home directory and align approval cards with Claude-style permission copy
+
+## v0.74.20 (2026-05-16)
+- mode: patch
+- notes: fix(activity): collapse duplicate read/search/list tool activity and add duplicate-call guardrails
+
+## v0.74.21 (2026-05-16)
+- mode: patch
+- notes: fix(activity): make tool activity rendering closer to Claude Code collapsed read/search summaries
+
+## v0.74.22 (2026-05-16)
+- mode: patch
+- notes: fix(activity): collapse tool activity into unified Claude-style groups without tree noise
+
+## v0.74.23 (2026-05-16)
+- mode: patch
+- notes: fix(activity): shorten workspace and home paths in collapsed tool activity
+
+## v0.74.24 (2026-05-16)
+- mode: patch
+- notes: feat(activity): refine Claude-style activity grouping, context, and plan handoff UI
+
+## v0.74.25 (2026-05-16)
+- mode: patch
+- notes: fix(welcome): avoid duplicate changelog startup cards when welcome already shows update summary
+
+## v0.74.26 (2026-05-16)
+- mode: patch
+- notes: feat(welcome): add Claude-style condensed and wide startup layouts
+
+## v0.74.27 (2026-05-16)
+- mode: patch
+- notes: feat(welcome): add Neo Kanci mascot to startup and static web
+
+## v0.74.28 (2026-05-16)
+- mode: patch
+- notes: feat(branding): ship Neo Kanci SVG icon assets
+
+## v0.74.29 (2026-05-16)
+- mode: patch
+- notes: feat(welcome): render Neo Kanci as ANSI block mascot
+
+
+## v0.74.30 (2026-05-17)
+- mode: patch
+- notes: fix(context): clarify current context versus cumulative session usage
+## v0.74.31 (2026-05-16)
+- mode: patch
+- notes: fix(context): make post-compact display show active context instead of cumulative session input
+
+## v0.74.32 (2026-05-16)
+- mode: patch
+- notes: fix(approval): show write and edit previews inside permission cards
+
+## v0.74.33 (2026-05-17)
+- mode: patch
+- notes: feat(ui): align Neo loading flow with Claude Code-style progress details
+
+## v0.74.34 (2026-05-17)
+- mode: patch
+- notes: feat(activity): render Claude-style collapsed tool activity tree for readable loading progress
+
+## v0.74.35 (2026-05-17)
+- mode: patch
+- notes: feat(activity): show phase tree with current file target
+
+## v0.74.36 (2026-05-17)
+- mode: patch
+- notes: fix(commands): keep compact as the only compaction slash command
+
+## v0.74.37 (2026-05-17)
+- mode: patch
+- notes: fix(activity): show live tool tree and clear resolved approvals
+
+## v0.74.38 (2026-05-17)
+- mode: patch
+- notes: fix(runtime): clarify AGENTS context scope and serialize unsafe tools
+
+## v0.74.39 (2026-05-17)
+- mode: patch
+- notes: fix(approval): stop agent after plain permission denial
+
+## v0.74.40 (2026-05-17)
+- mode: patch
+- notes: fix(prompt): align Neo Code system and tool guidance with Claude Code runtime UX
+
+## v0.74.41 (2026-05-17)
+- mode: patch
+- notes: fix(compaction): align auto compact flow and post-compact context usage
+
+## v0.74.42 (2026-05-17)
+- mode: patch
+- notes: feat(ui): improve Claude-style activity, bash progress, and compaction context display
+
+## v0.74.43 (2026-05-20)
+- mode: patch
+- notes: fix(activity): render single tools as readable rows and stack parallel inspection batches
+
+## v0.74.44 (2026-05-20)
+- mode: patch
+- notes: feat(ui): refine tool results, approval diffs, and raw output expansion
+
+## v0.74.45 (2026-05-20)
+- mode: patch
+- notes: feat(background): add Claude-style shell background tasks
+
+## v0.74.46 (2026-05-20)
+- mode: patch
+- notes: feat(ui): align footer context and welcome experience with Claude Code
+
+## v0.74.47 (2026-05-20)
+- mode: patch
+- notes: feat(termux): add touch keyboard extra keys setup
+
+## v0.75.0 (2026-05-20)
+- mode: minor
+- notes: feat(parity): add MCP subagent todo memory config and code navigation parity
+## v0.76.0 (2026-05-21)
+- mode: minor
+- notes: feat(agent): add Claude-style subagents and stable shimmer behavior
+
+## v0.76.1 (2026-05-21)
+- mode: patch
+- notes: fix(subagents): tighten subagent MCP scoping and navigation parity
+
+## v0.76.2 (2026-05-21)
+- mode: patch
+- notes: fix(commands): hide redundant memory slash alias
+
+## v0.76.3 (2026-05-21)
+- mode: patch
+- notes: fix(tui): curate slash palette and keep activity trees stacked after completion
+
+## v0.76.4 (2026-05-21)
+- mode: patch
+- notes: fix(security): harden lifecycle and workspace file paths
+
+## v0.76.5 (2026-05-21)
+- mode: patch
+- notes: fix(ui): align Claude-style glimmer behavior and filter sourceMappingURL noise
+
+## v0.76.6 (2026-05-21)
+- mode: patch
+- notes: feat(usage): add Antigravity-style Neosantara usage screen
+
+## v0.76.7 (2026-05-21)
+- mode: patch
+- notes: fix(activity): reveal stacked tool tree incrementally
+
+## v0.76.8 (2026-05-21)
+- mode: patch
+- notes: fix(activity-tree): align ctrl-o expand reveal behavior
+
+## v0.76.9 (2026-05-21)
+- mode: patch
+- notes: fix(compaction): align compact hints and nested-run guard
+
+## v0.76.10 (2026-05-21)
+- mode: patch
+- notes: feat(theme): add Neosantara brand themes from CSS palette
+
+## v0.76.13 (2026-05-22)
+- mode: patch
+- notes: fix(approval): ESC on permission prompt now correctly stops the agent loop
+
+## v0.76.14 (2026-05-22)
+- mode: patch
+- notes: feat(approval): adopt claude-code card style - top-border-only, no side/bottom borders, cleaner hints
+
+## v0.76.15 (2026-05-22)
+- mode: patch
+- notes: feat(agent): add dedicated tool activity kind for sub-agent dispatch with tree UI
+
+## v0.76.16 (2026-05-22)
+- mode: patch
+- notes: fix(tui): ctrl+o now expands only active tool group, not entire chat history
+
+## v0.76.17 (2026-05-22)
+- mode: patch
+- notes: feat(tui): add spinner tips and terminal focus-based away detection
+
+## v0.76.18 (2026-05-22)
+- mode: patch
+- notes: fix(todo): improve prompt guidelines for proactive usage, match claude-code patterns
+
+## v0.76.19 (2026-05-22)
+- mode: patch
+- notes: feat(todo): add verification nudge when all 3+ tasks completed without test/verify step
+
+## v0.76.20 (2026-05-22)
+- mode: patch
+- notes: fix(tui): smoother activity tree - hold label flickers while committing structure changes immediately
+
+## v0.76.21 (2026-05-22)
+- mode: patch
+- notes: feat(tui): add low-balance warning after agent turns when estimated balance < Rp5000
+
+## v0.76.22 (2026-05-22)
+- mode: patch
+- notes: fix(tui): correct billing URL to app.neosantara.xyz/billing
+
+## v0.76.23 (2026-05-22)
+- mode: patch
+- notes: fix(tui): Ctrl+C and ESC now abort during retry loops, show interrupt hint
+
+## v0.76.24 (2026-05-22)
+- mode: patch
+- notes: feat(usage): add session duration to /usage screen
+
+## v0.76.25 (2026-05-22)
+- mode: patch
+- notes: fix(interrupt): abort retry loop on Ctrl+C/ESC - was only aborting stream, not retry timer
+
+## v0.76.26 (2026-05-22)
+- mode: patch
+- notes: fix(model): change default model to grok-4.1-fast-reasoning so thinking blocks are rendered
+
+## v0.76.27 (2026-05-22)
+- mode: patch
+- notes: fix(ai): remove supportsReasoningWithTools:false for DeepSeek - backend handles reasoning+tools fine
+
+## v0.76.28 (2026-05-22)
+- mode: patch
+- notes: fix(tui): always show 'Press Ctrl+C again to exit' hint on first Ctrl+C
+
+## v0.76.29 (2026-05-22)
+- mode: patch
+- notes: feat(agent): add renderCall for sub-agent tool - shows @name with task description
+
+## v0.76.30 (2026-05-22)
+- mode: patch
+- notes: feat(agent): single-line sub-agent activity display like claude-code
+
+## v0.76.31 (2026-05-22)
+- mode: patch
+- notes: fix(agent): sub-agent tree UI matches claude-code style with header + tree connector
+
+## v0.76.32 (2026-05-22)
+- mode: patch
+- notes: feat(agent): sub-agent tree shows tool use count like claude-code
+
+## v0.76.33 (2026-05-22)
+- mode: patch
+- notes: feat(tui): add shortcut overlay popup on ? key (toggle with ? or ESC)
+
+## v0.76.34 (2026-05-22)
+- mode: patch
+- notes: fix(tui): smoother shimmer animation - reduce interval from 200ms to 60ms
+
+## v0.76.35 (2026-05-22)
+- mode: patch
+- notes: feat(tui): ctrl+o expands all tool groups when idle (transcript view), only current when streaming
+
+## v0.76.36 (2026-05-22)
+- mode: patch
+- notes: fix(tui): ctrl+o hint only shows on active tool group, not completed ones
+
+## v0.76.37 (2026-05-22)
+- mode: patch
+- notes: fix(tui): slower tool reveal stagger (300ms) for smoother tree build-up like codex
+

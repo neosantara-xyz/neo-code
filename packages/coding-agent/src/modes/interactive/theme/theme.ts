@@ -452,9 +452,13 @@ function getBuiltinThemes(): Record<string, ThemeJson> {
 		const themesDir = getThemesDir();
 		const darkPath = path.join(themesDir, "dark.json");
 		const lightPath = path.join(themesDir, "light.json");
+		const neosantaraPath = path.join(themesDir, "neosantara.json");
+		const neosantaraLightPath = path.join(themesDir, "neosantara-light.json");
 		BUILTIN_THEMES = {
 			dark: JSON.parse(fs.readFileSync(darkPath, "utf-8")) as ThemeJson,
 			light: JSON.parse(fs.readFileSync(lightPath, "utf-8")) as ThemeJson,
+			neosantara: JSON.parse(fs.readFileSync(neosantaraPath, "utf-8")) as ThemeJson,
+			"neosantara-light": JSON.parse(fs.readFileSync(neosantaraLightPath, "utf-8")) as ThemeJson,
 		};
 	}
 	return BUILTIN_THEMES;
@@ -906,7 +910,7 @@ export function getResolvedThemeColors(themeName?: string): Record<string, strin
  */
 export function isLightTheme(themeName?: string): boolean {
 	// Currently just check the name - could be extended to analyze colors
-	return themeName === "light";
+	return themeName === "light" || themeName === "neosantara-light";
 }
 
 /**

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "fs";
-import { getChangelogPath, getReleaseNotesPath } from "../config.js";
+import { getChangelogPath, getReleaseNotesCandidatePaths } from "../config.js";
 
 export interface ChangelogEntry {
 	major: number;
@@ -98,7 +98,7 @@ export function getNewEntries(entries: ChangelogEntry[], lastVersion: string): C
 
 export function getAllChangelogEntries(): ChangelogEntry[] {
 	const pkgEntries = parseChangelog(getChangelogPath());
-	const releaseEntries = parseChangelog(getReleaseNotesPath());
+	const releaseEntries = getReleaseNotesCandidatePaths().flatMap((candidate) => parseChangelog(candidate));
 
 	const seenVersions = new Set<string>();
 	const merged: ChangelogEntry[] = [];
@@ -109,7 +109,28 @@ export function getAllChangelogEntries(): ChangelogEntry[] {
 			seenVersions.add(key);
 		}
 	}
-	return merged;
+	return merged.sort((a, b) => compareVersions(a, b));
+}
+
+export function formatChangelogContent(content: string): string {
+	return content
+		.split("\n")
+		.filter((line) => !line.trim().startsWith("- mode:"))
+		.map((line) => line.replace(/^- notes:\s*/u, "- "))
+		.join("\n")
+		.trim();
+}
+
+export function formatChangelogEntries(
+	entries: ChangelogEntry[],
+	emptyMessage = "No changelog entries found.",
+): string {
+	if (entries.length === 0) return emptyMessage;
+	return [...entries]
+		.sort((a, b) => compareVersions(b, a))
+		.map((entry) => formatChangelogContent(entry.content))
+		.filter((content) => content.length > 0)
+		.join("\n\n");
 }
 
 // Re-export path helpers from config.ts for convenience

@@ -7,6 +7,7 @@
  */
 import { EnvHttpProxyAgent, setGlobalDispatcher } from "undici";
 import { APP_NAME } from "./config.js";
+import { installGlobalErrorHandlers } from "./core/process-lifecycle.js";
 import { main } from "./main.js";
 
 process.title = APP_NAME;
@@ -19,4 +20,7 @@ process.emitWarning = (() => {}) as typeof process.emitWarning;
 // AbortController-based deadlines via retry.provider.timeoutMs.
 setGlobalDispatcher(new EnvHttpProxyAgent({ bodyTimeout: 0, headersTimeout: 0 }));
 
-main(process.argv.slice(2));
+installGlobalErrorHandlers();
+void main(process.argv.slice(2)).catch((error: unknown) => {
+	throw error;
+});

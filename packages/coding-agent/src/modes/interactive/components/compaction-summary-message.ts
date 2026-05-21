@@ -32,27 +32,35 @@ export class CompactionSummaryMessageComponent extends Box {
 	private updateDisplay(): void {
 		this.clear();
 
-		const tokenStr = this.message.tokensBefore.toLocaleString();
-		const label = theme.fg("customMessageLabel", `\x1b[1m[compaction]\x1b[22m`);
+		const before = this.message.tokensBefore.toLocaleString();
+		const after = this.message.tokensAfter;
+		const summarized = this.message.summarizedMessages;
+		const label = theme.fg("customMessageLabel", `\x1b[1m✦ Compacted context\x1b[22m`);
 		this.addChild(new Text(label, 0, 0));
 		this.addChild(new Spacer(1));
 
+		const rows = [
+			`  ├─ before ${before} tokens`,
+			after !== undefined ? `  ├─ after ~${after.toLocaleString()} tokens` : undefined,
+			summarized !== undefined
+				? `  ├─ summarized ${summarized.toLocaleString()} message${summarized === 1 ? "" : "s"}`
+				: undefined,
+			this.expanded
+				? `  └─ ${keyText("app.tools.expand")} collapse summary`
+				: `  └─ ${keyText("app.tools.expand")} expand summary`,
+		]
+			.filter((row): row is string => Boolean(row))
+			.map((row) => theme.fg("customMessageText", row))
+			.join("\n");
+
+		this.addChild(new Text(rows, 0, 0));
+
 		if (this.expanded) {
-			const header = `**Compacted from ${tokenStr} tokens**\n\n`;
+			this.addChild(new Spacer(1));
 			this.addChild(
-				new Markdown(header + this.message.summary, 0, 0, this.markdownTheme, {
+				new Markdown(this.message.summary, 0, 0, this.markdownTheme, {
 					color: (text: string) => theme.fg("customMessageText", text),
 				}),
-			);
-		} else {
-			this.addChild(
-				new Text(
-					theme.fg("customMessageText", `Compacted from ${tokenStr} tokens (`) +
-						theme.fg("dim", keyText("app.tools.expand")) +
-						theme.fg("customMessageText", " to expand)"),
-					0,
-					0,
-				),
 			);
 		}
 	}

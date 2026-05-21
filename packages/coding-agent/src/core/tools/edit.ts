@@ -18,7 +18,7 @@ import {
 	stripBom,
 } from "./edit-diff.js";
 import { withFileMutationQueue } from "./file-mutation-queue.js";
-import { resolveToCwd } from "./path-utils.js";
+import { resolveWorkspacePath } from "./path-utils.js";
 import { invalidArgText, shortenPath, str } from "./render-utils.js";
 import {
 	formatToolActivityLine,
@@ -300,16 +300,18 @@ export function createEditToolDefinition(
 		name: "edit",
 		label: "edit",
 		description:
-			"Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
-		promptSnippet:
-			"Make precise file edits with exact text replacement, including multiple disjoint edits in one call",
+			"Edit a single file using exact text replacement. Read the file first, then provide oldText that exactly matches a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+		promptSnippet: "Make precise existing-file edits with exact text replacement after reading the file",
 		promptGuidelines: [
+			"Read the file before editing it so oldText matches the current contents exactly.",
 			"Use edit for precise changes (edits[].oldText must match exactly)",
 			"When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls",
 			"Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.",
 			"Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.",
+			"Prefer edit over write when changing existing files.",
 		],
 		parameters: editSchema,
+		executionMode: "sequential",
 		renderShell: "self",
 		isSearchOrReadCommand(args) {
 			const activity = summarizeToolCall("edit", args);
@@ -331,7 +333,7 @@ export function createEditToolDefinition(
 		prepareArguments: prepareEditArguments,
 		async execute(_toolCallId, input: EditToolInput, signal?: AbortSignal, _onUpdate?, _ctx?) {
 			const { path, edits } = validateEditInput(input);
-			const absolutePath = resolveToCwd(path, cwd);
+			const absolutePath = resolveWorkspacePath(path, cwd, "Edit path");
 
 			return withFileMutationQueue(
 				absolutePath,

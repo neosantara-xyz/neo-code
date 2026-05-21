@@ -89,7 +89,7 @@ describe("Neosantara model registry", () => {
 		expect(payload.include).toEqual(["reasoning.encrypted_content"]);
 	});
 
-	it("does not send reasoning with DeepSeek Responses tool requests", async () => {
+	it("sends reasoning with DeepSeek Responses tool requests (backend handles compatibility)", async () => {
 		const payload = await capturePayload({ reasoning: "medium" }, getModel("neosantara", "deepseek-v4-flash"), {
 			...context,
 			tools: [
@@ -105,8 +105,8 @@ describe("Neosantara model registry", () => {
 				},
 			],
 		});
-		expect(payload.reasoning).toBeUndefined();
-		expect(payload.include).toBeUndefined();
+		expect(payload.reasoning).toEqual({ effort: "medium", summary: "auto" });
+		expect(payload.include).toEqual(["reasoning.encrypted_content"]);
 		expect(payload.tools).toHaveLength(1);
 	});
 });

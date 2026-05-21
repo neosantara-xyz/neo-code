@@ -20,6 +20,7 @@ import type {
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.js";
 import { takeOverStdout, writeRawStdout } from "../../core/output-guard.js";
+import { exitAfterCleanup } from "../../core/process-lifecycle.js";
 import { killTrackedDetachedChildren } from "../../utils/shell.js";
 import { type Theme, theme } from "../interactive/theme/theme.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
@@ -667,7 +668,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 	async function shutdown(exitCode = 0): Promise<never> {
 		if (shuttingDown) {
-			process.exit(exitCode);
+			exitAfterCleanup(exitCode);
 		}
 		shuttingDown = true;
 		for (const cleanup of signalCleanupHandlers) {
@@ -677,7 +678,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		await runtimeHost.dispose();
 		detachInput();
 		process.stdin.pause();
-		process.exit(exitCode);
+		exitAfterCleanup(exitCode);
 	}
 
 	async function checkShutdownRequested(): Promise<void> {

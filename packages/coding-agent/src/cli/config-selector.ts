@@ -4,6 +4,7 @@
 
 import { ProcessTerminal, TUI } from "@neosantara/tui";
 import type { ResolvedPaths } from "../core/package-manager.js";
+import { exitAfterCleanup } from "../core/process-lifecycle.js";
 import type { SettingsManager } from "../core/settings-manager.js";
 import { ConfigSelectorComponent } from "../modes/interactive/components/config-selector.js";
 import { initTheme, stopThemeWatcher } from "../modes/interactive/theme/theme.js";
@@ -40,7 +41,7 @@ export async function selectConfig(options: ConfigSelectorOptions): Promise<void
 			() => {
 				ui.stop();
 				stopThemeWatcher();
-				process.exit(0);
+				exitAfterCleanup(0);
 			},
 			() => ui.requestRender(),
 		);

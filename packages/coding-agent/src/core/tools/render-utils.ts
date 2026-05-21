@@ -4,6 +4,35 @@ import { getCapabilities, getImageDimensions, imageFallback } from "@neosantara/
 import { stripAnsi } from "../../utils/ansi.js";
 import { sanitizeBinaryOutput } from "../../utils/shell.js";
 
+const SOURCE_MAPPING_URL_LINE_PATTERN =
+	/^\s*(?:(?:\/\/|#)\s*#\s*sourceMappingURL\s*=|\/\*\s*#\s*sourceMappingURL\s*=)/i;
+
+export function isSourceMappingUrlLine(line: string): boolean {
+	return SOURCE_MAPPING_URL_LINE_PATTERN.test(line);
+}
+
+export function stripSourceMappingUrlLines(text: string): { text: string; removedLines: number } {
+	let removedLines = 0;
+	const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+	const lines = normalized.split("\n");
+	const filtered = lines.filter((line) => {
+		if (isSourceMappingUrlLine(line)) {
+			removedLines += 1;
+			return false;
+		}
+		return true;
+	});
+	return { text: filtered.join("\n"), removedLines };
+}
+
+export function formatSourceMappingUrlFilterNotice(count: number): string {
+	return `[Filtered ${count} sourceMappingURL line${count === 1 ? "" : "s"}.]`;
+}
+
+export function appendToolNotice(text: string, notice: string): string {
+	return text ? `${text}\n\n${notice}` : notice;
+}
+
 export function shortenPath(path: unknown): string {
 	if (typeof path !== "string") return "";
 	const home = os.homedir();

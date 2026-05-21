@@ -12,7 +12,16 @@ describe("agents slash commands", () => {
 		});
 	});
 
-	it("does not expose the redundant /memory alias", () => {
-		expect(BUILTIN_SLASH_COMMANDS.map((command) => command.name)).not.toContain("memory");
+	it("does not expose redundant or advanced aliases in the default slash palette", () => {
+		const commandNames = BUILTIN_SLASH_COMMANDS.map((command) => command.name);
+
+		expect(commandNames).not.toContain("memory");
+		expect(commandNames).not.toContain("readonly");
+		expect(commandNames).not.toContain("agent");
+		expect(commandNames).not.toContain("acceptedits");
+		expect(commandNames).not.toContain("scoped-models");
+		expect(commandNames).not.toContain("reload");
+		expect(commandNames).not.toContain("hooks");
+		expect(commandNames.length).toBeLessThanOrEqual(25);
 	});
 });

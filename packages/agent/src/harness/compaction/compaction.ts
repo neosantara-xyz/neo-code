@@ -458,7 +458,9 @@ export function findCutPoint(
 // Summarization
 // ============================================================================
 
-const SUMMARIZATION_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
+const SUMMARIZATION_PROMPT = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work after /compact.
+
+Do not continue the conversation. Preserve the user's explicit requirements, current implementation state, and verification results. Prefer concise bullets over narrative.
 
 Use this EXACT format:
 
@@ -467,6 +469,7 @@ Use this EXACT format:
 
 ## Constraints & Preferences
 - [Any constraints, preferences, or requirements mentioned by user]
+- [Project or AGENTS.md constraints that affected the work]
 - [Or "(none)" if none were mentioned]
 
 ## Progress
@@ -474,7 +477,7 @@ Use this EXACT format:
 - [x] [Completed tasks/changes]
 
 ### In Progress
-- [ ] [Current work]
+- [ ] [Current work and the most recent file/tool focus]
 
 ### Blocked
 - [Issues preventing progress, if any]
@@ -482,24 +485,30 @@ Use this EXACT format:
 ## Key Decisions
 - **[Decision]**: [Brief rationale]
 
+## Files & Symbols
+- [Exact file paths, functions, classes, command names, and tests that matter]
+
+## Verification
+- [Commands/checks that passed, failed, or were not run]
+
 ## Next Steps
 1. [Ordered list of what should happen next]
 
 ## Critical Context
-- [Any data, examples, or references needed to continue]
+- [Any data, examples, errors, UI observations, or references needed to continue]
 - [Or "(none)" if not applicable]
 
-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+Keep each section concise. Preserve exact file paths, function names, commands, error messages, and user-facing wording.`;
 
 const UPDATE_SUMMARIZATION_PROMPT = `The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.
 
 Update the existing structured summary with new information. RULES:
-- PRESERVE all existing information from the previous summary
-- ADD new progress, decisions, and context from the new messages
+- PRESERVE all still-relevant information from the previous summary
+- ADD new progress, decisions, constraints, verification results, and context from the new messages
 - UPDATE the Progress section: move items from "In Progress" to "Done" when completed
-- UPDATE "Next Steps" based on what was accomplished
-- PRESERVE exact file paths, function names, and error messages
-- If something is no longer relevant, you may remove it
+- UPDATE "Files & Symbols", "Verification", and "Next Steps" based on what changed
+- PRESERVE exact file paths, function names, commands, error messages, and important user-facing wording
+- If something is obsolete or contradicted by newer work, replace it with the current state instead of keeping stale instructions
 
 Use this EXACT format:
 
@@ -522,13 +531,19 @@ Use this EXACT format:
 ## Key Decisions
 - **[Decision]**: [Brief rationale] (preserve all previous, add new)
 
+## Files & Symbols
+- [Exact file paths, functions, classes, command names, and tests that matter]
+
+## Verification
+- [Commands/checks that passed, failed, or were not run]
+
 ## Next Steps
 1. [Update based on current state]
 
 ## Critical Context
 - [Preserve important context, add new if needed]
 
-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+Keep each section concise. Preserve exact file paths, function names, commands, and error messages.`;
 
 /**
  * Generate a summary of the conversation using the LLM.
@@ -712,10 +727,13 @@ Summarize the prefix to provide context for the retained suffix:
 ## Early Progress
 - [Key decisions and work done in the prefix]
 
+## Files & Symbols
+- [Exact file paths, functions, classes, command names, tests, and errors needed by the suffix]
+
 ## Context for Suffix
 - [Information needed to understand the retained recent work]
 
-Be concise. Focus on what's needed to understand the kept suffix.`;
+Be concise. Focus on what is needed to understand the kept suffix.`;
 
 /**
  * Generate summaries for compaction using prepared data.

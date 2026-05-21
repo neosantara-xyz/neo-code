@@ -7,7 +7,7 @@ import { keyHint } from "../../modes/interactive/components/keybinding-hints.js"
 import { getLanguageFromPath, highlightCode } from "../../modes/interactive/theme/theme.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { withFileMutationQueue } from "./file-mutation-queue.js";
-import { resolveToCwd } from "./path-utils.js";
+import { resolveWorkspacePath } from "./path-utils.js";
 import { invalidArgText, normalizeDisplayText, replaceTabs, shortenPath, str } from "./render-utils.js";
 import {
 	formatToolActivityLine,
@@ -201,10 +201,15 @@ export function createWriteToolDefinition(
 		name: "write",
 		label: "write",
 		description:
-			"Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
-		promptSnippet: "Create or overwrite files",
-		promptGuidelines: ["Use write only for new files or complete rewrites."],
+			"Write content to a file. Creates the file if it doesn't exist, overwrites if it does, and automatically creates parent directories. Prefer edit for normal modifications. Before overwriting an existing file, read it first unless the user provided the full exact content.",
+		promptSnippet: "Create new files or perform complete rewrites; prefer edit for existing files",
+		promptGuidelines: [
+			"Use write only for new files or complete rewrites.",
+			"Before overwriting an existing file, read it first unless the user provided the full exact content to write.",
+			"Do not create documentation or markdown files unless explicitly requested by the user.",
+		],
 		parameters: writeSchema,
+		executionMode: "sequential",
 		isSearchOrReadCommand(args) {
 			const activity = summarizeToolCall("write", args);
 			return {
@@ -229,7 +234,7 @@ export function createWriteToolDefinition(
 			_onUpdate?,
 			_ctx?,
 		) {
-			const absolutePath = resolveToCwd(path, cwd);
+			const absolutePath = resolveWorkspacePath(path, cwd, "Write path");
 			const dir = dirname(absolutePath);
 			return withFileMutationQueue(
 				absolutePath,

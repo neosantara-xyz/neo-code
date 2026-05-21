@@ -113,8 +113,11 @@ function buildModelLines(model: GeneratedModelEntry): string {
 	if (model.costCurrency !== "IDR") {
 		options.push(`costCurrency: ${JSON.stringify(model.costCurrency)}`);
 	}
-	if (model.id === "deepseek-v4-flash" || model.id === "deepseek-v4-pro") {
-		options.push("compat: { supportsReasoningWithTools: false }");
+
+	// Models known to support reasoning but not advertised by /v1/models
+	const FORCE_REASONING_MODELS = ["gemini-3-flash", "gemini-3-pro-preview", "gemini-3.1-flash-lite-preview", "gemini-3.1-pro-preview"];
+	if (!model.reasoning && FORCE_REASONING_MODELS.includes(model.id)) {
+		options.unshift("reasoning: true");
 	}
 
 	const optionsSuffix = options.length > 0 ? `, { ${options.join(", ")} }` : "";

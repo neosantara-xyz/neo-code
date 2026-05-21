@@ -13,6 +13,7 @@ export interface SlashCommandInfo {
 export interface BuiltinSlashCommand {
 	name: string;
 	description: string;
+	argumentHint?: string;
 }
 
 export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
@@ -21,30 +22,28 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "usage", description: "Show Neosantara PAYG usage and budget in Rupiah" },
 	{ name: "context", description: "Show current context window usage and compaction guidance" },
 	{ name: "doctor", description: "Run local Neo Code health checks" },
+	{ name: "config", description: "Show effective Neo Code configuration summary" },
+	{ name: "mcp", description: "Show configured MCP servers" },
+	{ name: "todo", description: "Show current todo plan" },
+	{ name: "termux-keys", description: "Show or apply Neo Code touch-keyboard keys for Termux" },
+	{ name: "mode", description: "Show or switch workflow mode" },
 	{ name: "permissions", description: "Show or change active tool permissions for the next turn" },
+	{ name: "tasks", description: "Show, inspect, or stop background shell tasks" },
 	{ name: "diff", description: "Show current Git workspace diff" },
 	{ name: "init", description: "Create an AGENTS.md contributor guide for this repository" },
 	{ name: "agents", description: "Show or initialize AGENTS.md project instructions" },
 	{ name: "skills", description: "Install or list skills" },
-	{ name: "hooks", description: "Show extension hooks, commands, tools, and shortcuts" },
-	{ name: "model", description: "Select model (opens selector UI)" },
-	{ name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
-	{ name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)" },
-	{ name: "import", description: "Import and resume a session from a JSONL file" },
-	{ name: "share", description: "Share session as a secret GitHub gist" },
-	{ name: "copy", description: "Copy last agent message to clipboard" },
-	{ name: "name", description: "Set session display name" },
-	{ name: "session", description: "Show session info and stats" },
-	{ name: "changelog", description: "Show changelog entries" },
+	{ name: "model", description: "Select model" },
+	{ name: "export", description: "Export session to HTML or JSONL" },
+	{ name: "import", description: "Import and resume a JSONL session" },
 	{ name: "hotkeys", description: "Show all keyboard shortcuts" },
-	{ name: "fork", description: "Create a new fork from a previous user message" },
-	{ name: "clone", description: "Duplicate the current session at the current position" },
-	{ name: "tree", description: "Navigate session tree (switch branches)" },
 	{ name: "login", description: "Configure provider authentication" },
 	{ name: "logout", description: "Remove provider authentication" },
 	{ name: "new", description: "Start a new session" },
-	{ name: "compact", description: "Manually compact the session context" },
-	{ name: "resume", description: "Resume a different session" },
-	{ name: "reload", description: "Reload keybindings, extensions, skills, prompts, and themes" },
+	{
+		name: "compact",
+		description: "Manually compact the session context",
+		argumentHint: "<optional custom summarization instructions>",
+	},
 	{ name: "quit", description: `Quit ${APP_NAME}` },
 ];

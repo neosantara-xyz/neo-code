@@ -5,7 +5,7 @@ import nodePath from "path";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
-import { resolveToCwd } from "./path-utils.js";
+import { resolveWorkspacePath } from "./path-utils.js";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
 import {
 	formatToolActivityLine,
@@ -28,6 +28,9 @@ const DEFAULT_LIMIT = 500;
 export interface LsToolDetails {
 	truncation?: TruncationResult;
 	entryLimitReached?: number;
+	entryCount?: number;
+	fileCount?: number;
+	directoryCount?: number;
 }
 
 /**
@@ -151,7 +154,7 @@ export function createLsToolDefinition(
 
 				(async () => {
 					try {
-						const dirPath = resolveToCwd(path || ".", cwd);
+						const dirPath = resolveWorkspacePath(path || ".", cwd, "List path");
 						const effectiveLimit = limit ?? DEFAULT_LIMIT;
 
 						// Check if path exists.
@@ -181,6 +184,8 @@ export function createLsToolDefinition(
 
 						// Format entries with directory indicators.
 						const results: string[] = [];
+						let fileCount = 0;
+						let directoryCount = 0;
 						let entryLimitReached = false;
 						for (const entry of entries) {
 							if (results.length >= effectiveLimit) {
@@ -192,7 +197,12 @@ export function createLsToolDefinition(
 							let suffix = "";
 							try {
 								const entryStat = await ops.stat(fullPath);
-								if (entryStat.isDirectory()) suffix = "/";
+								if (entryStat.isDirectory()) {
+									suffix = "/";
+									directoryCount += 1;
+								} else {
+									fileCount += 1;
+								}
 							} catch {
 								// Skip entries we cannot stat.
 								continue;
@@ -211,7 +221,11 @@ export function createLsToolDefinition(
 						// Apply byte truncation. There is no separate line limit because entry count is already capped.
 						const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
 						let output = truncation.content;
-						const details: LsToolDetails = {};
+						const details: LsToolDetails = {
+							entryCount: results.length,
+							fileCount,
+							directoryCount,
+						};
 						// Build actionable notices for truncation and entry limits.
 						const notices: string[] = [];
 						if (entryLimitReached) {

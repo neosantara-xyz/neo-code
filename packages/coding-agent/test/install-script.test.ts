@@ -43,7 +43,7 @@ describe("install.sh", () => {
 
 		expect(output).toContain("https://code.neosantara.xyz/releases/v0.74.0/neo-linux-x64.tar.gz");
 		expect(output).toContain("Neo Code Installer");
-		expect(output).toContain("[1/3] Downloading");
+		expect(output).toContain("[fetch] Downloading neo-linux-x64.tar.gz");
 		expect(output).toContain(`ln -s ${home}/.local/neo/neo ${home}/.local/bin/neo`);
 	});
 
@@ -63,8 +63,8 @@ describe("install.sh", () => {
 
 		expect(output).toContain("Termux detected; using prebuilt npm bundle");
 		expect(output).toContain("https://code.neosantara.xyz/releases/v0.74.0/neo-termux-npm-bundle.tar.gz");
-		expect(output).toContain("[1/3] Downloading");
-		expect(output).toContain("[2/3] Extracting installer bundle");
+		expect(output).toContain("[fetch] Downloading Termux bundle");
+		expect(output).toContain("[extract] Extracting installer bundle");
 		expect(output).toContain(
 			"npm install -g --no-fund --no-audit ./neosantara-ai.tgz ./neosantara-agent-core.tgz ./neosantara-tui.tgz ./neosantara-code.tgz",
 		);

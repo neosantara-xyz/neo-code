@@ -381,15 +381,21 @@ export function getChangelogPath(): string {
 	return resolve(join(getPackageDir(), "CHANGELOG.md"));
 }
 
-/** Get path to releases/NOTES.md */
-export function getReleaseNotesPath(): string {
+/** Get candidate paths to releases/NOTES.md. */
+export function getReleaseNotesCandidatePaths(): string[] {
 	const packageDir = getPackageDir();
-	const candidates = [
+	return [
 		join(packageDir, "dist", "releases", "NOTES.md"),
 		join(packageDir, "releases", "NOTES.md"),
 		join(packageDir, "..", "..", "releases", "NOTES.md"),
-	];
-	return resolve(candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]);
+		join(process.cwd(), "releases", "NOTES.md"),
+	].map((candidate) => resolve(candidate));
+}
+
+/** Get path to releases/NOTES.md */
+export function getReleaseNotesPath(): string {
+	const candidates = getReleaseNotesCandidatePaths();
+	return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]!;
 }
 
 /**

@@ -1,9 +1,56 @@
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, realpathSync } from "node:fs";
 import * as os from "node:os";
-import { isAbsolute, resolve as resolvePath } from "node:path";
+import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from "node:path";
 
 const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 const NARROW_NO_BREAK_SPACE = "\u202F";
+
+function pathExists(filePath: string): boolean {
+	try {
+		accessSync(filePath, constants.F_OK);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function realpathExistingPrefix(filePath: string): string {
+	let current = resolvePath(filePath);
+	const suffix: string[] = [];
+	while (!pathExists(current)) {
+		const parent = dirname(current);
+		if (parent === current) {
+			return resolvePath(filePath);
+		}
+		suffix.unshift(basename(current));
+		current = parent;
+	}
+	const realBase = realpathSync.native(current);
+	return suffix.length > 0 ? resolvePath(realBase, ...suffix) : realBase;
+}
+
+export function isPathInsideCwd(absolutePath: string, cwd: string): boolean {
+	const realCwd = realpathExistingPrefix(cwd);
+	const realCandidate = realpathExistingPrefix(absolutePath);
+	const relativePath = relative(realCwd, realCandidate);
+	return (
+		relativePath === "" ||
+		(relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath))
+	);
+}
+
+export function assertPathInsideCwd(absolutePath: string, cwd: string, label = "Path"): string {
+	const resolved = resolvePath(absolutePath);
+	if (!isPathInsideCwd(resolved, cwd)) {
+		throw new Error(`${label} escapes workspace: ${absolutePath}`);
+	}
+	return resolved;
+}
+
+export function resolveWorkspacePath(filePath: string, cwd: string, label = "Path"): string {
+	return assertPathInsideCwd(resolveToCwd(filePath, cwd), cwd, label);
+}
+
 function normalizeUnicodeSpaces(str: string): string {
 	return str.replace(UNICODE_SPACES, " ");
 }
@@ -24,12 +71,7 @@ function tryCurlyQuoteVariant(filePath: string): string {
 }
 
 function fileExists(filePath: string): boolean {
-	try {
-		accessSync(filePath, constants.F_OK);
-		return true;
-	} catch {
-		return false;
-	}
+	return pathExists(filePath);
 }
 
 function normalizeAtPrefix(filePath: string): string {

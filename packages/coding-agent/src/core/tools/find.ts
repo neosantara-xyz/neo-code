@@ -8,7 +8,7 @@ import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
-import { resolveToCwd } from "./path-utils.js";
+import { resolveWorkspacePath } from "./path-utils.js";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
 import {
 	formatToolActivityLine,
@@ -38,6 +38,7 @@ const DEFAULT_LIMIT = 1000;
 export interface FindToolDetails {
 	truncation?: TruncationResult;
 	resultLimitReached?: number;
+	resultCount?: number;
 }
 
 /**
@@ -176,7 +177,7 @@ export function createFindToolDefinition(
 
 				(async () => {
 					try {
-						const searchPath = resolveToCwd(searchDir || ".", cwd);
+						const searchPath = resolveWorkspacePath(searchDir || ".", cwd, "Find path");
 						const effectiveLimit = limit ?? DEFAULT_LIMIT;
 						const ops = customOps ?? defaultFindOperations;
 
@@ -217,7 +218,7 @@ export function createFindToolDefinition(
 							const rawOutput = relativized.join("\n");
 							const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
 							let resultOutput = truncation.content;
-							const details: FindToolDetails = {};
+							const details: FindToolDetails = { resultCount: relativized.length };
 							const notices: string[] = [];
 							if (resultLimitReached) {
 								notices.push(`${effectiveLimit} results limit reached`);
@@ -345,7 +346,7 @@ export function createFindToolDefinition(
 							const rawOutput = relativized.join("\n");
 							const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
 							let resultOutput = truncation.content;
-							const details: FindToolDetails = {};
+							const details: FindToolDetails = { resultCount: relativized.length };
 							const notices: string[] = [];
 							if (resultLimitReached) {
 								notices.push(

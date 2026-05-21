@@ -27,7 +27,14 @@ import {
 } from "@neosantara/ai";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { sleep } from "../utils/sleep.js";
+import {
+	type AgentWorkMode,
+	getAgentModePromptAppend,
+	getAgentWorkModeLabel,
+	getBuiltinToolNamesForAgentMode,
+} from "./agent-mode.js";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.js";
+import { type BackgroundShellTaskSnapshot, BackgroundTaskManager } from "./background-tasks.js";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.js";
 import {
 	type CompactionResult,
@@ -35,6 +42,7 @@ import {
 	collectEntriesForBranchSummary,
 	compact,
 	estimateContextTokens,
+	estimateRawContextTokens,
 	generateBranchSummary,
 	prepareCompaction,
 	shouldCompact,
@@ -79,6 +87,14 @@ import { expandSkillInvocationText } from "./skills.js";
 import type { SlashCommandInfo } from "./slash-commands.js";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.js";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.js";
+import {
+	createToolApprovalRequest,
+	formatToolApprovalDeniedReason,
+	getToolApprovalPolicy,
+	type ToolApprovalDecision,
+	type ToolApprovalHandler,
+	type ToolApprovalRequest,
+} from "./tool-approval.js";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.js";
 import { createAllToolDefinitions } from "./tools/index.js";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.js";
@@ -111,6 +127,8 @@ export function parseSkillBlock(text: string): ParsedSkillBlock | null {
 }
 
 /** Session-specific events that extend the core AgentEvent */
+export const MAX_AUTO_COMPACTION_FAILURES = 3;
+
 export type AgentSessionEvent =
 	| AgentEvent
 	| {
@@ -121,6 +139,7 @@ export type AgentSessionEvent =
 	| { type: "compaction_start"; reason: "manual" | "threshold" | "overflow" }
 	| { type: "session_info_changed"; name: string | undefined }
 	| { type: "thinking_level_changed"; level: ThinkingLevel }
+	| { type: "agent_mode_changed"; mode: AgentWorkMode }
 	| {
 			type: "compaction_end";
 			reason: "manual" | "threshold" | "overflow";
@@ -129,8 +148,26 @@ export type AgentSessionEvent =
 			willRetry: boolean;
 			errorMessage?: string;
 	  }
-	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
-	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
+	| {
+			type: "auto_retry_start";
+			attempt: number;
+			maxAttempts: number;
+			delayMs: number;
+			errorMessage: string;
+	  }
+	| {
+			type: "auto_retry_end";
+			success: boolean;
+			attempt: number;
+			finalError?: string;
+	  }
+	| { type: "tool_approval_request"; request: ToolApprovalRequest }
+	| { type: "background_task_update"; event: string; task: BackgroundShellTaskSnapshot }
+	| {
+			type: "tool_approval_result";
+			request: ToolApprovalRequest;
+			decision: ToolApprovalDecision;
+	  };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -154,6 +191,10 @@ export interface AgentSessionConfig {
 	modelRegistry: ModelRegistry;
 	/** Initial active built-in tool names. Default: [read, bash, edit, write] */
 	initialActiveToolNames?: string[];
+	/** Active workflow/tool mode. */
+	agentMode?: AgentWorkMode;
+	/** Apply agentMode to the initial tool set instead of initialActiveToolNames. */
+	applyInitialAgentMode?: boolean;
 	/** Optional allowlist of tool names. When provided, only these tool names are exposed. */
 	allowedToolNames?: string[];
 	/**
@@ -223,6 +264,31 @@ interface ToolDefinitionEntry {
 	sourceInfo: SourceInfo;
 }
 
+interface NeoCompactionMetrics {
+	summarizedMessages?: number;
+	tokensAfter?: number;
+}
+
+function mergeCompactionMetricsDetails(details: unknown, metrics: NeoCompactionMetrics): unknown {
+	const base: Record<string, unknown> =
+		details && typeof details === "object" && !Array.isArray(details)
+			? { ...(details as Record<string, unknown>) }
+			: {};
+	const existingMetrics =
+		base.neoCompaction && typeof base.neoCompaction === "object" && !Array.isArray(base.neoCompaction)
+			? (base.neoCompaction as Record<string, unknown>)
+			: {};
+	base.neoCompaction = { ...existingMetrics, ...metrics };
+	return base;
+}
+
+function countCompactedMessages(preparation: {
+	messagesToSummarize: unknown[];
+	turnPrefixMessages: unknown[];
+}): number {
+	return preparation.messagesToSummarize.length + preparation.turnPrefixMessages.length;
+}
+
 // ============================================================================
 // Constants
 // ============================================================================
@@ -239,7 +305,10 @@ export class AgentSession {
 	readonly sessionManager: SessionManager;
 	readonly settingsManager: SettingsManager;
 
-	private _scopedModels: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
+	private _scopedModels: Array<{
+		model: Model<any>;
+		thinkingLevel?: ThinkingLevel;
+	}>;
 
 	// Event subscription state
 	private _unsubscribeAgent?: () => void;
@@ -257,6 +326,7 @@ export class AgentSession {
 	private _compactionAbortController: AbortController | undefined = undefined;
 	private _autoCompactionAbortController: AbortController | undefined = undefined;
 	private _overflowRecoveryAttempted = false;
+	private _autoCompactionFailureCount = 0;
 
 	// Branch summarization state
 	private _branchSummaryAbortController: AbortController | undefined = undefined;
@@ -270,6 +340,8 @@ export class AgentSession {
 	// Bash execution state
 	private _bashAbortController: AbortController | undefined = undefined;
 	private _pendingBashMessages: BashExecutionMessage[] = [];
+	private readonly _backgroundTasks = new BackgroundTaskManager();
+	private _backgroundTaskUnsubscribe: (() => void) | undefined;
 
 	// Extension system
 	private _extensionRunner!: ExtensionRunner;
@@ -281,7 +353,13 @@ export class AgentSession {
 	private _cwd: string;
 	private _extensionRunnerRef?: { current?: ExtensionRunner };
 	private _initialActiveToolNames?: string[];
+	private _agentMode: AgentWorkMode;
+	private _prePlanAgentMode: Exclude<AgentWorkMode, "plan"> | undefined;
+	private _applyInitialAgentMode: boolean;
 	private _allowedToolNames?: Set<string>;
+	private _toolApprovalHandler?: ToolApprovalHandler;
+	private _sessionToolApprovalAllowRules = new Set<string>();
+	private _sessionToolApprovalDenyRules = new Set<string>();
 	private _baseToolsOverride?: Record<string, AgentTool>;
 	private _sessionStartEvent: SessionStartEvent;
 	private _extensionUIContext?: ExtensionUIContext;
@@ -314,18 +392,33 @@ export class AgentSession {
 		this._modelRegistry = config.modelRegistry;
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
+		this._agentMode = config.agentMode ?? this.settingsManager.getAgentMode();
+		this._prePlanAgentMode = this._agentMode === "plan" ? "default" : undefined;
+		this._applyInitialAgentMode = config.applyInitialAgentMode ?? false;
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
 		this._baseToolsOverride = config.baseToolsOverride;
-		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
+		this._sessionStartEvent = config.sessionStartEvent ?? {
+			type: "session_start",
+			reason: "startup",
+		};
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
 		this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
 		this._installAgentToolHooks();
+		this._backgroundTaskUnsubscribe = this._backgroundTasks.onUpdate((event) => {
+			if (event.type !== "output") {
+				this._emit({ type: "background_task_update", event: event.type, task: event.task });
+			}
+			if (event.type === "completed" || event.type === "failed" || event.type === "killed") {
+				this._queueBackgroundTaskCompletion(event.task, event.type);
+			}
+		});
 
 		this._buildRuntime({
-			activeToolNames: this._initialActiveToolNames,
+			activeToolNames: this._applyInitialAgentMode ? undefined : this._initialActiveToolNames,
 			includeAllExtensionTools: true,
+			applyAgentMode: this._applyInitialAgentMode,
 		});
 	}
 
@@ -371,25 +464,28 @@ export class AgentSession {
 	private _installAgentToolHooks(): void {
 		this.agent.beforeToolCall = async ({ toolCall, args }) => {
 			const runner = this._extensionRunner;
-			if (!runner.hasHandlers("tool_call")) {
-				return undefined;
-			}
+			if (runner.hasHandlers("tool_call")) {
+				await this._agentEventQueue;
 
-			await this._agentEventQueue;
-
-			try {
-				return await runner.emitToolCall({
-					type: "tool_call",
-					toolName: toolCall.name,
-					toolCallId: toolCall.id,
-					input: args as Record<string, unknown>,
-				});
-			} catch (err) {
-				if (err instanceof Error) {
-					throw err;
+				try {
+					const hookResult = await runner.emitToolCall({
+						type: "tool_call",
+						toolName: toolCall.name,
+						toolCallId: toolCall.id,
+						input: args as Record<string, unknown>,
+					});
+					if (hookResult?.block) {
+						return hookResult;
+					}
+				} catch (err) {
+					if (err instanceof Error) {
+						throw err;
+					}
+					throw new Error(`Extension failed, blocking execution: ${String(err)}`);
 				}
-				throw new Error(`Extension failed, blocking execution: ${String(err)}`);
 			}
+
+			return await this._checkToolApproval(toolCall.name, toolCall.id, args);
 		};
 
 		this.agent.afterToolCall = async ({ toolCall, args, result, isError }) => {
@@ -630,7 +726,10 @@ export class AgentSession {
 			this._turnIndex = 0;
 			await this._extensionRunner.emit({ type: "agent_start" });
 		} else if (event.type === "agent_end") {
-			await this._extensionRunner.emit({ type: "agent_end", messages: event.messages });
+			await this._extensionRunner.emit({
+				type: "agent_end",
+				messages: event.messages,
+			});
 		} else if (event.type === "turn_start") {
 			const extensionEvent: TurnStartEvent = {
 				type: "turn_start",
@@ -745,6 +844,8 @@ export class AgentSession {
 			"This extension ctx is stale after session replacement or reload. Do not use a captured extension API or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
 		);
 		this._disconnectFromAgent();
+		this._backgroundTaskUnsubscribe?.();
+		this._backgroundTaskUnsubscribe = undefined;
 		this._eventListeners = [];
 		cleanupSessionResources(this.sessionId);
 	}
@@ -752,6 +853,59 @@ export class AgentSession {
 	// =========================================================================
 	// Read-only State Access
 	// =========================================================================
+
+	getBackgroundTasks(options?: { includeForeground?: boolean }): BackgroundShellTaskSnapshot[] {
+		return this._backgroundTasks.listTasks(options);
+	}
+
+	getRunningBackgroundTaskCount(): number {
+		return this._backgroundTasks.getRunningBackgroundTaskCount();
+	}
+
+	backgroundCurrentShellTask(): BackgroundShellTaskSnapshot | undefined {
+		return this._backgroundTasks.requestBackgroundCurrentShellTask();
+	}
+
+	stopBackgroundTask(id: string): BackgroundShellTaskSnapshot | undefined {
+		return this._backgroundTasks.stopTask(id);
+	}
+
+	readBackgroundTaskOutputTail(id: string, maxLines?: number): string | undefined {
+		return this._backgroundTasks.readTaskOutputTail(id, maxLines);
+	}
+
+	formatBackgroundTaskSummary(task: BackgroundShellTaskSnapshot): string {
+		return this._backgroundTasks.formatTaskSummary(task);
+	}
+
+	private _queueBackgroundTaskCompletion(
+		task: BackgroundShellTaskSnapshot,
+		eventType: "completed" | "failed" | "killed",
+	): void {
+		if (task.status === "foreground") return;
+		const status = eventType === "completed" ? "completed" : eventType === "killed" ? "killed" : "failed";
+		const exit =
+			typeof task.exitCode === "number" ? `exit ${task.exitCode}` : task.exitCode === null ? "no exit code" : "";
+		const outputTail = this._backgroundTasks.readTaskOutputTail(task.id, 20);
+		const title = task.description?.trim() || task.command;
+		const content = [
+			`Background shell task ${task.id} ${status}: ${title}`,
+			exit ? `Result: ${exit}` : undefined,
+			`Output log: ${task.outputPath}`,
+			outputTail ? `Recent output:\n\`\`\`\n${outputTail}\n\`\`\`` : "Recent output: (no output)",
+		]
+			.filter((line): line is string => Boolean(line))
+			.join("\n\n");
+		void this.sendCustomMessage(
+			{
+				customType: "background_task",
+				content,
+				display: false,
+				details: task,
+			},
+			{ deliverAs: this.isStreaming ? "steer" : "nextTurn" },
+		);
+	}
 
 	/** Full agent state */
 	get state(): AgentState {
@@ -781,6 +935,133 @@ export class AgentSession {
 	/** Current retry attempt (0 if not retrying) */
 	get retryAttempt(): number {
 		return this._retryAttempt;
+	}
+
+	/** Current workflow/tool mode. */
+	get agentMode(): AgentWorkMode {
+		return this._agentMode;
+	}
+
+	/** Install an interactive permission prompt handler. Non-interactive modes can omit this. */
+	setToolApprovalHandler(handler: ToolApprovalHandler | undefined): void {
+		this._toolApprovalHandler = handler;
+	}
+
+	clearToolApprovalRules(): void {
+		this._sessionToolApprovalAllowRules.clear();
+		this._sessionToolApprovalDenyRules.clear();
+	}
+
+	private async _checkToolApproval(
+		toolName: string,
+		toolCallId: string,
+		args: unknown,
+	): Promise<{ block?: boolean; reason?: string; terminate?: boolean } | undefined> {
+		const request = createToolApprovalRequest({
+			toolName,
+			toolCallId,
+			args,
+			mode: this._agentMode,
+		});
+
+		if (this._sessionToolApprovalDenyRules.has(request.ruleKey)) {
+			return {
+				block: true,
+				reason: `Tool denied by session rule: ${request.summary}`,
+			};
+		}
+		if (this._sessionToolApprovalAllowRules.has(request.ruleKey)) {
+			return undefined;
+		}
+
+		if (getToolApprovalPolicy(this._agentMode, toolName, args, this._cwd) === "auto") {
+			return undefined;
+		}
+
+		if (!this._toolApprovalHandler) {
+			return undefined;
+		}
+
+		this._emit({ type: "tool_approval_request", request });
+		const decision = await this._toolApprovalHandler(request);
+		this._emit({ type: "tool_approval_result", request, decision });
+
+		if (decision.scope === "session") {
+			const target =
+				decision.behavior === "allow" ? this._sessionToolApprovalAllowRules : this._sessionToolApprovalDenyRules;
+			target.add(request.ruleKey);
+		}
+
+		if (request.toolName === "ExitPlanMode" && decision.behavior === "allow" && decision.nextMode) {
+			this._prePlanAgentMode = decision.nextMode;
+		}
+
+		if (decision.behavior === "deny") {
+			const hasFeedback = Boolean(decision.feedback?.trim());
+			return {
+				block: true,
+				reason: formatToolApprovalDeniedReason(request, decision),
+				terminate: !hasFeedback,
+			};
+		}
+
+		return undefined;
+	}
+
+	private _filterAllowedToolNames(toolNames: string[]): string[] {
+		if (!this._allowedToolNames) return toolNames;
+		return toolNames.filter((name) => this._allowedToolNames?.has(name));
+	}
+
+	private _toolNamesForAgentMode(mode: AgentWorkMode): string[] {
+		const allTools = this.getAllTools();
+		if (mode === "full") {
+			return this._filterAllowedToolNames(allTools.map((tool) => tool.name).sort((a, b) => a.localeCompare(b)));
+		}
+
+		const builtinNames = new Set(getBuiltinToolNamesForAgentMode(mode));
+		const names = allTools.filter((tool) => builtinNames.has(tool.name)).map((tool) => tool.name);
+		if (mode === "default" || mode === "accept-edits") {
+			for (const tool of allTools) {
+				if (tool.sourceInfo?.source !== "builtin") {
+					names.push(tool.name);
+				}
+			}
+		}
+		return this._filterAllowedToolNames([...new Set(names)]);
+	}
+
+	/**
+	 * Set workflow/tool mode and rebuild active tools + system prompt.
+	 * Changes take effect on the next agent turn.
+	 */
+	setAgentMode(mode: AgentWorkMode, options?: { persist?: boolean }): void {
+		const previousMode = this._agentMode;
+		if (mode === "plan" && previousMode !== "plan") {
+			this._prePlanAgentMode = previousMode as Exclude<AgentWorkMode, "plan">;
+		} else if (mode !== "plan") {
+			this._prePlanAgentMode = undefined;
+		}
+		this._agentMode = mode;
+		if (options?.persist ?? true) {
+			this.settingsManager.setAgentMode(mode);
+		}
+		this.setActiveToolsByName(this._toolNamesForAgentMode(mode));
+		this._emit({ type: "agent_mode_changed", mode });
+	}
+
+	getPlanRestoreMode(): Exclude<AgentWorkMode, "plan"> {
+		return this._prePlanAgentMode ?? "default";
+	}
+
+	exitPlanMode(_plan: string): Exclude<AgentWorkMode, "plan"> {
+		const restoreMode = this.getPlanRestoreMode();
+		this.setAgentMode(restoreMode);
+		return restoreMode;
+	}
+
+	getAgentModeLabel(): string {
+		return getAgentWorkModeLabel(this._agentMode);
 	}
 
 	/**
@@ -870,7 +1151,10 @@ export class AgentSession {
 	}
 
 	/** Scoped models for cycling (from --models flag) */
-	get scopedModels(): ReadonlyArray<{ model: Model<any>; thinkingLevel?: ThinkingLevel }> {
+	get scopedModels(): ReadonlyArray<{
+		model: Model<any>;
+		thinkingLevel?: ThinkingLevel;
+	}> {
 		return this._scopedModels;
 	}
 
@@ -926,8 +1210,8 @@ export class AgentSession {
 
 		const loaderSystemPrompt = this._resourceLoader.getSystemPrompt();
 		const loaderAppendSystemPrompt = this._resourceLoader.getAppendSystemPrompt();
-		const appendSystemPrompt =
-			loaderAppendSystemPrompt.length > 0 ? loaderAppendSystemPrompt.join("\n\n") : undefined;
+		const appendSystemPromptParts = [...loaderAppendSystemPrompt, getAgentModePromptAppend(this._agentMode)];
+		const appendSystemPrompt = appendSystemPromptParts.length > 0 ? appendSystemPromptParts.join("\n\n") : undefined;
 		const loadedSkills = this._resourceLoader.getSkills().skills;
 		const loadedContextFiles = this._resourceLoader.getAgentsFiles().agentsFiles;
 
@@ -1255,7 +1539,10 @@ export class AgentSession {
 	 */
 	async sendCustomMessage<T = unknown>(
 		message: Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">,
-		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
+		options?: {
+			triggerTurn?: boolean;
+			deliverAs?: "steer" | "followUp" | "nextTurn";
+		},
 	): Promise<void> {
 		const appMessage = {
 			role: "custom" as const,
@@ -1450,7 +1737,11 @@ export class AgentSession {
 
 		await this._emitModelSelect(next.model, currentModel, "cycle");
 
-		return { model: next.model, thinkingLevel: this.thinkingLevel, isScoped: true };
+		return {
+			model: next.model,
+			thinkingLevel: this.thinkingLevel,
+			isScoped: true,
+		};
 	}
 
 	private async _cycleAvailableModel(direction: "forward" | "backward"): Promise<ModelCycleResult | undefined> {
@@ -1475,7 +1766,11 @@ export class AgentSession {
 
 		await this._emitModelSelect(nextModel, currentModel, "cycle");
 
-		return { model: nextModel, thinkingLevel: this.thinkingLevel, isScoped: false };
+		return {
+			model: nextModel,
+			thinkingLevel: this.thinkingLevel,
+			isScoped: false,
+		};
 	}
 
 	// =========================================================================
@@ -1589,6 +1884,10 @@ export class AgentSession {
 	 * @param customInstructions Optional instructions for the compaction summary
 	 */
 	async compact(customInstructions?: string): Promise<CompactionResult> {
+		if (this.isCompacting) {
+			throw new Error("Compaction is already running");
+		}
+
 		this._disconnectFromAgent();
 		await this.abort();
 		this._compactionAbortController = new AbortController();
@@ -1668,15 +1967,23 @@ export class AgentSession {
 				throw new Error("Compaction cancelled");
 			}
 
-			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
-			const newEntries = this.sessionManager.getEntries();
+			const summarizedMessages = countCompactedMessages(preparation);
+			details = mergeCompactionMetricsDetails(details, { summarizedMessages });
+			const compactionEntryId = this.sessionManager.appendCompaction(
+				summary,
+				firstKeptEntryId,
+				tokensBefore,
+				details,
+				fromExtension,
+			);
 			const sessionContext = this.sessionManager.buildSessionContext();
-			this.agent.state.messages = sessionContext.messages;
+			const tokensAfter = estimateRawContextTokens(sessionContext.messages);
+			details = mergeCompactionMetricsDetails(details, { summarizedMessages, tokensAfter });
+			this.sessionManager.updateCompactionDetails(compactionEntryId, details);
+			this.agent.state.messages = this.sessionManager.buildSessionContext().messages;
 
 			// Get the saved compaction entry for the extension event
-			const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
-				| CompactionEntry
-				| undefined;
+			const savedCompactionEntry = this.sessionManager.getEntry(compactionEntryId) as CompactionEntry | undefined;
 
 			if (this._extensionRunner && savedCompactionEntry) {
 				await this._extensionRunner.emit({
@@ -1787,11 +2094,14 @@ export class AgentSession {
 
 			this._overflowRecoveryAttempted = true;
 			// Remove the error message from agent state (it IS saved to session for history,
-			// but we don't want it in context for the retry)
+			// but we don't want it in context for the retry). Also move the active
+			// session branch before that failed assistant message, otherwise the
+			// post-compact context can keep the context-overflow error as recent tail.
 			const messages = this.agent.state.messages;
 			if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
 				this.agent.state.messages = messages.slice(0, -1);
 			}
+			this._branchBeforeAssistantMessage(assistantMessage);
 			await this._runAutoCompaction("overflow", true);
 			return;
 		}
@@ -1819,8 +2129,24 @@ export class AgentSession {
 		} else {
 			contextTokens = calculateContextTokens(assistantMessage.usage);
 		}
-		if (shouldCompact(contextTokens, contextWindow, settings)) {
+		if (shouldCompact(contextTokens, contextWindow, settings, this.model?.maxTokens ?? 0)) {
 			await this._runAutoCompaction("threshold", false);
+		}
+	}
+
+	private _branchBeforeAssistantMessage(message: AssistantMessage): void {
+		const leaf = this.sessionManager.getLeafEntry();
+		if (leaf?.type !== "message" || leaf.message.role !== "assistant") {
+			return;
+		}
+		const leafMessage = leaf.message;
+		if (leafMessage.timestamp !== message.timestamp || leafMessage.stopReason !== message.stopReason) {
+			return;
+		}
+		if (leaf.parentId) {
+			this.sessionManager.branch(leaf.parentId);
+		} else {
+			this.sessionManager.resetLeaf();
 		}
 	}
 
@@ -1829,6 +2155,10 @@ export class AgentSession {
 	 */
 	private async _runAutoCompaction(reason: "overflow" | "threshold", willRetry: boolean): Promise<void> {
 		const settings = this.settingsManager.getCompactionSettings();
+
+		if (reason === "threshold" && this._autoCompactionFailureCount >= MAX_AUTO_COMPACTION_FAILURES) {
+			return;
+		}
 
 		this._emit({ type: "compaction_start", reason });
 		this._autoCompactionAbortController = new AbortController();
@@ -1940,15 +2270,23 @@ export class AgentSession {
 				return;
 			}
 
-			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
-			const newEntries = this.sessionManager.getEntries();
+			const summarizedMessages = countCompactedMessages(preparation);
+			details = mergeCompactionMetricsDetails(details, { summarizedMessages });
+			const compactionEntryId = this.sessionManager.appendCompaction(
+				summary,
+				firstKeptEntryId,
+				tokensBefore,
+				details,
+				fromExtension,
+			);
 			const sessionContext = this.sessionManager.buildSessionContext();
-			this.agent.state.messages = sessionContext.messages;
+			const tokensAfter = estimateRawContextTokens(sessionContext.messages);
+			details = mergeCompactionMetricsDetails(details, { summarizedMessages, tokensAfter });
+			this.sessionManager.updateCompactionDetails(compactionEntryId, details);
+			this.agent.state.messages = this.sessionManager.buildSessionContext().messages;
 
 			// Get the saved compaction entry for the extension event
-			const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
-				| CompactionEntry
-				| undefined;
+			const savedCompactionEntry = this.sessionManager.getEntry(compactionEntryId) as CompactionEntry | undefined;
 
 			if (this._extensionRunner && savedCompactionEntry) {
 				await this._extensionRunner.emit({
@@ -1964,7 +2302,14 @@ export class AgentSession {
 				tokensBefore,
 				details,
 			};
-			this._emit({ type: "compaction_end", reason, result, aborted: false, willRetry });
+			this._autoCompactionFailureCount = 0;
+			this._emit({
+				type: "compaction_end",
+				reason,
+				result,
+				aborted: false,
+				willRetry,
+			});
 
 			if (willRetry) {
 				const messages = this.agent.state.messages;
@@ -1984,6 +2329,9 @@ export class AgentSession {
 				}, 100);
 			}
 		} catch (error) {
+			if (reason === "threshold") {
+				this._autoCompactionFailureCount++;
+			}
 			const errorMessage = error instanceof Error ? error.message : "compaction failed";
 			this._emit({
 				type: "compaction_end",
@@ -2059,7 +2407,12 @@ export class AgentSession {
 
 	private buildExtensionResourcePaths(entries: Array<{ path: string; extensionPath: string }>): Array<{
 		path: string;
-		metadata: { source: string; scope: "temporary"; origin: "top-level"; baseDir?: string };
+		metadata: {
+			source: string;
+			scope: "temporary";
+			origin: "top-level";
+			baseDir?: string;
+		};
 	}> {
 		return entries.map((entry) => {
 			const source = this.getExtensionSourceLabel(entry.extensionPath);
@@ -2227,7 +2580,9 @@ export class AgentSession {
 			...registeredTools,
 			...this._customTools.map((definition) => ({
 				definition,
-				sourceInfo: createSyntheticSourceInfo(`<sdk:${definition.name}>`, { source: "sdk" }),
+				sourceInfo: createSyntheticSourceInfo(`<sdk:${definition.name}>`, {
+					source: "sdk",
+				}),
 			})),
 		].filter((tool) => isAllowedTool(tool.definition.name));
 		const definitionRegistry = new Map<string, ToolDefinitionEntry>(
@@ -2237,7 +2592,9 @@ export class AgentSession {
 					name,
 					{
 						definition,
-						sourceInfo: createSyntheticSourceInfo(`<builtin:${name}>`, { source: "builtin" }),
+						sourceInfo: createSyntheticSourceInfo(`<builtin:${name}>`, {
+							source: "builtin",
+						}),
 					},
 				]),
 		);
@@ -2311,6 +2668,7 @@ export class AgentSession {
 		activeToolNames?: string[];
 		flagValues?: Map<string, boolean | string>;
 		includeAllExtensionTools?: boolean;
+		applyAgentMode?: boolean;
 	}): void {
 		const autoResizeImages = this.settingsManager.getImageAutoResize();
 		const shellCommandPrefix = this.settingsManager.getShellCommandPrefix();
@@ -2324,7 +2682,12 @@ export class AgentSession {
 				)
 			: createAllToolDefinitions(this._cwd, {
 					read: { autoResizeImages },
-					bash: { commandPrefix: shellCommandPrefix, shellPath },
+					bash: { commandPrefix: shellCommandPrefix, shellPath, backgroundTaskManager: this._backgroundTasks },
+					mcp: { getServers: () => this.settingsManager.getMcpServers() },
+					exitPlanMode: {
+						getCurrentMode: () => this._agentMode,
+						onApproved: (plan) => this.exitPlanMode(plan),
+					},
 				});
 
 		this._baseToolDefinitions = new Map(
@@ -2359,11 +2722,17 @@ export class AgentSession {
 			activeToolNames: baseActiveToolNames,
 			includeAllExtensionTools: options.includeAllExtensionTools,
 		});
+		if (options.applyAgentMode) {
+			this.setAgentMode(this._agentMode, { persist: false });
+		}
 	}
 
 	async reload(): Promise<void> {
 		const previousFlagValues = this._extensionRunner.getFlagValues();
-		await emitSessionShutdownEvent(this._extensionRunner, { type: "session_shutdown", reason: "reload" });
+		await emitSessionShutdownEvent(this._extensionRunner, {
+			type: "session_shutdown",
+			reason: "reload",
+		});
 		await this.settingsManager.reload();
 		resetApiProviders();
 		await this._resourceLoader.reload();
@@ -2379,7 +2748,10 @@ export class AgentSession {
 			this._extensionShutdownHandler ||
 			this._extensionErrorListener;
 		if (hasBindings) {
-			await this._extensionRunner.emit({ type: "session_start", reason: "reload" });
+			await this._extensionRunner.emit({
+				type: "session_start",
+				reason: "reload",
+			});
 			await this.extendResourcesFromExtensions("reload");
 		}
 	}
@@ -2641,7 +3013,10 @@ export class AgentSession {
 	 */
 	setSessionName(name: string): void {
 		this.sessionManager.appendSessionInfo(name);
-		this._emit({ type: "session_info_changed", name: this.sessionManager.getSessionName() });
+		this._emit({
+			type: "session_info_changed",
+			name: this.sessionManager.getSessionName(),
+		});
 	}
 
 	// =========================================================================
@@ -2661,8 +3036,18 @@ export class AgentSession {
 	 */
 	async navigateTree(
 		targetId: string,
-		options: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string } = {},
-	): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean; summaryEntry?: BranchSummaryEntry }> {
+		options: {
+			summarize?: boolean;
+			customInstructions?: string;
+			replaceInstructions?: boolean;
+			label?: string;
+		} = {},
+	): Promise<{
+		editorText?: string;
+		cancelled: boolean;
+		aborted?: boolean;
+		summaryEntry?: BranchSummaryEntry;
+	}> {
 		const oldLeafId = this.sessionManager.getLeafId();
 
 		// No-op if already at target
@@ -2931,9 +3316,10 @@ export class AgentSession {
 		const contextWindow = model.contextWindow ?? 0;
 		if (contextWindow <= 0) return undefined;
 
-		// After compaction, the last assistant usage reflects pre-compaction context size.
-		// We can only trust usage from an assistant that responded after the latest compaction.
-		// If no such assistant exists, context token count is unknown until the next LLM response.
+		// After compaction, kept assistant messages may still carry pre-compaction usage.
+		// Prefer real post-compaction API usage once available; until then estimate
+		// from message payloads so /context and the footer show active context, not
+		// stale pre-compact billing totals.
 		const branchEntries = this.sessionManager.getBranch();
 		const latestCompaction = getLatestCompactionEntry(branchEntries);
 
@@ -2956,7 +3342,8 @@ export class AgentSession {
 			}
 
 			if (!hasPostCompactionUsage) {
-				return { tokens: null, contextWindow, percent: null };
+				const tokens = estimateRawContextTokens(this.messages);
+				return { tokens, contextWindow, percent: (tokens / contextWindow) * 100 };
 			}
 		}
 

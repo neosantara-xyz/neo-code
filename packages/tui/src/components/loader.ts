@@ -22,7 +22,7 @@ export interface LoaderIndicatorOptions {
 	shimmerColorFn?: (str: string) => string;
 	/** Maximum visible cells used for the message before coloring. Prevents long rotating labels from wrapping. */
 	maxMessageWidth?: number;
-	/** Claude Code-like message mode. Tool-use pulses the whole message instead of rendering a travelling glimmer; tool-input keeps a travelling glimmer while the model is still preparing arguments. */
+	/** Claude Code-like message mode. Tool-use pulses the whole message; responding/tool-input/requesting use travelling glimmer when enabled. */
 	mode?: LoaderMessageMode;
 	/** Fade the indicator/message toward warning/error when no stream progress arrives and no tools are active. */
 	stalledDetection?: boolean;
@@ -34,15 +34,25 @@ export interface LoaderIndicatorOptions {
 	stalledWarningColorFn?: (str: string) => string;
 	/** Final stalled color. */
 	stalledColorFn?: (str: string) => string;
+	/** Show a Claude Code-style byline after the loader message, e.g. elapsed time and streamed output tokens. */
+	showStatus?: boolean;
+	/** Milliseconds before elapsed time is shown. Defaults to 30000ms. */
+	elapsedAfterMs?: number;
+	/** Milliseconds before output token estimate is shown. Defaults to 30000ms. */
+	tokensAfterMs?: number;
+	/** Color used for the status byline. Falls back to the message color when omitted. */
+	statusColorFn?: (str: string) => string;
 }
 
 const DEFAULT_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const DEFAULT_INTERVAL_MS = 80;
-const DEFAULT_SHIMMER_INTERVAL_MS = 200;
+const DEFAULT_SHIMMER_INTERVAL_MS = 60;
 const DEFAULT_SHIMMER_WIDTH = 3;
 const SHIMMER_TRAIL_PADDING = 20;
 const DEFAULT_STALLED_AFTER_MS = 3000;
 const DEFAULT_STALLED_FADE_MS = 2000;
+const DEFAULT_STATUS_AFTER_MS = 30_000;
+const ESTIMATED_CHARS_PER_TOKEN = 4;
 const STALLED_WARNING_THRESHOLD = 0.2;
 const STALLED_ERROR_THRESHOLD = 0.66;
 
@@ -73,6 +83,10 @@ export class Loader extends Text {
 	private stalledFadeMs = DEFAULT_STALLED_FADE_MS;
 	private stalledWarningColorFn: ((str: string) => string) | undefined;
 	private stalledColorFn: ((str: string) => string) | undefined;
+	private showStatus = false;
+	private elapsedAfterMs = DEFAULT_STATUS_AFTER_MS;
+	private tokensAfterMs = DEFAULT_STATUS_AFTER_MS;
+	private statusColorFn: ((str: string) => string) | undefined;
 	private lastProgressValue = 0;
 	private lastProgressAtMs = Date.now();
 	private hasActiveTools = false;
@@ -141,6 +155,16 @@ export class Loader extends Text {
 			indicator?.stalledFadeMs && indicator.stalledFadeMs > 0 ? indicator.stalledFadeMs : DEFAULT_STALLED_FADE_MS;
 		this.stalledWarningColorFn = indicator?.stalledWarningColorFn;
 		this.stalledColorFn = indicator?.stalledColorFn;
+		this.showStatus = indicator?.showStatus ?? false;
+		this.elapsedAfterMs =
+			indicator?.elapsedAfterMs !== undefined && indicator.elapsedAfterMs >= 0
+				? indicator.elapsedAfterMs
+				: DEFAULT_STATUS_AFTER_MS;
+		this.tokensAfterMs =
+			indicator?.tokensAfterMs !== undefined && indicator.tokensAfterMs >= 0
+				? indicator.tokensAfterMs
+				: DEFAULT_STATUS_AFTER_MS;
+		this.statusColorFn = indicator?.statusColorFn;
 		this.animationStartMs = Date.now();
 		this.resetStalledDetection();
 		this.start();
@@ -260,7 +284,7 @@ export class Loader extends Text {
 		const segments = this.getMessageSegments();
 		const messageWidth = this.getMessageWidth(segments);
 		const shimmerTick = Math.floor(this.getElapsedMs() / this.shimmerIntervalMs);
-		const cycleLength = messageWidth + SHIMMER_TRAIL_PADDING;
+		const cycleLength = Math.max(1, messageWidth + SHIMMER_TRAIL_PADDING);
 		const glimmerIndex =
 			this.shimmerDirection === "left-to-right"
 				? (shimmerTick % cycleLength) - SHIMMER_TRAIL_PADDING / 2
@@ -268,15 +292,28 @@ export class Loader extends Text {
 		const shimmerStart = glimmerIndex - Math.floor(this.shimmerWidth / 2);
 		const shimmerEnd = shimmerStart + this.shimmerWidth - 1;
 
-		let column = 0;
-		let rendered = "";
-		for (const { segment, width } of segments) {
-			const segmentEnd = column + width;
-			const overlapsShimmer = segmentEnd > shimmerStart && column <= shimmerEnd;
-			rendered += (overlapsShimmer ? shimmerColorFn : messageColorFn)(segment);
-			column = segmentEnd;
+		if (shimmerStart >= messageWidth || shimmerEnd < 0) {
+			return messageColorFn(displayMessage);
 		}
-		return rendered;
+
+		const clampedStart = Math.max(0, shimmerStart);
+		let column = 0;
+		let before = "";
+		let shimmer = "";
+		let after = "";
+		for (const { segment, width } of segments) {
+			const nextColumn = column + width;
+			if (nextColumn <= clampedStart) {
+				before += segment;
+			} else if (column > shimmerEnd) {
+				after += segment;
+			} else {
+				shimmer += segment;
+			}
+			column = nextColumn;
+		}
+
+		return `${before ? messageColorFn(before) : ""}${shimmerColorFn(shimmer)}${after ? messageColorFn(after) : ""}`;
 	}
 
 	private renderMessage(): string {
@@ -286,12 +323,45 @@ export class Loader extends Text {
 		return this.renderShimmerMessage();
 	}
 
+	private formatElapsedMs(ms: number): string {
+		const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+		const hours = Math.floor(totalSeconds / 3600);
+		const minutes = Math.floor((totalSeconds % 3600) / 60);
+		const seconds = totalSeconds % 60;
+		if (hours > 0) return `${hours}h${String(minutes).padStart(2, "0")}m`;
+		if (minutes > 0) return `${minutes}m${String(seconds).padStart(2, "0")}s`;
+		return `${seconds}s`;
+	}
+
+	private formatTokenCount(count: number): string {
+		if (count < 1000) return String(count);
+		if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
+		if (count < 1000000) return `${Math.round(count / 1000)}k`;
+		return `${(count / 1000000).toFixed(1)}M`;
+	}
+
+	private renderStatusSuffix(): string {
+		if (!this.showStatus) return "";
+		const elapsedMs = this.getElapsedMs();
+		const parts: string[] = [];
+		if (elapsedMs >= this.elapsedAfterMs) {
+			parts.push(this.formatElapsedMs(elapsedMs));
+		}
+		const estimatedTokens = Math.round(this.lastProgressValue / ESTIMATED_CHARS_PER_TOKEN);
+		if (elapsedMs >= this.tokensAfterMs && estimatedTokens > 0) {
+			parts.push(`↓ ${this.formatTokenCount(estimatedTokens)} tokens`);
+		}
+		if (parts.length === 0) return "";
+		const colorFn = this.statusColorFn ?? this.messageColorFn;
+		return colorFn(` (${parts.join(" · ")})`);
+	}
+
 	private updateDisplay(): void {
 		const frame = this.getFrame();
 		const spinnerColorFn = this.getStatusColorFn(this.spinnerColorFn);
 		const renderedFrame = this.renderIndicatorVerbatim ? frame : spinnerColorFn(frame);
 		const indicator = frame.length > 0 ? `${renderedFrame} ` : "";
-		this.setText(`${indicator}${this.renderMessage()}`);
+		this.setText(`${indicator}${this.renderMessage()}${this.renderStatusSuffix()}`);
 		if (this.ui) {
 			this.ui.requestRender();
 		}

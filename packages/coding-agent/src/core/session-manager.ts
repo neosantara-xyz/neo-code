@@ -893,6 +893,14 @@ export class SessionManager {
 		return entry.id;
 	}
 
+	updateCompactionDetails<T = unknown>(entryId: string, details: T): boolean {
+		const entry = this.byId.get(entryId);
+		if (!entry || entry.type !== "compaction") return false;
+		entry.details = details;
+		this._rewriteFile();
+		return true;
+	}
+
 	/** Append a custom entry (for extensions) as child of current leaf, then advance leaf. Returns entry id. */
 	appendCustomEntry(customType: string, data?: unknown): string {
 		const entry: CustomEntry = {

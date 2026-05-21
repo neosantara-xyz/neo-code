@@ -103,6 +103,9 @@ export class ProcessTerminal implements Terminal {
 		// Enable bracketed paste mode - terminal will wrap pastes in \x1b[200~ ... \x1b[201~
 		process.stdout.write("\x1b[?2004h");
 
+		// Enable focus reporting (DECSET 1004) - terminal sends \x1b[I on focus, \x1b[O on blur
+		process.stdout.write("\x1b[?1004h");
+
 		// Set up resize handler immediately
 		process.stdout.on("resize", this.resizeHandler);
 
@@ -275,6 +278,9 @@ export class ProcessTerminal implements Terminal {
 
 		// Disable bracketed paste mode
 		process.stdout.write("\x1b[?2004l");
+
+		// Disable focus reporting
+		process.stdout.write("\x1b[?1004l");
 
 		// Disable Kitty keyboard protocol if not already done by drainInput()
 		if (this._kittyProtocolActive) {

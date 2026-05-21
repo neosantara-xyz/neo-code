@@ -5,6 +5,7 @@
 import type { ThinkingLevel } from "@neosantara/agent-core";
 import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.js";
+import { type AgentWorkMode, formatAgentWorkModeList, parseAgentWorkMode } from "../core/agent-mode.js";
 import type { ExtensionFlag } from "../core/extensions/types.js";
 
 export type Mode = "text" | "json" | "rpc";
@@ -26,6 +27,7 @@ export interface Args {
 	fork?: string;
 	sessionDir?: string;
 	models?: string[];
+	agentMode?: AgentWorkMode;
 	tools?: string[];
 	noTools?: boolean;
 	noBuiltinTools?: boolean;
@@ -101,6 +103,17 @@ export function parseArgs(args: string[]): Args {
 			result.sessionDir = args[++i];
 		} else if (arg === "--models" && i + 1 < args.length) {
 			result.models = args[++i].split(",").map((s) => s.trim());
+		} else if ((arg === "--agent-mode" || arg === "--permission-mode") && i + 1 < args.length) {
+			const rawMode = args[++i];
+			const agentMode = parseAgentWorkMode(rawMode);
+			if (agentMode) {
+				result.agentMode = agentMode;
+			} else {
+				result.diagnostics.push({
+					type: "warning",
+					message: `Invalid agent mode "${rawMode}". Valid values: ${formatAgentWorkModeList()}`,
+				});
+			}
 		} else if (arg === "--no-tools" || arg === "-nt") {
 			result.noTools = true;
 		} else if (arg === "--no-builtin-tools" || arg === "-nbt") {
@@ -230,6 +243,8 @@ ${chalk.bold("Options:")}
   --no-session                   Don't save session (ephemeral)
   --models <patterns>            Comma-separated model patterns for Ctrl+P cycling
                                  Supports globs (neosantara/*, *grok*) and fuzzy matching
+  --agent-mode <mode>            Workflow mode: default, ask, read-only, plan, accept-edits, or full
+  --permission-mode <mode>       Alias for --agent-mode (Claude Code-style naming; default/plan/etc.)
   --no-tools, -nt                Disable all tools by default (built-in and extension)
   --no-builtin-tools, -nbt       Disable built-in tools by default but keep extension/custom tools enabled
   --tools, -t <tools>            Comma-separated allowlist of tool names to enable
@@ -262,6 +277,9 @@ ${chalk.bold("Examples:")}
 
   # Interactive mode with initial prompt
   ${APP_NAME} "List all .ts files in src/"
+
+  # Start in plan mode (safe inspect + proposal, no edits)
+  ${APP_NAME} --agent-mode plan "Review this repo and propose fixes"
 
   # Include files in initial message
   ${APP_NAME} @prompt.md @image.png "What color is the sky?"
@@ -297,7 +315,7 @@ ${chalk.bold("Examples:")}
   ${APP_NAME} --thinking high "Solve this complex problem"
 
   # Read-only mode (no file modifications possible)
-  ${APP_NAME} --tools read,grep,find,ls -p "Review the code in src/"
+  ${APP_NAME} --agent-mode read-only -p "Review the code in src/"
 
   # Export a session file to HTML
   ${APP_NAME} --export ~/${CONFIG_DIR_NAME}/agent/sessions/--path--/session.jsonl

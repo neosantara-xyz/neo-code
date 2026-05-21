@@ -4,6 +4,8 @@ import { homedir } from "os";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
+import { type AgentWorkMode, DEFAULT_AGENT_WORK_MODE, parseAgentWorkMode } from "./agent-mode.js";
+import { type McpServersSettings, validateMcpServers } from "./mcp.js";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -54,6 +56,8 @@ export interface MarkdownSettings {
 
 export interface WarningSettings {}
 
+export type { McpServerConfig, McpServersSettings } from "./mcp.js";
+
 export type TransportSetting = Transport;
 
 /**
@@ -76,6 +80,7 @@ export interface Settings {
 	defaultProvider?: string;
 	defaultModel?: string;
 	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+	agentMode?: AgentWorkMode;
 	transport?: TransportSetting; // default: "auto"
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";
@@ -108,6 +113,7 @@ export interface Settings {
 	markdown?: MarkdownSettings;
 	warnings?: WarningSettings;
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
+	mcpServers?: McpServersSettings; // Model Context Protocol stdio server configuration
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -387,6 +393,21 @@ export class SettingsManager {
 			delete retrySettings.maxDelayMs;
 		}
 
+		// Normalize MCP server configuration and drop invalid entries.
+		if ("mcpServers" in settings) {
+			settings.mcpServers = validateMcpServers(settings.mcpServers);
+		}
+
+		// Normalize persisted agent mode aliases and drop invalid values.
+		if (typeof settings.agentMode === "string") {
+			const mode = parseAgentWorkMode(settings.agentMode);
+			if (mode) {
+				settings.agentMode = mode;
+			} else {
+				delete settings.agentMode;
+			}
+		}
+
 		return settings as Settings;
 	}
 
@@ -650,6 +671,16 @@ export class SettingsManager {
 	setDefaultThinkingLevel(level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh"): void {
 		this.globalSettings.defaultThinkingLevel = level;
 		this.markModified("defaultThinkingLevel");
+		this.save();
+	}
+
+	getAgentMode(): AgentWorkMode {
+		return parseAgentWorkMode(this.settings.agentMode) ?? DEFAULT_AGENT_WORK_MODE;
+	}
+
+	setAgentMode(mode: AgentWorkMode): void {
+		this.globalSettings.agentMode = mode;
+		this.markModified("agentMode");
 		this.save();
 	}
 
@@ -1055,6 +1086,16 @@ export class SettingsManager {
 
 	getWarnings(): WarningSettings {
 		return { ...(this.settings.warnings ?? {}) };
+	}
+
+	getMcpServers(): McpServersSettings {
+		return structuredClone(this.settings.mcpServers ?? {});
+	}
+
+	setMcpServers(servers: McpServersSettings): void {
+		this.globalSettings.mcpServers = validateMcpServers(servers);
+		this.markModified("mcpServers");
+		this.save();
 	}
 
 	setWarnings(warnings: WarningSettings): void {

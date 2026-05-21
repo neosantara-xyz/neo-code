@@ -43,6 +43,7 @@ import {
 	Text,
 	TruncatedText,
 	TUI,
+	truncateToWidth,
 	visibleWidth,
 } from "@neosantara/tui";
 import { spawn, spawnSync } from "child_process";
@@ -56,10 +57,23 @@ import {
 	getShareViewerUrl,
 	VERSION,
 } from "../../config.js";
+import {
+	AGENT_WORK_MODE_CONFIG,
+	AGENT_WORK_MODES,
+	type AgentWorkMode,
+	formatAgentWorkModeCycleList,
+	formatAgentWorkModeList,
+	getAgentWorkModeFooterDetail,
+	getAgentWorkModeLabel,
+	getAgentWorkModeToolSummary,
+	getNextAgentWorkMode,
+	parseAgentWorkMode,
+} from "../../core/agent-mode.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.js";
 import { AGENTS_FILE_NAME, INIT_AGENTS_PROMPT } from "../../core/agents-command.js";
 import { AuthStorage } from "../../core/auth-storage.js";
+import { estimateTokens, getAutoCompactTriggerTokens } from "../../core/compaction/index.js";
 import type {
 	AutocompleteProviderFactory,
 	EditorFactory,
@@ -72,10 +86,10 @@ import type {
 } from "../../core/extensions/index.js";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.js";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.js";
-import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.js";
 import { loginWithNeosantaraDeviceAuth } from "../../core/neosantara-device-auth.js";
 import { DefaultPackageManager } from "../../core/package-manager.js";
+import { exitAfterCleanup } from "../../core/process-lifecycle.js";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.js";
 import type { ResourceDiagnostic } from "../../core/resource-loader.js";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.js";
@@ -89,9 +103,17 @@ import {
 	type InstallTelemetryEvent,
 	isInstallTelemetryEnabled,
 } from "../../core/telemetry.js";
+import {
+	applyNeoTermuxTouchKeyboard,
+	findLatestTermuxPropertiesBackup,
+	getTermuxTouchKeyboardStatus,
+	NEO_TERMUX_EXTRA_KEYS,
+	restoreLatestTermuxTouchKeyboardBackup,
+} from "../../core/termux-touch-keyboard.js";
+import type { ToolApprovalDecision, ToolApprovalRequest } from "../../core/tool-approval.js";
 import { formatToolInputLoadingMessage, formatToolLoadingMessage } from "../../core/tools/tool-activity.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
-import { getAllChangelogEntries, getNewEntries } from "../../utils/changelog.js";
+import { formatChangelogEntries, getAllChangelogEntries, getNewEntries } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { parseGitUrl } from "../../utils/git.js";
@@ -125,10 +147,13 @@ import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.js";
 import { ToolActivityGroupComponent } from "./components/tool-activity-group.js";
+import { ToolApprovalRequestComponent } from "./components/tool-approval-request.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
+import { type UsageModelRow, UsageScreenComponent } from "./components/usage-screen.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
+import { getHomeDirectoryWarning, WelcomeScreenComponent } from "./components/welcome-screen.js";
 import {
 	getAvailableThemes,
 	getAvailableThemesWithPaths,
@@ -182,12 +207,22 @@ function formatBytes(bytes: number): string {
 	return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
+type NeosantaraModelQuota = {
+	modelId: string;
+	displayName?: string;
+	percentAvailable?: number;
+	available?: boolean;
+	status?: string;
+	resetAt?: string;
+};
+
 type NeosantaraUsageSnapshot = {
 	billingModel: "pay_as_you_go";
 	currency: "IDR";
 	balanceIdr?: number;
 	monthlySpendIdr?: number;
 	updatedAt?: string;
+	modelQuotas: NeosantaraModelQuota[];
 };
 
 type NeosantaraUsageResult = {
@@ -205,6 +240,11 @@ type CliUsagePayload = {
 		reset_date?: unknown;
 		end_date?: unknown;
 	};
+	model_quota?: unknown;
+	model_quotas?: unknown;
+	modelQuotas?: unknown;
+	quotas?: unknown;
+	models?: unknown;
 };
 
 function normalizeNeosantaraApiBaseUrl(): string {
@@ -234,8 +274,92 @@ function parseCliUsagePayload(payload: unknown): CliUsagePayload | null {
 	return data as CliUsagePayload;
 }
 
+function stringFromUnknown(value: unknown): string | undefined {
+	return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function booleanFromUnknown(value: unknown): boolean | undefined {
+	if (typeof value === "boolean") return value;
+	if (typeof value === "string") {
+		const normalized = value.trim().toLowerCase();
+		if (["true", "yes", "available", "ok"].includes(normalized)) return true;
+		if (["false", "no", "unavailable", "blocked"].includes(normalized)) return false;
+	}
+	return undefined;
+}
+
+function percentFromQuotaRecord(record: Record<string, unknown>): number | undefined {
+	const direct =
+		numberFromUnknown(record.percent_available) ??
+		numberFromUnknown(record.available_percent) ??
+		numberFromUnknown(record.remaining_percent) ??
+		numberFromUnknown(record.percentAvailable) ??
+		numberFromUnknown(record.quota_available_percent);
+	if (direct !== undefined) return direct;
+
+	const used = numberFromUnknown(record.used) ?? numberFromUnknown(record.usage);
+	const limit = numberFromUnknown(record.limit) ?? numberFromUnknown(record.quota);
+	if (used !== undefined && limit !== undefined && limit > 0) {
+		return Math.max(0, 100 - (used / limit) * 100);
+	}
+
+	const remaining = numberFromUnknown(record.remaining);
+	if (remaining !== undefined && limit !== undefined && limit > 0) {
+		return (remaining / limit) * 100;
+	}
+
+	return undefined;
+}
+
+function parseModelQuotaRecord(value: unknown, fallbackModelId?: string): NeosantaraModelQuota | undefined {
+	if (!isRecord(value)) return undefined;
+	const modelId =
+		stringFromUnknown(value.model) ??
+		stringFromUnknown(value.model_id) ??
+		stringFromUnknown(value.modelId) ??
+		stringFromUnknown(value.id) ??
+		fallbackModelId;
+	if (!modelId) return undefined;
+
+	return {
+		modelId,
+		displayName:
+			stringFromUnknown(value.name) ?? stringFromUnknown(value.display_name) ?? stringFromUnknown(value.displayName),
+		percentAvailable: percentFromQuotaRecord(value),
+		available:
+			booleanFromUnknown(value.available) ??
+			booleanFromUnknown(value.quota_available) ??
+			booleanFromUnknown(value.enabled),
+		status: stringFromUnknown(value.status) ?? stringFromUnknown(value.message),
+		resetAt:
+			stringFromUnknown(value.reset_at) ?? stringFromUnknown(value.resetAt) ?? stringFromUnknown(value.reset_date),
+	};
+}
+
+function parseModelQuotas(value: unknown): NeosantaraModelQuota[] {
+	if (Array.isArray(value)) {
+		return value
+			.map((entry) => parseModelQuotaRecord(entry))
+			.filter((entry): entry is NeosantaraModelQuota => !!entry);
+	}
+	if (!isRecord(value)) return [];
+	return Object.entries(value)
+		.map(([modelId, entry]) => parseModelQuotaRecord(entry, modelId))
+		.filter((entry): entry is NeosantaraModelQuota => !!entry);
+}
+
+function extractModelQuotas(data: CliUsagePayload): NeosantaraModelQuota[] {
+	for (const candidate of [data.model_quota, data.model_quotas, data.modelQuotas, data.quotas, data.models]) {
+		const parsed = parseModelQuotas(candidate);
+		if (parsed.length > 0) return parsed;
+	}
+	return [];
+}
+
 async function getNeosantaraBackendUsageSnapshot(): Promise<NeosantaraUsageResult> {
-	const apiKey = await AuthStorage.create().getApiKey("neosantara", { includeFallback: false });
+	const apiKey = await AuthStorage.create().getApiKey("neosantara", {
+		includeFallback: false,
+	});
 	if (!apiKey) {
 		return { snapshot: null, status: "login required" };
 	}
@@ -257,12 +381,20 @@ async function getNeosantaraBackendUsageSnapshot(): Promise<NeosantaraUsageResul
 			return { snapshot: null, status: "login required" };
 		}
 		if (!response.ok) {
-			return { snapshot: null, status: "unavailable", detail: `HTTP ${response.status}` };
+			return {
+				snapshot: null,
+				status: "unavailable",
+				detail: `HTTP ${response.status}`,
+			};
 		}
 
 		const data = parseCliUsagePayload(payload);
 		if (!data) {
-			return { snapshot: null, status: "unavailable", detail: "invalid response" };
+			return {
+				snapshot: null,
+				status: "unavailable",
+				detail: "invalid response",
+			};
 		}
 
 		return {
@@ -277,6 +409,7 @@ async function getNeosantaraBackendUsageSnapshot(): Promise<NeosantaraUsageResul
 						: typeof data.period?.end_date === "string"
 							? data.period.end_date
 							: undefined,
+				modelQuotas: extractModelQuotas(data),
 			},
 			status: "connected",
 		};
@@ -370,6 +503,7 @@ export class InteractiveMode {
 	private ui: TUI;
 	private chatContainer: Container;
 	private pendingMessagesContainer: Container;
+	private approvalContainer: Container;
 	private statusContainer: Container;
 	private defaultEditor: CustomEditor;
 	private editor: EditorComponent;
@@ -390,13 +524,31 @@ export class InteractiveMode {
 	private workingVisible = true;
 	private workingIndicatorOptions: LoaderIndicatorOptions | undefined = undefined;
 	private readonly defaultWorkingMessages = ["ngulik", "ngetik", "ngritik", "ngoprek"];
+	private readonly spinnerTips = [
+		"tip: /compact to free context window",
+		"tip: @file to reference files in prompt",
+		"tip: /tree to navigate conversation history",
+		"tip: ? to see all keyboard shortcuts",
+		"tip: /todo to track tasks across sessions",
+	];
 	private defaultWorkingMessageIndex = 0;
+	private spinnerTipCycle = 0;
 	private defaultWorkingMessageTimer: ReturnType<typeof setInterval> | undefined = undefined;
 	private readonly defaultHiddenThinkingLabel = "Thinking...";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
 
+	// Away summary state
+	private terminalBlurredAt: number | undefined = undefined;
+	private workCompletedWhileAway = false;
+
+	// Low balance warning state
+	private lowBalanceWarningShown = false;
+	private lastKnownBalanceIdr: number | undefined = undefined;
+
 	private lastSigintTime = 0;
+	private readonly sessionStartTime = Date.now();
 	private lastEscapeTime = 0;
+	private shortcutOverlayVisible = false;
 	private changelogMarkdown: string | undefined = undefined;
 	private startupNoticesShown = false;
 
@@ -413,6 +565,11 @@ export class InteractiveMode {
 	private pendingToolGroups = new Map<string, ToolActivityGroupComponent>();
 	private activeToolExecutionIds = new Set<string>();
 	private currentToolActivityGroup?: ToolActivityGroupComponent;
+	private pendingToolApproval?: {
+		request: ToolApprovalRequest;
+		component: ToolApprovalRequestComponent;
+		resolve: (decision: ToolApprovalDecision) => void;
+	};
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
@@ -506,6 +663,7 @@ export class InteractiveMode {
 		this.headerContainer = new Container();
 		this.chatContainer = new Container();
 		this.pendingMessagesContainer = new Container();
+		this.approvalContainer = new Container();
 		this.statusContainer = new Container();
 		this.widgetContainerAbove = new Container();
 		this.widgetContainerBelow = new Container();
@@ -585,6 +743,7 @@ export class InteractiveMode {
 		const slashCommands: SlashCommand[] = BUILTIN_SLASH_COMMANDS.map((command) => ({
 			name: command.name,
 			description: command.description,
+			...(command.argumentHint && { argumentHint: command.argumentHint }),
 		}));
 
 		const modelCommand = slashCommands.find((command) => command.name === "model");
@@ -680,6 +839,10 @@ export class InteractiveMode {
 			return;
 		}
 
+		if (this.isStartupChangelogVisibleInWelcome()) {
+			return;
+		}
+
 		if (this.chatContainer.children.length > 0) {
 			this.chatContainer.addChild(new Spacer(1));
 		}
@@ -698,6 +861,13 @@ export class InteractiveMode {
 			this.chatContainer.addChild(new Spacer(1));
 		}
 		this.chatContainer.addChild(new DynamicBorder());
+	}
+
+	private isStartupChangelogVisibleInWelcome(): boolean {
+		if (this.customHeader) {
+			return false;
+		}
+		return this.builtInHeader instanceof WelcomeScreenComponent && this.builtInHeader.hasChangelogHeadline();
 	}
 
 	async init(): Promise<void> {
@@ -719,62 +889,58 @@ export class InteractiveMode {
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
 			const model = this.session.model;
-			const modelLabel = model ? `${model.provider}/${model.name || model.id}` : "model not selected";
-			const cwdLabel = this.formatCompactDisplayPath(this.sessionManager.getCwd());
-			const title = theme.bold(theme.fg("accent", `${APP_TITLE} v${this.version}`));
-			const welcome = [
-				theme.fg("accent", `╭─ ${title}`),
-				theme.fg("muted", `│ ${modelLabel}`),
-				theme.fg("muted", `│ ${cwdLabel}`),
-				theme.fg("accent", "╰─ ready"),
-			].join("\n");
+			const modelLabel = model
+				? `${this.session.modelRegistry.getProviderDisplayName(model.provider)}/${model.name || model.id}`
+				: "model not selected";
+			const cwd = this.sessionManager.getCwd();
+			const cwdLabel = this.formatCompactDisplayPath(cwd);
 
 			// Build startup instructions using keybinding hint helpers
 			const hint = (keybinding: AppKeybinding, description: string) => keyHint(keybinding, description);
 
 			const expandedInstructions = [
-				hint("app.interrupt", "to interrupt"),
-				hint("app.clear", "to clear"),
-				rawKeyHint(`${keyText("app.clear")} twice`, "to exit"),
-				hint("app.exit", "to exit (empty)"),
-				hint("app.suspend", "to suspend"),
-				keyHint("tui.editor.deleteToLineEnd", "to delete to end"),
-				hint("app.thinking.cycle", "to cycle thinking level"),
-				rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "to cycle models"),
-				hint("app.model.select", "to select model"),
-				hint("app.tools.expand", "to expand tool output"),
-				hint("app.thinking.toggle", "to expand thinking"),
-				hint("app.editor.external", "for external editor"),
-				rawKeyHint("/", "for commands"),
-				rawKeyHint("!", "to run bash"),
-				rawKeyHint("!!", "to run bash (no context)"),
-				hint("app.message.followUp", "to queue follow-up"),
-				hint("app.message.dequeue", "to edit all queued messages"),
-				hint("app.clipboard.pasteImage", "to paste image"),
-				rawKeyHint("drop files", "to attach"),
+				hint("app.interrupt", "interrupt"),
+				hint("app.clear", "clear screen"),
+				rawKeyHint(`${keyText("app.clear")} twice`, "exit"),
+				hint("app.exit", "exit on empty prompt"),
+				hint("app.mode.cycle", "cycle mode"),
+				hint("app.thinking.cycle", "cycle thinking level"),
+				rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "cycle models"),
+				hint("app.model.select", "select model"),
+				hint("app.tools.expand", "expand tools and startup help"),
+				hint("app.thinking.toggle", "expand thinking"),
+				hint("app.editor.external", "external editor"),
+				rawKeyHint("/", "commands"),
+				rawKeyHint("!", "run bash"),
+				rawKeyHint("!!", "run bash without context"),
+				hint("app.message.followUp", "queue follow-up"),
+				hint("app.message.dequeue", "edit queued messages"),
+				hint("app.clipboard.pasteImage", "paste image"),
+				rawKeyHint("drop files", "attach"),
 			].join("\n");
 			const compactInstructions = [
-				hint("app.interrupt", "interrupt"),
-				rawKeyHint(`${keyText("app.clear")}/${keyText("app.exit")}`, "clear/exit"),
+				hint("app.mode.cycle", "mode"),
 				rawKeyHint("/", "commands"),
 				rawKeyHint("!", "bash"),
-				hint("app.tools.expand", "expand tools"),
+				hint("app.interrupt", "interrupt"),
 			].join(theme.fg("muted", " · "));
 			const compactOnboarding = theme.fg(
 				"dim",
 				`Press ${keyText("app.tools.expand")} to expand startup help and raw tool output.`,
 			);
-			const onboarding = theme.fg(
-				"dim",
-				`${APP_TITLE} can explain its own features and look up its docs. Ask it how to use or extend ${APP_TITLE}.`,
-			);
-			this.builtInHeader = new ExpandableText(
-				() => `${welcome}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
-				() => `${welcome}\n${expandedInstructions}\n\n${onboarding}`,
-				this.getStartupExpansionState(),
-				1,
-				0,
-			);
+			this.builtInHeader = new WelcomeScreenComponent({
+				version: this.version,
+				modelLabel,
+				cwdLabel,
+				modeLabel: this.session.getAgentModeLabel(),
+				compactHints: compactInstructions,
+				expandedHints: expandedInstructions,
+				expandHint: compactOnboarding,
+				changelogMarkdown: this.changelogMarkdown,
+				projectWarning: getHomeDirectoryWarning(cwd, os.homedir()),
+				recentActivity: this.getStartupRecentActivity(),
+				expanded: this.getStartupExpansionState(),
+			});
 
 			// Setup UI layout
 			this.headerContainer.addChild(new Spacer(1));
@@ -791,6 +957,7 @@ export class InteractiveMode {
 		this.ui.addChild(this.statusContainer);
 		this.renderWidgets(); // Initialize with default spacer
 		this.ui.addChild(this.widgetContainerAbove);
+		this.ui.addChild(this.approvalContainer);
 		this.ui.addChild(this.editorContainer);
 		this.ui.addChild(this.widgetContainerBelow);
 		this.ui.addChild(this.footer);
@@ -1004,7 +1171,7 @@ export class InteractiveMode {
 		if (newEntries.length > 0) {
 			this.settingsManager.setLastChangelogVersion(VERSION);
 			this.reportInstallTelemetry(VERSION, "update");
-			return newEntries.map((e) => e.content).join("\n\n");
+			return formatChangelogEntries(newEntries);
 		}
 
 		return undefined;
@@ -1085,6 +1252,60 @@ export class InteractiveMode {
 		}
 
 		return this.formatDisplayPath(absolutePath);
+	}
+
+	private formatContextFileScope(p: string): string {
+		const cwd = path.resolve(this.sessionManager.getCwd());
+		const absolutePath = path.isAbsolute(p) ? path.resolve(p) : path.resolve(cwd, p);
+		const contextDir = path.dirname(absolutePath);
+		const homeDir = path.resolve(os.homedir());
+
+		if (contextDir === cwd) {
+			return "project";
+		}
+
+		if (contextDir === homeDir) {
+			return "user";
+		}
+
+		const relativeFromContextDir = path.relative(contextDir, cwd);
+		if (
+			relativeFromContextDir &&
+			!relativeFromContextDir.startsWith("..") &&
+			!path.isAbsolute(relativeFromContextDir)
+		) {
+			return "parent";
+		}
+
+		return "global";
+	}
+
+	private formatContextFileTree(files: Array<{ path: string }>, compact = true): string {
+		return files
+			.map((file, index) => {
+				const branch = index === files.length - 1 ? "└─" : "├─";
+				const scope = this.formatContextFileScope(file.path);
+				const displayPath = compact ? this.formatContextPath(file.path) : this.formatDisplayPath(file.path);
+				return theme.fg("dim", `  ${branch} ${scope}: ${displayPath}`);
+			})
+			.join("\n");
+	}
+
+	private getStartupRecentActivity(): string[] {
+		const stats = this.session.getSessionStats();
+		if (stats.totalMessages <= 0) return [];
+
+		const lines = [
+			theme.fg(
+				"muted",
+				`Resumed session · ${stats.totalMessages.toLocaleString()} messages · ${stats.toolCalls.toLocaleString()} tool calls`,
+			),
+		];
+		const usage = stats.contextUsage;
+		if (typeof usage?.percent === "number") {
+			lines.push(theme.fg("muted", `Context ${usage.percent.toFixed(1)}% used · /context for details`));
+		}
+		return lines;
 	}
 
 	private getStartupExpansionState(): boolean {
@@ -1498,13 +1719,11 @@ export class InteractiveMode {
 			const contextFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
 			if (contextFiles.length > 0) {
 				this.chatContainer.addChild(new Spacer(1));
-				const contextList = contextFiles
-					.map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`))
-					.join("\n");
-				const contextCompactList = formatCompactList(
-					contextFiles.map((contextFile) => this.formatContextPath(contextFile.path)),
-					{ sort: false },
-				);
+				const contextCompactList = this.formatContextFileTree(contextFiles, true);
+				const contextList = `${this.formatContextFileTree(contextFiles, false)}\n${theme.fg(
+					"muted",
+					"  Loaded in this order; later project files can narrow broader parent/user instructions.",
+				)}`;
 				addLoadedSection("Context", contextCompactList, contextList);
 			}
 
@@ -1741,6 +1960,7 @@ export class InteractiveMode {
 	private async rebindCurrentSession(): Promise<void> {
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
+		this.session.setToolApprovalHandler((request) => this.requestToolApproval(request));
 		this.applyRuntimeSettings();
 		await this.bindCurrentSessionExtensions();
 		this.subscribeToAgent();
@@ -1754,16 +1974,20 @@ export class InteractiveMode {
 		this.showError(`${prefix}: ${message}`);
 		stopThemeWatcher();
 		this.stop();
-		process.exit(1);
+		exitAfterCleanup(1);
 	}
 
 	private renderCurrentSessionState(): void {
 		this.chatContainer.clear();
 		this.pendingMessagesContainer.clear();
+		this.approvalContainer.clear();
+		this.restorePromptEditorFocus();
 		this.compactionQueuedMessages = [];
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
+		this.setToolActivityAnimationPaused(false);
+		this.pendingToolApproval = undefined;
 		this.renderInitialMessages();
 	}
 
@@ -1846,11 +2070,21 @@ export class InteractiveMode {
 
 	private rotateDefaultWorkingMessage(): void {
 		if (!this.loadingAnimation || this.workingMessage !== undefined) return;
-		this.defaultWorkingMessageIndex = (this.defaultWorkingMessageIndex + 1) % this.defaultWorkingMessages.length;
-		this.loadingAnimation.setMessage(
-			`${this.getDefaultWorkingMessageText()} (${keyText("app.interrupt")} to interrupt)`,
-			this.getWorkingIndicatorOptions(),
-		);
+		this.spinnerTipCycle += 1;
+		// Show a tip every 3rd rotation instead of the default message
+		if (this.spinnerTipCycle % 3 === 0) {
+			const tipIndex = Math.floor(this.spinnerTipCycle / 3) % this.spinnerTips.length;
+			this.loadingAnimation.setMessage(
+				`${this.spinnerTips[tipIndex]!} (${keyText("app.interrupt")} to interrupt)`,
+				this.getWorkingIndicatorOptions(),
+			);
+		} else {
+			this.defaultWorkingMessageIndex = (this.defaultWorkingMessageIndex + 1) % this.defaultWorkingMessages.length;
+			this.loadingAnimation.setMessage(
+				`${this.getDefaultWorkingMessageText()} (${keyText("app.interrupt")} to interrupt)`,
+				this.getWorkingIndicatorOptions(),
+			);
+		}
 		this.updateWorkingStalledState();
 	}
 
@@ -1873,11 +2107,15 @@ export class InteractiveMode {
 			frames: CLAUDE_STYLE_SPINNER_FRAMES.map((frame) => theme.fg("accent", frame)),
 			intervalMs: 120,
 			mode,
-			shimmer: mode !== "tool-use",
+			shimmer: true,
 			shimmerDirection: mode === "tool-input" ? "left-to-right" : "right-to-left",
 			shimmerIntervalMs: 200,
 			maxMessageWidth: 44,
 			shimmerColorFn: (text) => theme.fg("accent", text),
+			showStatus: true,
+			elapsedAfterMs: 30_000,
+			tokensAfterMs: 30_000,
+			statusColorFn: (text) => theme.fg("dim", text),
 			stalledDetection: true,
 			stalledWarningColorFn: (text) => theme.fg("warning", text),
 			stalledColorFn: (text) => theme.fg("error", text),
@@ -2649,7 +2887,16 @@ export class InteractiveMode {
 		// Set up handlers on defaultEditor - they use this.editor for text access
 		// so they work correctly regardless of which editor is active
 		this.defaultEditor.onEscape = () => {
-			if (this.session.isStreaming) {
+			if (this.shortcutOverlayVisible) {
+				this.shortcutOverlayVisible = false;
+				this.footer.shortcutOverlayVisible = false;
+				this.ui.requestRender();
+			} else if (this.pendingToolApproval) {
+				this.resolveToolApproval({
+					behavior: "deny",
+					reason: "User cancelled permission prompt",
+				});
+			} else if (this.session.isStreaming || this.session.retryAttempt > 0) {
 				this.restoreQueuedMessagesToEditor({ abort: true });
 			} else if (this.session.isBashRunning) {
 				this.session.abortBash();
@@ -2680,14 +2927,19 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.clear", () => this.handleCtrlC());
 		this.defaultEditor.onCtrlD = () => this.handleCtrlD();
 		this.defaultEditor.onAction("app.suspend", () => this.handleCtrlZ());
+		this.defaultEditor.onAction("app.mode.cycle", () => this.cycleAgentMode());
 		this.defaultEditor.onAction("app.thinking.cycle", () => this.cycleThinkingLevel());
 		this.defaultEditor.onAction("app.model.cycleForward", () => this.cycleModel("forward"));
 		this.defaultEditor.onAction("app.model.cycleBackward", () => this.cycleModel("backward"));
 
 		// Global debug handler on TUI (works regardless of focus)
 		this.ui.onDebug = () => this.handleDebugCommand();
+		this.ui.onFocusLost = () => this.handleTerminalBlur();
+		this.ui.onFocusGained = () => this.handleTerminalFocus();
 		this.defaultEditor.onAction("app.model.select", () => this.showModelSelector());
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
+		this.defaultEditor.onAction("app.task.background", () => this.handleBackgroundCurrentTask());
+		this.defaultEditor.onAction("app.tasks.open", () => this.handleTasksCommand("/tasks"));
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("app.editor.external", () => this.openExternalEditor());
 		this.defaultEditor.onAction("app.message.followUp", () => this.handleFollowUp());
@@ -2703,6 +2955,18 @@ export class InteractiveMode {
 			if (wasBashMode !== this.isBashMode) {
 				this.updateEditorBorderColor();
 			}
+			// Dismiss shortcut overlay when user starts typing
+			if (this.shortcutOverlayVisible && text.length > 0) {
+				this.shortcutOverlayVisible = false;
+				this.ui.requestRender();
+			}
+		};
+
+		this.defaultEditor.onQuestionMark = () => {
+			this.shortcutOverlayVisible = !this.shortcutOverlayVisible;
+			this.footer.shortcutOverlayVisible = this.shortcutOverlayVisible;
+			this.ui.requestRender();
+			return true;
 		};
 
 		// Handle clipboard image paste (triggered on Ctrl+V)
@@ -2738,6 +3002,13 @@ export class InteractiveMode {
 			text = text.trim();
 			if (!text) return;
 
+			if (this.pendingToolApproval) {
+				this.handleToolApprovalInput(text);
+				this.editor.addToHistory?.(text);
+				this.editor.setText("");
+				return;
+			}
+
 			// Handle commands
 			if (text === "/settings") {
 				this.showSettingsSelector();
@@ -2764,8 +3035,87 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/config" || text.startsWith("/config ")) {
+				this.handleConfigSlashCommand(text);
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/memory" || text.startsWith("/memory ")) {
+				await this.handleMemoryCommand(text);
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/mcp" || text.startsWith("/mcp ")) {
+				this.handleMcpCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/todo" || text.startsWith("/todo ")) {
+				this.handleTodoCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/termux-keys" || text.startsWith("/termux-keys ")) {
+				this.handleTermuxKeysCommand(text);
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/mode" || text.startsWith("/mode ")) {
+				this.editor.setText("");
+				await this.handleModeCommand(text);
+				return;
+			}
+			if (text === "/ask" || text.startsWith("/ask ")) {
+				this.editor.setText("");
+				await this.handleModeShortcutCommand("ask", text.slice("/ask".length).trim(), text);
+				return;
+			}
+			if (text === "/plan" || text.startsWith("/plan ")) {
+				this.editor.setText("");
+				await this.handleModeShortcutCommand("plan", text.slice("/plan".length).trim(), text);
+				return;
+			}
+			if (
+				text === "/read-only" ||
+				text.startsWith("/read-only ") ||
+				text === "/readonly" ||
+				text.startsWith("/readonly ")
+			) {
+				this.editor.setText("");
+				const prompt = text.startsWith("/readonly")
+					? text.slice("/readonly".length).trim()
+					: text.slice("/read-only".length).trim();
+				await this.handleModeShortcutCommand("read-only", prompt, text);
+				return;
+			}
+			if (text === "/default" || text.startsWith("/default ") || text === "/agent" || text.startsWith("/agent ")) {
+				this.editor.setText("");
+				const prompt = text.startsWith("/agent")
+					? text.slice("/agent".length).trim()
+					: text.slice("/default".length).trim();
+				await this.handleModeShortcutCommand("default", prompt, text);
+				return;
+			}
+			if (
+				text === "/accept-edits" ||
+				text.startsWith("/accept-edits ") ||
+				text === "/acceptedits" ||
+				text.startsWith("/acceptedits ")
+			) {
+				this.editor.setText("");
+				const prompt = text.startsWith("/acceptedits")
+					? text.slice("/acceptedits".length).trim()
+					: text.slice("/accept-edits".length).trim();
+				await this.handleModeShortcutCommand("accept-edits", prompt, text);
+				return;
+			}
 			if (text === "/permissions" || text.startsWith("/permissions ")) {
 				this.handlePermissionsCommand(text);
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/tasks" || text.startsWith("/tasks ")) {
+				this.handleTasksCommand(text);
 				this.editor.setText("");
 				return;
 			}
@@ -2965,6 +3315,133 @@ export class InteractiveMode {
 		};
 	}
 
+	private hidePromptEditorForApproval(component: ToolApprovalRequestComponent): void {
+		this.approvalContainer.clear();
+		this.approvalContainer.addChild(new Spacer(1));
+		this.approvalContainer.addChild(component);
+		this.editorContainer.clear();
+		this.ui.setFocus(component);
+	}
+
+	private restorePromptEditorFocus(): void {
+		this.approvalContainer.clear();
+		if (!this.editorContainer.children.includes(this.editor as Component)) {
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.editor as Component);
+		}
+		this.ui.setFocus(this.editor as Component);
+	}
+
+	private appendResolvedToolApproval(request: ToolApprovalRequest, decision: ToolApprovalDecision): void {
+		if (decision.behavior === "allow") return;
+
+		const feedback = decision.feedback?.trim() || decision.reason?.trim();
+		const suffix = feedback ? ` — ${truncateToWidth(feedback, 64)}` : "";
+		const label = request.toolName === "ExitPlanMode" ? "Plan not approved" : "Permission denied";
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(
+			new Text(
+				`${theme.fg("error", "✕")} ${theme.bold(label)} ${theme.fg("dim", `· ${request.summary}${suffix}`)}`,
+				1,
+				0,
+			),
+		);
+	}
+
+	private setToolActivityAnimationPaused(paused: boolean): void {
+		const groups = new Set<ToolActivityGroupComponent>();
+		if (this.currentToolActivityGroup) groups.add(this.currentToolActivityGroup);
+		for (const group of this.pendingToolGroups.values()) {
+			groups.add(group);
+		}
+		for (const child of this.chatContainer.children) {
+			if (child instanceof ToolActivityGroupComponent) {
+				groups.add(child);
+			}
+		}
+		for (const group of groups) {
+			group.setAnimationPaused(paused);
+		}
+	}
+
+	private requestToolApproval(request: ToolApprovalRequest): Promise<ToolApprovalDecision> {
+		if (this.pendingToolApproval) {
+			this.resolveToolApproval({
+				behavior: "deny",
+				reason: "Another permission prompt replaced this request",
+			});
+		}
+
+		return new Promise((resolve) => {
+			const component = new ToolApprovalRequestComponent(request, (decision) => {
+				this.resolveToolApproval(decision);
+			});
+			this.pendingToolApproval = { request, component, resolve };
+			this.setToolActivityAnimationPaused(true);
+			this.stopWorkingLoader();
+			this.hidePromptEditorForApproval(component);
+			this.footer.invalidate();
+			this.ui.requestRender();
+		});
+	}
+
+	private resolveToolApproval(decision: ToolApprovalDecision): void {
+		const pending = this.pendingToolApproval;
+		if (!pending) return;
+		this.pendingToolApproval = undefined;
+		this.approvalContainer.clear();
+		this.appendResolvedToolApproval(pending.request, decision);
+		this.restorePromptEditorFocus();
+		this.setToolActivityAnimationPaused(false);
+		pending.resolve(decision);
+		this.setWorkingVisible(true);
+		if (decision.behavior === "allow") {
+			this.setToolUseWorkingMessage(pending.request.toolName, pending.request.args);
+		} else {
+			this.restoreDefaultWorkingMessage();
+		}
+		this.footer.invalidate();
+		this.ui.requestRender();
+	}
+
+	private handleToolApprovalInput(text: string): void {
+		const normalized = text.trim().toLowerCase();
+		if (["1", "y", "yes", "allow", "ok", "approve"].includes(normalized)) {
+			this.resolveToolApproval({ behavior: "allow", scope: "once" });
+			return;
+		}
+		if (["2", "a", "always", "allow session", "allow-session", "session"].includes(normalized)) {
+			this.resolveToolApproval({ behavior: "allow", scope: "session" });
+			return;
+		}
+		if (["3", "n", "no", "deny", "reject"].includes(normalized)) {
+			this.resolveToolApproval({ behavior: "deny" });
+			return;
+		}
+		if (normalized === "4") {
+			this.showStatus("Type: deny: <tell Neo what to do differently>");
+			return;
+		}
+		const denyMatch = text.match(/^(?:deny|reject|no)\s*:?\s*(.+)$/i);
+		if (denyMatch?.[1]?.trim()) {
+			this.resolveToolApproval({
+				behavior: "deny",
+				feedback: denyMatch[1].trim(),
+			});
+			return;
+		}
+		const allowMatch = text.match(/^(?:allow|yes|approve)\s*:?\s*(.+)$/i);
+		if (allowMatch?.[1]?.trim()) {
+			this.resolveToolApproval({
+				behavior: "allow",
+				scope: "once",
+				feedback: allowMatch[1].trim(),
+			});
+			return;
+		}
+		this.showWarning("Permission prompt expects 1/2/3/4, y/yes, a/always, n/no, or deny: <reason>.");
+	}
+
 	private subscribeToAgent(): void {
 		this.unsubscribe = this.session.subscribe(async (event) => {
 			await this.handleEvent(event);
@@ -2988,10 +3465,21 @@ export class InteractiveMode {
 		return component;
 	}
 
-	private getOrCreateCurrentToolGroup(): ToolActivityGroupComponent {
-		if (!this.currentToolActivityGroup) {
-			this.currentToolActivityGroup = new ToolActivityGroupComponent(this.toolOutputExpanded);
-			this.chatContainer.addChild(this.currentToolActivityGroup);
+	private createToolActivityGroup(): ToolActivityGroupComponent {
+		const group = new ToolActivityGroupComponent(this.toolOutputExpanded, {
+			gradualReveal: true,
+			ui: this.ui,
+		});
+		if (this.pendingToolApproval) {
+			group.setAnimationPaused(true);
+		}
+		this.chatContainer.addChild(group);
+		return group;
+	}
+
+	private getOrCreateCurrentToolGroup(toolName: string, args: any): ToolActivityGroupComponent {
+		if (!this.currentToolActivityGroup || !this.currentToolActivityGroup.canAcceptTool(toolName, args)) {
+			this.currentToolActivityGroup = this.createToolActivityGroup();
 		}
 		return this.currentToolActivityGroup;
 	}
@@ -3001,11 +3489,12 @@ export class InteractiveMode {
 		toolCallId: string,
 		args: any,
 		component: ToolExecutionComponent,
-		group = this.getOrCreateCurrentToolGroup(),
+		group?: ToolActivityGroupComponent,
 	): ToolActivityGroupComponent {
-		group.addTool(toolName, toolCallId, args, component);
-		this.pendingToolGroups.set(toolCallId, group);
-		return group;
+		const targetGroup = group ?? this.getOrCreateCurrentToolGroup(toolName, args);
+		targetGroup.addTool(toolName, toolCallId, args, component);
+		this.pendingToolGroups.set(toolCallId, targetGroup);
+		return targetGroup;
 	}
 
 	private async handleEvent(event: AgentSessionEvent): Promise<void> {
@@ -3017,6 +3506,8 @@ export class InteractiveMode {
 
 		switch (event.type) {
 			case "agent_start":
+				this.setToolActivityAnimationPaused(false);
+				this.pendingToolApproval = undefined;
 				this.pendingTools.clear();
 				this.pendingToolGroups.clear();
 				this.activeToolExecutionIds.clear();
@@ -3058,9 +3549,25 @@ export class InteractiveMode {
 				this.ui.requestRender();
 				break;
 
+			case "background_task_update":
+				this.footer.invalidate();
+				if (event.event === "backgrounded") {
+					this.showStatus(`Background task ${event.task.id} is running. Use /tasks to view.`);
+				} else if (event.event === "completed" || event.event === "failed" || event.event === "killed") {
+					const title = event.task.description?.trim() || event.task.command;
+					this.showStatus(`Background task ${event.task.id} ${event.task.status}: ${title}`);
+				}
+				this.ui.requestRender();
+				break;
+
 			case "thinking_level_changed":
 				this.footer.invalidate();
 				this.updateEditorBorderColor();
+				break;
+
+			case "agent_mode_changed":
+				this.footer.invalidate();
+				this.ui.requestRender();
 				break;
 
 			case "message_start":
@@ -3079,20 +3586,22 @@ export class InteractiveMode {
 						this.getMarkdownThemeWithSettings(),
 						this.hiddenThinkingLabel,
 					);
-					this.streamingMessage = event.message;
+					const streamingMessage = event.message;
+					this.streamingMessage = streamingMessage;
 					this.chatContainer.addChild(this.streamingComponent);
-					this.streamingComponent.updateContent(this.streamingMessage);
+					this.streamingComponent.updateContent(streamingMessage);
 					this.ui.requestRender();
 				}
 				break;
 
 			case "message_update":
 				if (this.streamingComponent && event.message.role === "assistant") {
-					this.streamingMessage = event.message;
-					this.streamingComponent.updateContent(this.streamingMessage);
-					this.updateWorkingStalledState(this.streamingMessage);
+					const streamingMessage = event.message;
+					this.streamingMessage = streamingMessage;
+					this.streamingComponent.updateContent(streamingMessage);
+					this.updateWorkingStalledState(streamingMessage);
 
-					for (const content of this.streamingMessage.content) {
+					for (const content of streamingMessage.content) {
 						if (content.type === "toolCall") {
 							this.setToolInputWorkingMessage(content.name, content.arguments);
 							const existing = this.pendingTools.get(content.id);
@@ -3118,21 +3627,22 @@ export class InteractiveMode {
 			case "message_end":
 				if (event.message.role === "user") break;
 				if (this.streamingComponent && event.message.role === "assistant") {
-					this.streamingMessage = event.message;
+					const streamingMessage = event.message;
+					this.streamingMessage = streamingMessage;
 					let errorMessage: string | undefined;
-					if (this.streamingMessage.stopReason === "aborted") {
+					if (streamingMessage.stopReason === "aborted") {
 						const retryAttempt = this.session.retryAttempt;
 						errorMessage =
 							retryAttempt > 0
 								? `Aborted after ${retryAttempt} retry attempt${retryAttempt > 1 ? "s" : ""}`
 								: "Operation aborted";
-						this.streamingMessage.errorMessage = errorMessage;
+						streamingMessage.errorMessage = errorMessage;
 					}
-					this.streamingComponent.updateContent(this.streamingMessage);
+					this.streamingComponent.updateContent(streamingMessage);
 
-					if (this.streamingMessage.stopReason === "aborted" || this.streamingMessage.stopReason === "error") {
+					if (streamingMessage.stopReason === "aborted" || streamingMessage.stopReason === "error") {
 						if (!errorMessage) {
-							errorMessage = this.streamingMessage.errorMessage || "Error";
+							errorMessage = streamingMessage.errorMessage || "Error";
 						}
 						for (const [toolCallId, component] of this.pendingTools.entries()) {
 							const result = {
@@ -3205,7 +3715,18 @@ export class InteractiveMode {
 			}
 
 			case "agent_end":
+				if (this.pendingToolApproval) {
+					this.resolveToolApproval({
+						behavior: "deny",
+						reason: "Agent stopped before permission was answered",
+					});
+				}
+				this.setToolActivityAnimationPaused(false);
 				this.activeToolExecutionIds.clear();
+				if (this.terminalBlurredAt) {
+					this.workCompletedWhileAway = true;
+				}
+				this.checkLowBalance();
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
 				}
@@ -3274,15 +3795,7 @@ export class InteractiveMode {
 						this.showStatus("Auto-compaction cancelled");
 					}
 				} else if (event.result) {
-					this.chatContainer.clear();
 					this.rebuildChatFromMessages();
-					this.addMessageToChat(
-						createCompactionSummaryMessage(
-							event.result.summary,
-							event.result.tokensBefore,
-							new Date().toISOString(),
-						),
-					);
 					this.footer.invalidate();
 				} else if (event.errorMessage) {
 					if (event.reason === "manual") {
@@ -3509,11 +4022,14 @@ export class InteractiveMode {
 			if (message.role === "assistant") {
 				this.addMessageToChat(message);
 				let group: ToolActivityGroupComponent | undefined;
-				// Render tool call components in one collapsed activity group
+				// Render tool call components in collapsed intent groups.
 				for (const content of message.content) {
 					if (content.type === "toolCall") {
-						if (!group) {
+						if (!group || !group.canAcceptTool(content.name, content.arguments)) {
 							group = new ToolActivityGroupComponent(this.toolOutputExpanded);
+							if (this.pendingToolApproval) {
+								group.setAnimationPaused(true);
+							}
 							this.chatContainer.addChild(group);
 						}
 						const component = this.createToolExecutionComponent(content.name, content.id, content.arguments);
@@ -3605,7 +4121,12 @@ export class InteractiveMode {
 		if (now - this.lastSigintTime < 500) {
 			void this.shutdown();
 		} else {
+			// First Ctrl+C: abort agent if running/retrying, otherwise clear editor
+			if (this.session.isStreaming || this.session.isBashRunning || this.session.retryAttempt > 0) {
+				this.restoreQueuedMessagesToEditor({ abort: true });
+			}
 			this.clearEditor();
+			this.showStatus("Press Ctrl+C again to exit.");
 			this.lastSigintTime = now;
 		}
 	}
@@ -3633,7 +4154,7 @@ export class InteractiveMode {
 
 		this.stop();
 		await this.runtimeHost.dispose();
-		process.exit(0);
+		exitAfterCleanup(0);
 	}
 
 	private emergencyTerminalExit(): never {
@@ -3642,7 +4163,7 @@ export class InteractiveMode {
 		killTrackedDetachedChildren();
 		// The terminal is gone. Do not run normal shutdown because TUI and
 		// extension cleanup can write restore sequences and re-trigger EIO.
-		process.exit(129);
+		exitAfterCleanup(129);
 	}
 
 	/**
@@ -3658,7 +4179,7 @@ export class InteractiveMode {
 	 */
 	private uncaughtCrash(error: Error): never {
 		if (this.isShuttingDown) {
-			process.exit(1);
+			exitAfterCleanup(1);
 		}
 		this.isShuttingDown = true;
 		try {
@@ -3672,7 +4193,7 @@ export class InteractiveMode {
 		} catch {}
 		console.error("Neo Code exiting due to uncaughtException:");
 		console.error(error);
-		process.exit(1);
+		exitAfterCleanup(1);
 	}
 
 	/**
@@ -3817,6 +4338,12 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	private cycleAgentMode(): void {
+		const nextMode = getNextAgentWorkMode(this.session.agentMode);
+		this.applyAgentMode(nextMode);
+		this.showStatus(`Mode: ${getAgentWorkModeLabel(nextMode)} (${formatAgentWorkModeCycleList()})`);
+	}
+
 	private cycleThinkingLevel(): void {
 		const newLevel = this.session.cycleThinkingLevel();
 		if (newLevel === undefined) {
@@ -3856,9 +4383,26 @@ export class InteractiveMode {
 		if (isExpandable(activeHeader)) {
 			activeHeader.setExpanded(expanded);
 		}
-		for (const child of this.chatContainer.children) {
-			if (isExpandable(child)) {
-				child.setExpanded(expanded);
+		// When streaming: expand only current/pending groups (live output).
+		// When idle: expand ALL tool groups in chat (transcript-like view).
+		if (this.session.isStreaming) {
+			if (this.currentToolActivityGroup) {
+				this.currentToolActivityGroup.setExpanded(expanded);
+			}
+			for (const group of this.pendingToolGroups.values()) {
+				group.setExpanded(expanded);
+			}
+		} else {
+			for (const child of this.chatContainer.children) {
+				if (child instanceof ToolActivityGroupComponent) {
+					child.setExpanded(expanded);
+				}
+			}
+			if (this.currentToolActivityGroup) {
+				this.currentToolActivityGroup.setExpanded(expanded);
+			}
+			for (const group of this.pendingToolGroups.values()) {
+				group.setExpanded(expanded);
 			}
 		}
 		this.ui.requestRender();
@@ -4048,6 +4592,7 @@ export class InteractiveMode {
 		if (allQueued.length === 0) {
 			this.updatePendingMessagesDisplay();
 			if (options?.abort) {
+				this.session.abortRetry();
 				this.agent.abort();
 			}
 			return 0;
@@ -4058,6 +4603,7 @@ export class InteractiveMode {
 		this.editor.setText(combinedText);
 		this.updatePendingMessagesDisplay();
 		if (options?.abort) {
+			this.session.abortRetry();
 			this.agent.abort();
 		}
 		return allQueued.length;
@@ -5504,6 +6050,13 @@ export class InteractiveMode {
 	private handleSessionCommand(): void {
 		const stats = this.session.getSessionStats();
 		const sessionName = this.sessionManager.getSessionName();
+		const contextUsage = stats.contextUsage;
+		const cumulative = this.getCumulativeUsageForContext();
+		const contextLabel = contextUsage
+			? `${contextUsage.tokens?.toLocaleString() ?? "unknown"} / ${contextUsage.contextWindow.toLocaleString()} tokens (${
+					contextUsage.percent !== null ? `${contextUsage.percent.toFixed(1)}%` : "?"
+				})`
+			: "unknown";
 
 		let info = `${theme.bold("Session Info")}\n\n`;
 		if (sessionName) {
@@ -5511,27 +6064,27 @@ export class InteractiveMode {
 		}
 		info += `${theme.fg("dim", "File:")} ${stats.sessionFile ?? "In-memory"}\n`;
 		info += `${theme.fg("dim", "ID:")} ${stats.sessionId}\n\n`;
-		info += `${theme.bold("Messages")}\n`;
+		info += `${theme.bold("Messages in current context")}\n`;
 		info += `${theme.fg("dim", "User:")} ${stats.userMessages}\n`;
 		info += `${theme.fg("dim", "Assistant:")} ${stats.assistantMessages}\n`;
 		info += `${theme.fg("dim", "Tool Calls:")} ${stats.toolCalls}\n`;
 		info += `${theme.fg("dim", "Tool Results:")} ${stats.toolResults}\n`;
 		info += `${theme.fg("dim", "Total:")} ${stats.totalMessages}\n\n`;
-		info += `${theme.bold("Tokens")}\n`;
-		info += `${theme.fg("dim", "Input:")} ${stats.tokens.input.toLocaleString()}\n`;
-		info += `${theme.fg("dim", "Output:")} ${stats.tokens.output.toLocaleString()}\n`;
-		if (stats.tokens.cacheRead > 0) {
-			info += `${theme.fg("dim", "Cache Read:")} ${stats.tokens.cacheRead.toLocaleString()}\n`;
+		info += `${theme.bold("Current Context")} ${theme.fg("dim", "(what the next request sends)")}\n`;
+		info += `${theme.fg("dim", "Window:")} ${contextLabel}\n`;
+		info += `${theme.fg("dim", "Source:")} latest post-compact API usage + estimated trailing messages\n\n`;
+		info += `${theme.bold("Session Billing Totals")} ${theme.fg("dim", "(not reset by compaction)")}\n`;
+		info += `${theme.fg("dim", "Input:")} ${cumulative.input.toLocaleString()}\n`;
+		info += `${theme.fg("dim", "Output:")} ${cumulative.output.toLocaleString()}\n`;
+		if (cumulative.cacheRead > 0) {
+			info += `${theme.fg("dim", "Cache Read:")} ${cumulative.cacheRead.toLocaleString()}\n`;
 		}
-		if (stats.tokens.cacheWrite > 0) {
-			info += `${theme.fg("dim", "Cache Write:")} ${stats.tokens.cacheWrite.toLocaleString()}\n`;
+		if (cumulative.cacheWrite > 0) {
+			info += `${theme.fg("dim", "Cache Write:")} ${cumulative.cacheWrite.toLocaleString()}\n`;
 		}
-		info += `${theme.fg("dim", "Total:")} ${stats.tokens.total.toLocaleString()}\n`;
-
-		if (stats.cost > 0) {
-			info += `\n${theme.bold("Cost")}\n`;
-			info += `${theme.fg("dim", "Total:")} ${formatIdrCurrency(stats.cost)}`;
-		}
+		info += `${theme.fg("dim", "Total:")} ${cumulative.total.toLocaleString()} tokens · ${formatIdrCurrency(
+			cumulative.cost,
+		)}`;
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(info, 1, 0));
@@ -5553,6 +6106,7 @@ export class InteractiveMode {
 		const contextLabel = contextUsage
 			? `${contextUsage.tokens?.toLocaleString() ?? "unknown"} / ${contextUsage.contextWindow.toLocaleString()} tokens (${contextUsage.percent !== null ? `${contextUsage.percent.toFixed(1)}%` : "?"})`
 			: "unknown";
+		const cumulative = this.getCumulativeUsageForContext();
 		const sessionName = this.sessionManager.getSessionName();
 
 		let info = `${theme.bold("Neo Code Status")}\n\n`;
@@ -5567,9 +6121,9 @@ export class InteractiveMode {
 		info += `${theme.fg("dim", "Model:")} ${model ? model.name || model.id : "not selected"}\n`;
 		info += `${theme.fg("dim", "Auth:")} ${authLabel}\n`;
 		info += `${theme.fg("dim", "Context:")} ${contextLabel}\n\n`;
-		info += `${theme.bold("Current Session Usage")}\n`;
-		info += `${theme.fg("dim", "Tokens:")} ${stats.tokens.total.toLocaleString()} total (${stats.tokens.input.toLocaleString()} input, ${stats.tokens.output.toLocaleString()} output)\n`;
-		info += `${theme.fg("dim", "Cost:")} ${formatIdrCurrency(stats.cost)}\n`;
+		info += `${theme.bold("Session Billing Totals")} ${theme.fg("dim", "(not reset by compaction)")}\n`;
+		info += `${theme.fg("dim", "Tokens:")} ${cumulative.total.toLocaleString()} total (${cumulative.input.toLocaleString()} input, ${cumulative.output.toLocaleString()} output)\n`;
+		info += `${theme.fg("dim", "Cost:")} ${formatIdrCurrency(cumulative.cost)}\n`;
 		info += `${theme.fg("dim", "Billing:")} Use /usage for account billing`;
 
 		this.chatContainer.addChild(new Spacer(1));
@@ -5577,39 +6131,152 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	private formatSessionDuration(): string {
+		const ms = Date.now() - this.sessionStartTime;
+		const seconds = Math.floor(ms / 1000);
+		if (seconds < 60) return `${seconds}s`;
+		const minutes = Math.floor(seconds / 60);
+		if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+		const hours = Math.floor(minutes / 60);
+		return `${hours}h ${minutes % 60}m`;
+	}
+
 	private async handleUsageCommand(): Promise<void> {
-		const stats = this.session.getSessionStats();
+		const cumulative = this.getCumulativeUsageForContext();
 		const backendUsage = await getNeosantaraBackendUsageSnapshot();
 		const accountUsage = backendUsage.snapshot;
 		const backendStatus = backendUsage.detail
 			? `${backendUsage.status} (${backendUsage.detail})`
 			: backendUsage.status;
+		const currentModel = this.session.model;
+		const authStatus = this.session.modelRegistry.getProviderAuthStatus("neosantara");
+		const authLabel = authStatus.configured
+			? authStatus.source
+				? `Neosantara (${authStatus.source}${authStatus.label ? `: ${authStatus.label}` : ""})`
+				: "Neosantara (configured)"
+			: "Neosantara (login required)";
+		const currentModelLabel = currentModel
+			? `${currentModel.name || currentModel.id}${this.getThinkingUsageSuffix(currentModel.reasoning)}`
+			: "model not selected";
 
-		let info = `${theme.bold("Neosantara Usage")}\n\n`;
-		info += `${theme.bold("Current CLI Session")}\n`;
-		info += `${theme.fg("dim", "Input tokens:")} ${stats.tokens.input.toLocaleString()}\n`;
-		info += `${theme.fg("dim", "Output tokens:")} ${stats.tokens.output.toLocaleString()}\n`;
-		if (stats.tokens.cacheRead > 0) {
-			info += `${theme.fg("dim", "Cache read:")} ${stats.tokens.cacheRead.toLocaleString()}\n`;
-		}
-		if (stats.tokens.cacheWrite > 0) {
-			info += `${theme.fg("dim", "Cache write:")} ${stats.tokens.cacheWrite.toLocaleString()}\n`;
-		}
-		info += `${theme.fg("dim", "Total tokens:")} ${stats.tokens.total.toLocaleString()}\n`;
-		info += `${theme.fg("dim", "Estimated cost:")} ${formatIdrCurrency(stats.cost)}\n\n`;
-		info += `${theme.bold("Account Billing")}\n`;
-		info += `${theme.fg("dim", "Mode:")} Pay as you go\n`;
-		info += `${theme.fg("dim", "Currency:")} Rupiah (IDR)\n`;
-		info += `${theme.fg("dim", "Balance:")} ${formatOptionalIdrCurrency(accountUsage?.balanceIdr)}\n`;
-		info += `${theme.fg("dim", "Period spend:")} ${formatOptionalIdrCurrency(accountUsage?.monthlySpendIdr)}\n`;
-		info += `${theme.fg("dim", "Backend:")} ${backendStatus}`;
-		if (accountUsage?.updatedAt) {
-			info += `\n${theme.fg("dim", "Updated:")} ${accountUsage.updatedAt}`;
-		}
+		const data = {
+			version: this.version,
+			workspace: this.formatCompactDisplayPath(this.sessionManager.getCwd()),
+			account: authLabel,
+			currentModel: currentModelLabel,
+			billingMode: "Account Billing · Neosantara PAYG · IDR",
+			balance: formatOptionalIdrCurrency(accountUsage?.balanceIdr),
+			periodSpend: formatOptionalIdrCurrency(accountUsage?.monthlySpendIdr),
+			sessionTokens: `${cumulative.total.toLocaleString()} tokens`,
+			sessionCost: formatIdrCurrency(cumulative.cost),
+			sessionDuration: this.formatSessionDuration(),
+			backendStatus,
+			updatedAt: accountUsage?.updatedAt,
+			models: this.buildUsageModelRows(accountUsage, backendUsage.status),
+		};
 
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(info, 1, 0));
-		this.ui.requestRender();
+		let overlay: OverlayHandle | undefined;
+		const component = new UsageScreenComponent(
+			data,
+			() => this.ui.terminal.rows,
+			() => overlay?.hide(),
+		);
+		overlay = this.ui.showOverlay(component, {
+			anchor: "top-center",
+			row: 0,
+			width: Math.min(74, Math.max(50, this.ui.terminal.columns - 2)),
+			maxHeight: "95%",
+			margin: { top: 0, left: 1, right: 1, bottom: 1 },
+		});
+	}
+
+	private getThinkingUsageSuffix(modelSupportsThinking: boolean): string {
+		if (!modelSupportsThinking) return "";
+		const level = this.session.thinkingLevel || "off";
+		return level === "off" ? "" : ` (${level[0].toUpperCase()}${level.slice(1)})`;
+	}
+
+	private buildUsageModelRows(
+		accountUsage: NeosantaraUsageSnapshot | null,
+		backendStatus: NeosantaraUsageResult["status"],
+	): UsageModelRow[] {
+		const quotaById = new Map(accountUsage?.modelQuotas.map((quota) => [quota.modelId, quota]) ?? []);
+		const models = this.session.modelRegistry
+			.getAll()
+			.filter((model) => model.provider === "neosantara")
+			.sort((a, b) => {
+				const activeA = this.session.model?.id === a.id ? 0 : 1;
+				const activeB = this.session.model?.id === b.id ? 0 : 1;
+				if (activeA !== activeB) return activeA - activeB;
+				const availableA = this.session.modelRegistry.hasConfiguredAuth(a) ? 0 : 1;
+				const availableB = this.session.modelRegistry.hasConfiguredAuth(b) ? 0 : 1;
+				if (availableA !== availableB) return availableA - availableB;
+				return (a.name || a.id).localeCompare(b.name || b.id);
+			});
+
+		return models.map((model) => {
+			const quota = quotaById.get(model.id) ?? quotaById.get(model.name);
+			const hasAuth = this.session.modelRegistry.hasConfiguredAuth(model);
+			const active = this.session.model?.provider === model.provider && this.session.model.id === model.id;
+			const providerName = this.session.modelRegistry.getProviderDisplayName(model.provider);
+			const costDetail = this.formatUsageModelCost(model.cost.input, model.cost.output);
+
+			if (quota) {
+				const available = quota.available ?? (quota.percentAvailable === undefined || quota.percentAvailable > 0);
+				return {
+					id: model.id,
+					displayName: quota.displayName ?? model.name ?? model.id,
+					providerName,
+					active,
+					percentAvailable: quota.percentAvailable ?? (available ? 100 : 0),
+					status: quota.status ?? (available ? "Quota available" : "Quota unavailable"),
+					statusKind: available ? "success" : "warning",
+					detail: quota.resetAt ? `reset ${quota.resetAt}` : costDetail,
+				} satisfies UsageModelRow;
+			}
+
+			if (backendStatus === "login required" || !hasAuth) {
+				return {
+					id: model.id,
+					displayName: model.name ?? model.id,
+					providerName,
+					active,
+					percentAvailable: 0,
+					status: "Login required",
+					statusKind: "warning",
+					detail: costDetail,
+				} satisfies UsageModelRow;
+			}
+
+			if (backendStatus === "unavailable") {
+				return {
+					id: model.id,
+					displayName: model.name ?? model.id,
+					providerName,
+					active,
+					percentAvailable: null,
+					status: "Quota endpoint unavailable",
+					statusKind: "muted",
+					detail: costDetail,
+				} satisfies UsageModelRow;
+			}
+
+			return {
+				id: model.id,
+				displayName: model.name ?? model.id,
+				providerName,
+				active,
+				percentAvailable: 100,
+				status: "PAYG access available",
+				statusKind: "success",
+				detail: costDetail,
+			} satisfies UsageModelRow;
+		});
+	}
+
+	private formatUsageModelCost(inputCost: number, outputCost: number): string {
+		if (inputCost <= 0 && outputCost <= 0) return "price unavailable";
+		return `${formatIdrCurrency(inputCost)}/1M in · ${formatIdrCurrency(outputCost)}/1M out`;
 	}
 
 	private formatContextUsageBar(percent: number | null | undefined): string {
@@ -5629,41 +6296,264 @@ export class InteractiveMode {
 		return theme.fg("success", "healthy");
 	}
 
+	private formatActiveToolsForContext(): string {
+		const toolNames = this.session.getActiveToolNames();
+		if (toolNames.length === 0) return "none";
+		const builtinOrder = ["read", "ls", "find", "grep", "bash", "edit", "write", "ExitPlanMode"];
+		const sorted = [...toolNames].sort((a, b) => {
+			const ai = builtinOrder.indexOf(a);
+			const bi = builtinOrder.indexOf(b);
+			if (ai !== -1 || bi !== -1)
+				return (ai === -1 ? Number.MAX_SAFE_INTEGER : ai) - (bi === -1 ? Number.MAX_SAFE_INTEGER : bi);
+			return a.localeCompare(b);
+		});
+		const visible = sorted.slice(0, 8);
+		const suffix = sorted.length > visible.length ? `, +${sorted.length - visible.length} more` : "";
+		return `${visible.join(", ")}${suffix}`;
+	}
+
+	private estimateTextTokens(text: string): number {
+		return Math.max(0, Math.ceil(text.length / 4));
+	}
+
+	private formatTokenBreakdownLine(
+		label: string,
+		tokens: number | null,
+		contextWindow: number | null,
+		options: { symbol?: string; dim?: boolean } = {},
+	): string {
+		const symbol = options.symbol ?? "⛁";
+		const value = tokens === null ? "unknown" : `~${tokens.toLocaleString()} tokens`;
+		const percent =
+			tokens !== null && typeof contextWindow === "number" && contextWindow > 0
+				? ` (${((tokens / contextWindow) * 100).toFixed(1)}%)`
+				: "";
+		const color = options.dim ? "dim" : "muted";
+		return `${theme.fg(color, symbol)} ${theme.fg("dim", label.padEnd(22))} ${value}${percent}`;
+	}
+
+	private getContextVisualizationBreakdown(options: {
+		contextWindow: number | null;
+		tokens: number | null;
+		compactAt: number | null;
+		reserveTokens: number;
+	}): string {
+		const systemPromptTokens = this.estimateTextTokens(this.session.systemPrompt);
+		const agentsTokens = this.session.resourceLoader
+			.getAgentsFiles()
+			.agentsFiles.reduce((sum, file) => sum + this.estimateTextTokens(file.content), 0);
+		const activeToolNames = this.session.getActiveToolNames();
+		const toolSchemaTokens = activeToolNames.length > 0 ? activeToolNames.length * 180 : 0;
+		const messageTokens = this.session.state.messages.reduce((sum, message) => sum + estimateTokens(message), 0);
+		const freeTokens =
+			typeof options.contextWindow === "number" && typeof options.tokens === "number"
+				? Math.max(0, options.contextWindow - options.tokens)
+				: null;
+		const compactBuffer =
+			typeof options.contextWindow === "number" && typeof options.compactAt === "number"
+				? Math.max(0, options.contextWindow - options.compactAt)
+				: options.reserveTokens;
+
+		return [
+			this.formatTokenBreakdownLine("System prompt", systemPromptTokens, options.contextWindow),
+			this.formatTokenBreakdownLine("Tools / schemas", toolSchemaTokens, options.contextWindow),
+			this.formatTokenBreakdownLine("AGENTS.md", agentsTokens, options.contextWindow),
+			this.formatTokenBreakdownLine("Messages", messageTokens, options.contextWindow),
+			this.formatTokenBreakdownLine("Autocompact buffer", compactBuffer, options.contextWindow, { symbol: "⛝" }),
+			this.formatTokenBreakdownLine("Free space", freeTokens, options.contextWindow, { symbol: "⛶", dim: true }),
+		].join("\n");
+	}
+
+	private getContextAgentsLines(): string[] {
+		const cwd = this.sessionManager.getCwd();
+		const files = this.session.resourceLoader.getAgentsFiles().agentsFiles;
+		if (files.length === 0) {
+			return [`${theme.fg("warning", "No AGENTS.md loaded.")} Run /init or /agents init to create one.`];
+		}
+		return files.map((file, index) => {
+			const isLast = index === files.length - 1;
+			const scope = this.getContextFileScope(file.path, cwd);
+			const tokenCount = this.estimateTextTokens(file.content);
+			return `${isLast ? "└─" : "├─"} ${theme.fg("muted", scope.padEnd(7))} ${this.formatCompactDisplayPath(file.path)} ${theme.fg(
+				"dim",
+				`~${tokenCount.toLocaleString()} tokens`,
+			)}`;
+		});
+	}
+
+	private getContextFileScope(filePath: string, cwd: string): "user" | "parent" | "project" {
+		const agentDir = getAgentDir();
+		const resolvedFile = path.resolve(filePath);
+		const resolvedCwd = path.resolve(cwd);
+		if (resolvedFile.startsWith(path.resolve(agentDir))) return "user";
+		if (path.dirname(resolvedFile) === resolvedCwd) return "project";
+		return "parent";
+	}
+
+	private getCumulativeUsageForContext(): {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+		total: number;
+		cost: number;
+	} {
+		let input = 0;
+		let output = 0;
+		let cacheRead = 0;
+		let cacheWrite = 0;
+		let cost = 0;
+
+		for (const entry of this.sessionManager.getEntries()) {
+			if (entry.type === "message" && entry.message.role === "assistant") {
+				const assistant = entry.message as AssistantMessage;
+				input += assistant.usage.input;
+				output += assistant.usage.output;
+				cacheRead += assistant.usage.cacheRead;
+				cacheWrite += assistant.usage.cacheWrite;
+				cost += assistant.usage.cost.total;
+			}
+		}
+
+		return { input, output, cacheRead, cacheWrite, total: input + output + cacheRead + cacheWrite, cost };
+	}
+
+	private getCompactionContextDetails(): {
+		count: number;
+		latestTokensBefore: number | undefined;
+		latestAt: string | undefined;
+	} {
+		const compactions = this.sessionManager.getEntries().filter((entry) => entry.type === "compaction");
+		const latest = compactions[compactions.length - 1];
+		return {
+			count: compactions.length,
+			latestTokensBefore: latest?.tokensBefore,
+			latestAt: latest?.timestamp,
+		};
+	}
+
 	private handleContextCommand(): void {
 		const stats = this.session.getSessionStats();
 		const contextUsage = stats.contextUsage;
 		const compaction = this.settingsManager.getCompactionSettings();
 		const model = this.session.model;
+		const cumulative = this.getCumulativeUsageForContext();
+		const compactionDetails = this.getCompactionContextDetails();
 		const contextWindow = contextUsage?.contextWindow ?? model?.contextWindow ?? null;
 		const tokens = contextUsage?.tokens ?? null;
 		const available =
 			typeof tokens === "number" && typeof contextWindow === "number" ? Math.max(0, contextWindow - tokens) : null;
 		const compactAt =
-			typeof contextWindow === "number" ? Math.max(0, contextWindow - compaction.reserveTokens) : null;
+			typeof contextWindow === "number"
+				? getAutoCompactTriggerTokens(contextWindow, compaction, model?.maxTokens ?? 0)
+				: null;
 		const reservePercent =
 			typeof contextWindow === "number" && contextWindow > 0
 				? (compaction.reserveTokens / contextWindow) * 100
 				: null;
-
-		let info = `${theme.bold("Context Usage")}\n\n`;
-		info += `${this.formatContextUsageBar(contextUsage?.percent)} ${formatPercent(contextUsage?.percent)} ${this.getContextHealthLabel(contextUsage?.percent)}\n\n`;
-		info += `${theme.bold("Model window")}\n`;
-		info += `${theme.fg("dim", "Model:")} ${model ? `${model.provider}/${model.name || model.id}` : "not selected"}\n`;
-		info += `${theme.fg("dim", "Context window:")} ${typeof contextWindow === "number" ? contextWindow.toLocaleString() : "unknown"} tokens\n`;
-		info += `${theme.fg("dim", "Estimated used:")} ${typeof tokens === "number" ? tokens.toLocaleString() : "unknown until next model response"}\n`;
-		info += `${theme.fg("dim", "Estimated remaining:")} ${typeof available === "number" ? available.toLocaleString() : "unknown"} tokens\n\n`;
-		info += `${theme.bold("Compaction")}\n`;
-		info += `${theme.fg("dim", "Auto compact:")} ${compaction.enabled ? "enabled" : "disabled"}\n`;
-		info += `${theme.fg("dim", "Reserve:")} ${compaction.reserveTokens.toLocaleString()} tokens (${formatPercent(reservePercent)})\n`;
-		info += `${theme.fg("dim", "Keep recent:")} ${compaction.keepRecentTokens.toLocaleString()} tokens\n`;
-		info += `${theme.fg("dim", "Compact around:")} ${typeof compactAt === "number" ? compactAt.toLocaleString() : "unknown"} used tokens\n\n`;
-		info += `${theme.bold("Session shape")}\n`;
-		info += `${theme.fg("dim", "Messages:")} ${stats.totalMessages.toLocaleString()} total (${stats.userMessages} user, ${stats.assistantMessages} assistant)\n`;
-		info += `${theme.fg("dim", "Tool activity:")} ${stats.toolCalls.toLocaleString()} calls, ${stats.toolResults.toLocaleString()} results\n`;
-		info += `${theme.fg("dim", "Token source:")} latest API usage + estimated trailing messages`;
-		if (tokens === null) {
-			info += `\n${theme.fg("warning", "Note:")} Context is unknown after compaction until the next successful assistant response.`;
+		const latestCompactionText =
+			compactionDetails.latestTokensBefore !== undefined
+				? `${compactionDetails.latestTokensBefore.toLocaleString()} tokens${
+						compactionDetails.latestAt ? ` at ${new Date(compactionDetails.latestAt).toLocaleString()}` : ""
+					}`
+				: "none yet";
+		const tokensText = typeof tokens === "number" ? tokens.toLocaleString() : "unknown";
+		const contextWindowText = typeof contextWindow === "number" ? contextWindow.toLocaleString() : "unknown";
+		const suggestions: string[] = [];
+		if (typeof contextUsage?.percent === "number" && contextUsage.percent >= 70) {
+			suggestions.push(`${theme.fg("dim", "/compact [focus]")} summarize older turns before continuing`);
 		}
+		if (compactionDetails.count > 0) {
+			suggestions.push(`${theme.fg("dim", "/usage")} compare billing totals vs active context`);
+		}
+		if (suggestions.length === 0) {
+			suggestions.push(`${theme.fg("dim", "/compact [focus]")} manually compact when the session feels crowded`);
+		}
+
+		let info = `${theme.bold("Context Usage")}
+
+`;
+		info += `${this.formatContextUsageBar(contextUsage?.percent)} ${tokensText}/${contextWindowText} tokens (${formatPercent(
+			contextUsage?.percent,
+		)}) · ${this.getContextHealthLabel(contextUsage?.percent)}
+`;
+		info += `${theme.fg("dim", "Shows the API view after compact boundaries, not cumulative billing history.")}
+
+`;
+		info += `${theme.bold("Current model context")}
+`;
+		info += `├─ ${theme.fg("dim", "Model")} ${model ? `${model.provider}/${model.name || model.id}` : "not selected"}
+`;
+		info += `├─ ${theme.fg("dim", "Used")} ${tokensText} tokens
+`;
+		info += `├─ ${theme.fg("dim", "Remaining")} ${typeof available === "number" ? available.toLocaleString() : "unknown"} tokens
+`;
+		info += `└─ ${theme.fg("dim", "Source")} latest API usage; post-compact may be estimated until next response
+
+`;
+		info += `${theme.bold("Estimated usage by category")}
+`;
+		info += `${this.getContextVisualizationBreakdown({
+			contextWindow,
+			tokens,
+			compactAt,
+			reserveTokens: compaction.reserveTokens,
+		})}
+
+`;
+		info += `${theme.bold("Loaded AGENTS.md")}
+`;
+		info += `${this.getContextAgentsLines().join("\n")}
+`;
+		info += `${theme.fg("dim", "Loaded in order; later project files can narrow broader user/parent instructions.")}
+
+`;
+		info += `${theme.bold("Compaction")}
+`;
+		info += `├─ ${theme.fg("dim", "Auto")} ${compaction.enabled ? "enabled" : "disabled"}
+`;
+		info += `├─ ${theme.fg("dim", "Reserve")} ${compaction.reserveTokens.toLocaleString()} tokens (${formatPercent(reservePercent)})
+`;
+		info += `├─ ${theme.fg("dim", "Keep recent")} ${compaction.keepRecentTokens.toLocaleString()} tokens
+`;
+		info += `├─ ${theme.fg("dim", "Trigger around")} ${typeof compactAt === "number" ? compactAt.toLocaleString() : "unknown"} used tokens
+`;
+		info += `├─ ${theme.fg("dim", "Compactions")} ${compactionDetails.count.toLocaleString()} total
+`;
+		info += `└─ ${theme.fg("dim", "Latest")} ${latestCompactionText}
+
+`;
+		info += `${theme.bold("Session totals")} ${theme.fg("dim", "(billing/history; not reset by compaction)")}
+`;
+		info += `├─ ${theme.fg("dim", "Input")} ${cumulative.input.toLocaleString()} tokens
+`;
+		info += `├─ ${theme.fg("dim", "Output")} ${cumulative.output.toLocaleString()} tokens
+`;
+		info += `├─ ${theme.fg("dim", "Cache")} read ${cumulative.cacheRead.toLocaleString()}, write ${cumulative.cacheWrite.toLocaleString()}
+`;
+		info += `└─ ${theme.fg("dim", "Total")} ${cumulative.total.toLocaleString()} tokens · ${formatIdrCurrency(cumulative.cost)}
+
+`;
+		info += `${theme.bold("Active session shape")}
+`;
+		info += `├─ ${theme.fg("dim", "Workspace")} ${this.formatCompactDisplayPath(this.sessionManager.getCwd())}
+`;
+		info += `├─ ${theme.fg("dim", "Mode")} ${this.session.getAgentModeLabel()}
+`;
+		info += `├─ ${theme.fg("dim", "Tools")} ${this.formatActiveToolsForContext()}
+`;
+		info += `├─ ${theme.fg("dim", "Messages")} ${stats.totalMessages.toLocaleString()} (${stats.userMessages} user, ${stats.assistantMessages} assistant)
+`;
+		info += `├─ ${theme.fg("dim", "Tool activity")} ${stats.toolCalls.toLocaleString()} calls, ${stats.toolResults.toLocaleString()} results
+`;
+		info += `└─ ${theme.fg("dim", "Session file")} ${stats.sessionFile ? this.formatCompactDisplayPath(stats.sessionFile) : "in-memory"}
+
+`;
+		info += `${theme.bold("Suggestions")}
+`;
+		info += suggestions
+			.map((suggestion, index) => `${index === suggestions.length - 1 ? "└─" : "├─"} ${suggestion}`)
+			.join("\n");
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(info, 1, 0));
@@ -5704,6 +6594,207 @@ export class InteractiveMode {
 		}
 	}
 
+	private handleConfigSlashCommand(_text: string): void {
+		const globalSettings = this.settingsManager.getGlobalSettings();
+		const projectSettings = this.settingsManager.getProjectSettings();
+		const mcpServers = this.settingsManager.getMcpServers();
+		const activeTools = this.session.getActiveToolNames().sort((left, right) => left.localeCompare(right));
+		let info = `${theme.bold("Neo Code Config")}
+
+`;
+		info += `${theme.fg("dim", "Provider:")} ${this.settingsManager.getDefaultProvider() ?? "auto"}
+`;
+		info += `${theme.fg("dim", "Model:")} ${this.settingsManager.getDefaultModel() ?? "auto"}
+`;
+		info += `${theme.fg("dim", "Mode:")} ${this.session.getAgentModeLabel()}
+`;
+		info += `${theme.fg("dim", "Transport:")} ${this.settingsManager.getTransport()}
+`;
+		info += `${theme.fg("dim", "Theme:")} ${this.settingsManager.getTheme() ?? "default"}
+`;
+		info += `${theme.fg("dim", "Session dir:")} ${this.settingsManager.getSessionDir() ?? "default"}
+`;
+		info += `${theme.fg("dim", "Active tools:")} ${activeTools.join(", ") || "none"}
+`;
+		info += `${theme.fg("dim", "MCP servers:")} ${Object.keys(mcpServers).length}
+
+`;
+		info += `${theme.bold("Scopes")}
+`;
+		info += `├─ ${theme.fg("dim", "Global fields")} ${Object.keys(globalSettings).sort().join(", ") || "none"}
+`;
+		info += `└─ ${theme.fg("dim", "Project fields")} ${Object.keys(projectSettings).sort().join(", ") || "none"}
+
+`;
+		info += `${theme.fg("dim", "Tip:")} edit ~/.neo-code/settings.json or .neo-code/settings.json, then run /reload.`;
+		this.addPlainInfoBlock(info);
+	}
+
+	private async handleMemoryCommand(text: string): Promise<void> {
+		const args = text.slice("/memory".length).trim();
+		if (args === "init") {
+			await this.handleAgentsCommand("/agents init");
+			return;
+		}
+		if (args === "show") {
+			await this.handleAgentsCommand("/agents show");
+			return;
+		}
+		await this.handleAgentsCommand("/agents");
+	}
+
+	private handleMcpCommand(): void {
+		const servers = this.settingsManager.getMcpServers();
+		const entries = Object.entries(servers).sort(([left], [right]) => left.localeCompare(right));
+		let info = `${theme.bold("MCP Servers")}
+`;
+		info += `${theme.fg("dim", "Config key:")} mcpServers
+`;
+		info += `${theme.fg("dim", "Tool:")} use the built-in mcp tool to list/call server tools
+`;
+		if (entries.length === 0) {
+			info += `
+${theme.fg("muted", "No MCP servers configured.")}
+`;
+			info += `${theme.fg("dim", "Example:")}
+`;
+			info += `"mcpServers": { "local": { "command": "node", "args": ["server.js"] } }`;
+			this.addPlainInfoBlock(info);
+			return;
+		}
+		for (const [name, config] of entries) {
+			info += `
+${theme.bold(name)}
+`;
+			info += `  ${theme.fg("dim", "command:")} ${config.command}${config.args?.length ? ` ${config.args.join(" ")}` : ""}
+`;
+			info += `  ${theme.fg("dim", "env:")} ${config.env ? Object.keys(config.env).sort().join(", ") : "none"}`;
+		}
+		this.addPlainInfoBlock(info);
+	}
+
+	private handleTodoCommand(): void {
+		const todoPath = path.join(this.sessionManager.getCwd(), ".neo-code", "todos.json");
+		if (!fs.existsSync(todoPath)) {
+			this.addPlainInfoBlock(`${theme.bold("Todo Plan")}
+
+${theme.fg("muted", "No todo plan stored yet.")}
+${theme.fg("dim", "The agent can use the todo tool during multi-step work.")}`);
+			return;
+		}
+		try {
+			const raw = fs.readFileSync(todoPath, "utf8");
+			const parsed = JSON.parse(raw) as {
+				note?: string;
+				items?: Array<{ id: string; content: string; status: string }>;
+			};
+			let info = `${theme.bold("Todo Plan")}
+${theme.fg("dim", todoPath)}
+`;
+			if (parsed.note)
+				info += `
+${theme.fg("dim", "Note:")} ${parsed.note}
+`;
+			if (!parsed.items?.length) {
+				info += `
+${theme.fg("muted", "No todo items recorded.")}`;
+			} else {
+				for (const item of parsed.items) {
+					const marker = item.status === "completed" ? "✓" : item.status === "in_progress" ? "→" : "•";
+					info += `
+${marker} ${theme.fg("dim", item.id)} ${item.content}`;
+				}
+			}
+			this.addPlainInfoBlock(info);
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	private handleTermuxKeysCommand(text: string): void {
+		const args = text.slice("/termux-keys".length).trim().split(/\s+/).filter(Boolean);
+		const action = args[0]?.toLowerCase() ?? "status";
+		if (action === "apply" || action === "install") {
+			const result = applyNeoTermuxTouchKeyboard();
+			let info = `${theme.bold("Termux touch keyboard")}
+
+`;
+			info += `${theme.fg("success", "✓ Applied Neo Code extra keys")}
+`;
+			info += `├─ ${theme.fg("dim", "File")} ${result.propertiesPath}
+`;
+			info += `├─ ${theme.fg("dim", "Backup")} ${result.backupPath ?? "none; file did not exist"}
+`;
+			info += `├─ ${theme.fg("dim", "Reload")} ${result.reloadAttempted ? (result.reloadOk ? "termux-reload-settings ok" : `termux-reload-settings failed: ${result.reloadMessage ?? "unknown"}`) : "termux-reload-settings not found; restart Termux to apply"}
+`;
+			info += `└─ ${theme.fg("dim", "Layout")} ${NEO_TERMUX_EXTRA_KEYS}
+
+`;
+			info += `${theme.fg("muted", "Tip: tap CTRL then B/O/C/D on the touch keyboard to use Neo shortcuts like background, expand tools, clear, and exit.")}`;
+			this.addPlainInfoBlock(info);
+			return;
+		}
+
+		if (action === "show" || action === "preview") {
+			this.addPlainInfoBlock(
+				`${theme.bold("Neo Code Termux extra keys")}
+
+extra-keys = ${NEO_TERMUX_EXTRA_KEYS}
+
+${theme.fg("dim", "Apply with /termux-keys apply. Neo will back up ~/.termux/termux.properties first.")}`,
+			);
+			return;
+		}
+
+		if (action === "restore") {
+			const restored = restoreLatestTermuxTouchKeyboardBackup();
+			if (!restored) {
+				this.showWarning("No Neo Termux keyboard backup found.");
+				return;
+			}
+			this.addPlainInfoBlock(
+				`${theme.bold("Termux touch keyboard")}
+
+${theme.fg("success", "✓ Restored latest backup")}
+└─ ${restored}`,
+			);
+			return;
+		}
+
+		const status = getTermuxTouchKeyboardStatus();
+		const latestBackup = findLatestTermuxPropertiesBackup();
+		let info = `${theme.bold("Termux touch keyboard")}
+
+`;
+		info += `${this.formatDoctorLine("Termux:", status.isTermux ? "ok" : "warn", status.isTermux ? "detected" : "not detected; this command is intended for Termux")}
+`;
+		info += `${this.formatDoctorLine("Config:", status.exists ? "ok" : "warn", status.exists ? status.propertiesPath : `${status.propertiesPath} will be created`)}
+`;
+		info += `${this.formatDoctorLine("extra-keys:", status.hasExtraKeys ? "ok" : "warn", status.hasExtraKeys ? (status.usesNeoLayout ? "Neo layout active" : "custom layout present") : "not configured")}
+`;
+		info += `${this.formatDoctorLine("Reload:", status.reloadCommandAvailable ? "ok" : "warn", status.reloadCommandAvailable ? "termux-reload-settings available" : "restart Termux after applying")}
+`;
+		info += `${this.formatDoctorLine("Backup:", latestBackup ? "ok" : "warn", latestBackup ?? "none yet")}
+
+`;
+		info += `${theme.bold("Recommended layout")}
+`;
+		info += `extra-keys = ${NEO_TERMUX_EXTRA_KEYS}
+
+`;
+		info += `${theme.bold("Commands")}
+`;
+		info += `├─ /termux-keys show      preview layout
+`;
+		info += `├─ /termux-keys apply     write config, backup first, reload if possible
+`;
+		info += `└─ /termux-keys restore   restore latest Neo backup
+
+`;
+		info += `${theme.fg("dim", "Why this layout: ESC/TAB/CTRL/ALT for terminal shortcuts, arrows/Home/End/Page keys for editing, and / - ~ | for common CLI input.")}`;
+		this.addPlainInfoBlock(info);
+	}
+
 	private handleDoctorCommand(): void {
 		const stats = this.session.getSessionStats();
 		const model = this.session.model;
@@ -5729,6 +6820,7 @@ export class InteractiveMode {
 		const rgPath = getToolPath("rg");
 		const fdPath = getToolPath("fd");
 		const memory = process.memoryUsage();
+		const termuxKeyboard = getTermuxTouchKeyboardStatus();
 
 		let info = `${theme.bold("Neo Code Doctor")}\n\n`;
 		info += `${theme.bold("Runtime")}\n`;
@@ -5744,6 +6836,9 @@ export class InteractiveMode {
 		info += `${this.formatDoctorLine("git:", git.ok ? "ok" : "warn", git.value)}\n`;
 		info += `${this.formatDoctorLine("rg:", rgPath ? "ok" : "warn", rgPath ?? "not found; grep/search tool may be slower or unavailable")}\n`;
 		info += `${this.formatDoctorLine("fd:", fdPath ? "ok" : "warn", fdPath ?? "not found; file autocomplete may be degraded")}\n\n`;
+		info += `${theme.bold("Termux")}\n`;
+		info += `${this.formatDoctorLine("Environment:", termuxKeyboard.isTermux ? "ok" : "warn", termuxKeyboard.isTermux ? "detected" : "not detected")}\n`;
+		info += `${this.formatDoctorLine("Touch keys:", termuxKeyboard.usesNeoLayout ? "ok" : termuxKeyboard.hasExtraKeys ? "warn" : "warn", termuxKeyboard.usesNeoLayout ? "Neo layout active" : termuxKeyboard.hasExtraKeys ? "custom layout present; /termux-keys apply can install Neo layout" : "not configured; use /termux-keys apply on Termux")}\n\n`;
 		info += `${theme.bold("Resources")}\n`;
 		info += `${this.formatDoctorLine("Diagnostics:", errors.length > 0 ? "fail" : warnings.length > 0 ? "warn" : "ok", `${errors.length} errors, ${warnings.length} warnings`)}\n`;
 		for (const diagnostic of [...errors, ...warnings].slice(0, 5)) {
@@ -5775,6 +6870,121 @@ export class InteractiveMode {
 			.filter((name) => name.length > 0);
 	}
 
+	private padVisible(text: string, width: number): string {
+		return text + " ".repeat(Math.max(0, width - visibleWidth(text)));
+	}
+
+	private agentModeColor(mode: AgentWorkMode): "accent" | "success" | "warning" | "error" | "muted" {
+		switch (mode) {
+			case "ask":
+				return "accent";
+			case "read-only":
+				return "success";
+			case "plan":
+				return "warning";
+			case "accept-edits":
+				return "success";
+			case "full":
+				return "error";
+			case "default":
+				return "muted";
+		}
+	}
+
+	private formatAgentModeCard(mode: AgentWorkMode, notice?: string): string {
+		const color = this.agentModeColor(mode);
+		const config = AGENT_WORK_MODE_CONFIG[mode];
+		const width = 68;
+		const innerWidth = width - 4;
+		const title = " Neo Code Mode ";
+		const top = theme.fg(color, `╭─${title}${"─".repeat(Math.max(0, width - visibleWidth(`╭─${title}`) - 1))}╮`);
+		const bottom = theme.fg(color, `╰${"─".repeat(width - 2)}╯`);
+		const line = (content: string) =>
+			`${theme.fg(color, "│")} ${this.padVisible(truncateToWidth(content, innerWidth, "…"), innerWidth)} ${theme.fg(color, "│")}`;
+		const modeTitle = theme.bold(theme.fg(color, `${config.symbol} ${config.label.toUpperCase()} MODE`));
+		const lines = [top];
+		if (notice) {
+			lines.push(line(theme.fg("muted", notice)));
+			lines.push(line(""));
+		}
+		lines.push(line(modeTitle));
+		lines.push(line(theme.fg("dim", getAgentWorkModeFooterDetail(mode))));
+		lines.push(line(`Tools: ${getAgentWorkModeToolSummary(mode)}`));
+		lines.push(bottom);
+		return lines.join("\n");
+	}
+
+	private formatAgentModeInfo(notice?: string): string {
+		const activeMode = this.session.agentMode;
+		let info = this.formatAgentModeCard(activeMode, notice);
+		info += `\n\n${theme.bold("Modes")}`;
+		for (const mode of AGENT_WORK_MODES) {
+			const selected = mode === activeMode;
+			const config = AGENT_WORK_MODE_CONFIG[mode];
+			const marker = selected ? theme.fg(this.agentModeColor(mode), "●") : theme.fg("muted", "○");
+			const label = selected
+				? theme.bold(theme.fg(this.agentModeColor(mode), `${config.symbol} ${mode}`))
+				: `${config.symbol} ${mode}`;
+			info += `\n${marker} ${this.padVisible(label, 20)} ${theme.fg("dim", config.footerDetail)} ${theme.fg("muted", `— ${config.description}`)}`;
+		}
+		info += `\n\n${theme.fg("dim", "Usage:")} /mode <${formatAgentWorkModeList()}>`;
+		info += `\n${theme.fg("dim", "Cycle:")} ${this.getAppKeyDisplay("app.mode.cycle")} cycles ${formatAgentWorkModeCycleList()}`;
+		info += `\n${theme.fg("dim", "Shortcuts:")} /ask · /plan · /read-only · /default · /accept-edits`;
+		info += `\n${theme.fg("dim", "Claude-style aliases:")} /agent = /default · --permission-mode plan`;
+		info += `\n${theme.fg("dim", "Approval flow:")} read/search/list auto-run inside workspace · default asks before bash/edit/write/extension tools · accept-edits auto-allows file edits · full bypasses prompts`;
+		return info;
+	}
+
+	private applyAgentMode(mode: AgentWorkMode): void {
+		this.session.setAgentMode(mode);
+		this.footer.invalidate();
+	}
+
+	private async sendPromptFromModeCommand(prompt: string, originalText: string): Promise<void> {
+		if (!prompt) return;
+		this.editor.addToHistory?.(originalText);
+		await this.session.prompt(
+			prompt,
+			this.session.isStreaming ? { streamingBehavior: "followUp" as const } : undefined,
+		);
+	}
+
+	private async handleModeCommand(text: string): Promise<void> {
+		const args = text.slice("/mode".length).trim().split(/\s+/).filter(Boolean);
+		if (args.length === 0) {
+			this.addPlainInfoBlock(this.formatAgentModeInfo());
+			return;
+		}
+
+		const rawMode = args[0];
+		const mode = parseAgentWorkMode(rawMode);
+		if (!mode) {
+			this.addPlainInfoBlock(
+				this.formatAgentModeInfo(`Unknown mode: ${rawMode}. Valid modes: ${formatAgentWorkModeList()}.`),
+			);
+			return;
+		}
+
+		this.applyAgentMode(mode);
+		const prompt = args.slice(1).join(" ").trim();
+		if (prompt) {
+			await this.sendPromptFromModeCommand(prompt, text);
+			return;
+		}
+		this.addPlainInfoBlock(this.formatAgentModeInfo(`Switched to ${getAgentWorkModeLabel(mode)} mode.`));
+		this.ui.requestRender();
+	}
+
+	private async handleModeShortcutCommand(mode: AgentWorkMode, prompt: string, originalText: string): Promise<void> {
+		this.applyAgentMode(mode);
+		if (prompt) {
+			await this.sendPromptFromModeCommand(prompt, originalText);
+			return;
+		}
+		this.addPlainInfoBlock(this.formatAgentModeInfo(`Switched to ${getAgentWorkModeLabel(mode)} mode.`));
+		this.ui.requestRender();
+	}
+
 	private getToolPermissionPresetTools(preset: ToolPermissionPreset): string[] {
 		const allNames = new Set(this.session.getAllTools().map((tool) => tool.name));
 		const keep = (names: string[]): string[] => names.filter((name) => allNames.has(name));
@@ -5797,6 +7007,108 @@ export class InteractiveMode {
 		return `${source}/${scope}`;
 	}
 
+	private handleBackgroundCurrentTask(): void {
+		const task = this.session.backgroundCurrentShellTask();
+		if (!task) {
+			this.showWarning("No foreground shell task is running. Ctrl+B only backgrounds the current bash command.");
+			return;
+		}
+		this.footer.invalidate();
+		this.showStatus(`Backgrounded ${task.id}. Use /tasks to view or /tasks stop ${task.id} to kill it.`);
+		this.ui.requestRender();
+	}
+
+	private handleTasksCommand(text: string): void {
+		const args = text.slice("/tasks".length).trim().split(/\s+/).filter(Boolean);
+		const action = args[0]?.toLowerCase();
+		const taskId = args[1];
+		if (action === "stop" || action === "kill") {
+			if (!taskId) {
+				this.showError("Usage: /tasks stop <task-id>");
+				return;
+			}
+			const task = this.session.stopBackgroundTask(taskId);
+			if (!task) {
+				this.showError(`Background task not found: ${taskId}`);
+				return;
+			}
+			this.footer.invalidate();
+			this.showStatus(`Stopped ${task.id}`);
+			this.showBackgroundTaskDetail(task.id, { title: "Stopped background task" });
+			return;
+		}
+
+		if (action === "show" || action === "tail" || action === "view") {
+			const id = taskId ?? args[0];
+			if (!id || id === action) {
+				this.showError("Usage: /tasks show <task-id>");
+				return;
+			}
+			this.showBackgroundTaskDetail(id, { title: "Background task detail" });
+			return;
+		}
+
+		this.showBackgroundTaskList();
+	}
+
+	private showBackgroundTaskList(): void {
+		const tasks = this.session.getBackgroundTasks();
+		this.chatContainer.addChild(new Spacer(1));
+		if (tasks.length === 0) {
+			this.chatContainer.addChild(new Text(theme.fg("muted", "Background tasks\n  └─ none"), 1, 0));
+			this.ui.requestRender();
+			return;
+		}
+
+		const rows = [theme.fg("accent", theme.bold("Background tasks"))];
+		for (const task of tasks) {
+			const color =
+				task.status === "running"
+					? "warning"
+					: task.status === "completed"
+						? "success"
+						: task.status === "failed" || task.status === "killed"
+							? "error"
+							: "muted";
+			rows.push(
+				`  ● ${theme.fg(color, task.id)} ${theme.fg("muted", this.session.formatBackgroundTaskSummary(task).replace(/^\S+\s+/, ""))}`,
+			);
+		}
+		rows.push(theme.fg("dim", "  Enter commands: /tasks show <id> · /tasks stop <id>"));
+		this.chatContainer.addChild(new Text(rows.join("\n"), 1, 0));
+		this.ui.requestRender();
+	}
+
+	private showBackgroundTaskDetail(taskId: string, options: { title: string }): void {
+		const task = this.session
+			.getBackgroundTasks({ includeForeground: true })
+			.find((candidate) => candidate.id === taskId);
+		if (!task) {
+			this.showError(`Background task not found: ${taskId}`);
+			return;
+		}
+		const tail = this.session.readBackgroundTaskOutputTail(task.id, 60) || "(no output)";
+		const elapsed = ((task.endedAt ?? Date.now()) - task.startedAt) / 1000;
+		const rows = [
+			theme.fg("accent", theme.bold(options.title)),
+			`  ├─ id: ${task.id}`,
+			`  ├─ status: ${task.status}`,
+			`  ├─ runtime: ${elapsed.toFixed(1)}s`,
+			typeof task.exitCode === "number" ? `  ├─ exit: ${task.exitCode}` : undefined,
+			`  ├─ cwd: ${task.cwd}`,
+			`  ├─ log: ${task.outputPath}`,
+			`  ├─ command: ${task.command}`,
+			`  └─ output tail`,
+			...tail
+				.split("\n")
+				.slice(-60)
+				.map((line) => theme.fg("toolOutput", `     ${line}`)),
+		].filter((line): line is string => Boolean(line));
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(rows.join("\n"), 1, 0));
+		this.ui.requestRender();
+	}
+
 	private handlePermissionsCommand(text: string): void {
 		const args = text.slice("/permissions".length).trim().split(/\s+/).filter(Boolean);
 		const activeBefore = new Set(this.session.getActiveToolNames());
@@ -5810,6 +7122,9 @@ export class InteractiveMode {
 				const preset = action as ToolPermissionPreset;
 				this.session.setActiveToolsByName(this.getToolPermissionPresetTools(preset));
 				notice = `Applied preset: ${preset}. Changes affect the next agent turn.`;
+			} else if (action === "reset" || action === "clear") {
+				this.session.clearToolApprovalRules();
+				notice = "Cleared session approval allow/deny rules.";
 			} else if (action === "allow" || action === "enable" || action === "add") {
 				const requested = this.normalizeToolNames(args.slice(1));
 				const unknown = requested.filter((name) => !allNames.has(name));
@@ -5826,7 +7141,7 @@ export class InteractiveMode {
 				this.session.setActiveToolsByName([...next]);
 				notice = `Disabled: ${requested.join(", ") || "none"}. Changes affect the next agent turn.`;
 			} else {
-				notice = `Unknown permissions action: ${action}. Use allow, deny, default, read-only, full, or no-tools.`;
+				notice = `Unknown permissions action: ${action}. Use allow, deny, reset, default, read-only, full, or no-tools.`;
 			}
 		}
 
@@ -5838,7 +7153,8 @@ export class InteractiveMode {
 		info += `\n\n${theme.bold("Tool exposure")}`;
 		info += `\n${theme.fg("dim", "Scope:")} current session; active tools are sent to the model on the next turn`;
 		info += `\n${theme.fg("dim", "Presets:")} /permissions default · /permissions read-only · /permissions full · /permissions no-tools`;
-		info += `\n${theme.fg("dim", "Edit:")} /permissions allow <tool> · /permissions deny <tool>\n`;
+		info += `\n${theme.fg("dim", "Edit:")} /permissions allow <tool> · /permissions deny <tool> · /permissions reset`;
+		info += `\n${theme.fg("dim", "Approval:")} default prompts for bash/edit/write/extension tools; full mode skips prompts\n`;
 		for (const tool of allTools) {
 			const enabled = active.has(tool.name);
 			const marker = enabled ? theme.fg("success", "✓") : theme.fg("muted", "○");
@@ -6097,7 +7413,9 @@ export class InteractiveMode {
 		});
 
 		try {
-			await packageManager.installAndPersist(command.source, { local: command.local });
+			await packageManager.installAndPersist(command.source, {
+				local: command.local,
+			});
 			await this.session.reload();
 			this.setupAutocompleteProvider();
 			const scope = command.local ? "project" : "user";
@@ -6112,13 +7430,10 @@ export class InteractiveMode {
 	private handleChangelogCommand(): void {
 		const allEntries = getAllChangelogEntries();
 
-		const changelogMarkdown =
-			allEntries.length > 0
-				? allEntries
-						.reverse()
-						.map((e) => e.content)
-						.join("\n\n")
-				: "No changelog entries found.";
+		const changelogMarkdown = formatChangelogEntries(
+			allEntries,
+			this.changelogMarkdown?.trim() || "No changelog entries found.",
+		);
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new DynamicBorder());
@@ -6175,6 +7490,7 @@ export class InteractiveMode {
 		const clear = this.getAppKeyDisplay("app.clear");
 		const exit = this.getAppKeyDisplay("app.exit");
 		const suspend = this.getAppKeyDisplay("app.suspend");
+		const cycleMode = this.getAppKeyDisplay("app.mode.cycle");
 		const cycleThinkingLevel = this.getAppKeyDisplay("app.thinking.cycle");
 		const cycleModelForward = this.getAppKeyDisplay("app.model.cycleForward");
 		const selectModel = this.getAppKeyDisplay("app.model.select");
@@ -6219,6 +7535,7 @@ export class InteractiveMode {
 | \`${clear}\` | Clear editor (first) / exit (second) |
 | \`${exit}\` | Exit (when editor is empty) |
 | \`${suspend}\` | Suspend to background |
+| \`${cycleMode}\` | Cycle workflow mode |
 | \`${cycleThinkingLevel}\` | Cycle thinking level |
 | \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Cycle models |
 | \`${selectModel}\` | Open model selector |
@@ -6276,6 +7593,57 @@ export class InteractiveMode {
 		} catch (error: unknown) {
 			await this.handleFatalRuntimeError("Failed to create session", error);
 		}
+	}
+
+	private checkLowBalance(): void {
+		if (this.lowBalanceWarningShown) return;
+		// Estimate remaining balance from last known balance minus session cost
+		const sessionCost = this.getCumulativeUsageForContext().cost;
+		if (this.lastKnownBalanceIdr !== undefined) {
+			const estimated = this.lastKnownBalanceIdr - sessionCost;
+			if (estimated < 5000 && estimated >= 0) {
+				this.lowBalanceWarningShown = true;
+				this.showWarning(
+					`Low balance: ~${Math.round(estimated)} IDR remaining. Top up at https://app.neosantara.xyz/billing`,
+				);
+			}
+			return;
+		}
+		// Fetch balance in background on first check
+		getNeosantaraBackendUsageSnapshot()
+			.then((result) => {
+				if (result.snapshot?.balanceIdr !== undefined) {
+					this.lastKnownBalanceIdr = result.snapshot.balanceIdr;
+					const estimated = this.lastKnownBalanceIdr - sessionCost;
+					if (estimated < 5000 && estimated >= 0) {
+						this.lowBalanceWarningShown = true;
+						this.showWarning(
+							`Low balance: ~${Math.round(estimated)} IDR remaining. Top up at https://app.neosantara.xyz/billing`,
+						);
+					}
+				}
+			})
+			.catch(() => {});
+	}
+
+	private handleTerminalBlur(): void {
+		this.terminalBlurredAt = Date.now();
+		this.workCompletedWhileAway = false;
+	}
+
+	private handleTerminalFocus(): void {
+		if (!this.terminalBlurredAt) return;
+		const awayMs = Date.now() - this.terminalBlurredAt;
+		const awayMinutes = Math.floor(awayMs / 60_000);
+		this.terminalBlurredAt = undefined;
+
+		// Show away summary if gone >2 minutes and work completed while away
+		if (awayMinutes >= 2 && this.workCompletedWhileAway) {
+			const minutes =
+				awayMinutes >= 60 ? `${Math.floor(awayMinutes / 60)}h ${awayMinutes % 60}m` : `${awayMinutes}m`;
+			this.showStatus(`Welcome back (away ${minutes}). Work completed while you were gone.`);
+		}
+		this.workCompletedWhileAway = false;
 	}
 
 	private handleDebugCommand(): void {
@@ -6411,6 +7779,11 @@ export class InteractiveMode {
 	}
 
 	private async handleCompactCommand(customInstructions?: string): Promise<void> {
+		if (this.session.isCompacting) {
+			this.showWarning("Compaction is already running");
+			return;
+		}
+
 		const entries = this.sessionManager.getEntries();
 		const messageCount = entries.filter((e) => e.type === "message").length;
 

@@ -12,8 +12,17 @@ import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
 import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
-import { resolveReadPath } from "./path-utils.js";
-import { getTextOutput, invalidArgText, replaceTabs, shortenPath, str } from "./render-utils.js";
+import { assertPathInsideCwd, resolveReadPath } from "./path-utils.js";
+import {
+	appendToolNotice,
+	formatSourceMappingUrlFilterNotice,
+	getTextOutput,
+	invalidArgText,
+	replaceTabs,
+	shortenPath,
+	str,
+	stripSourceMappingUrlLines,
+} from "./render-utils.js";
 import {
 	formatToolActivityLine,
 	formatToolActivityResultLine,
@@ -33,6 +42,9 @@ export type ReadToolInput = Static<typeof readSchema>;
 
 export interface ReadToolDetails {
 	truncation?: TruncationResult;
+	lineCount?: number;
+	totalLineCount?: number;
+	filteredSourceMappingURLLines?: number;
 }
 
 interface CompactReadClassification {
@@ -91,6 +103,20 @@ function trimTrailingEmptyLines(lines: string[]): string[] {
 		end--;
 	}
 	return lines.slice(0, end);
+}
+
+function countDisplayLines(text: string): number {
+	if (text.length === 0) return 0;
+	const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+	return normalized.endsWith("\n") ? normalized.split("\n").length - 1 : normalized.split("\n").length;
+}
+
+function withReadMetrics(
+	details: ReadToolDetails | undefined,
+	lineCount: number,
+	totalLineCount: number,
+): ReadToolDetails {
+	return { ...(details ?? {}), lineCount, totalLineCount };
 }
 
 function getNonVisionImageNote(model: Model<Api> | undefined): string | undefined {
@@ -222,8 +248,12 @@ export function createReadToolDefinition(
 		name: "read",
 		label: "read",
 		description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.`,
-		promptSnippet: "Read file contents",
-		promptGuidelines: ["Use read to examine files instead of cat or sed."],
+		promptSnippet: "Read file contents before proposing or applying changes",
+		promptGuidelines: [
+			"Use read to examine files instead of cat, head, tail, or sed.",
+			"Read the relevant file before proposing or applying edits to it.",
+			"For large files, use offset and limit to read focused ranges instead of rereading the whole file repeatedly.",
+		],
 		parameters: readSchema,
 		isSearchOrReadCommand(args) {
 			const activity = summarizeToolCall("read", args);
@@ -249,7 +279,7 @@ export function createReadToolDefinition(
 			_onUpdate?,
 			ctx?,
 		) {
-			const absolutePath = resolveReadPath(path, cwd);
+			const absolutePath = assertPathInsideCwd(resolveReadPath(path, cwd), cwd, "Read path");
 			return new Promise<{ content: (TextContent | ImageContent)[]; details: ReadToolDetails | undefined }>(
 				(resolve, reject) => {
 					if (signal?.aborted) {
@@ -306,7 +336,7 @@ export function createReadToolDefinition(
 								const buffer = await ops.readFile(absolutePath);
 								const textContent = buffer.toString("utf-8");
 								const allLines = textContent.split("\n");
-								const totalFileLines = allLines.length;
+								const totalFileLines = countDisplayLines(textContent);
 								// Apply offset if specified. Convert from 1-indexed input to 0-indexed array access.
 								const startLine = offset ? Math.max(0, offset - 1) : 0;
 								const startLineDisplay = startLine + 1;
@@ -324,6 +354,9 @@ export function createReadToolDefinition(
 								} else {
 									selectedContent = allLines.slice(startLine).join("\n");
 								}
+								const sourceMappingUrlFilter = stripSourceMappingUrlLines(selectedContent);
+								selectedContent = sourceMappingUrlFilter.text;
+
 								// Apply truncation, respecting both line and byte limits.
 								const truncation = truncateHead(selectedContent);
 								let outputText: string;
@@ -352,6 +385,20 @@ export function createReadToolDefinition(
 									// No truncation and no remaining user-limited content.
 									outputText = truncation.content;
 								}
+								if (sourceMappingUrlFilter.removedLines > 0) {
+									details = {
+										...(details ?? {}),
+										filteredSourceMappingURLLines: sourceMappingUrlFilter.removedLines,
+									};
+									outputText = appendToolNotice(
+										outputText,
+										formatSourceMappingUrlFilterNotice(sourceMappingUrlFilter.removedLines),
+									);
+								}
+
+								const metricText = outputText.replace(/\n\n\[[^\]]+\]$/s, "");
+								const lineCount = details?.truncation?.outputLines ?? countDisplayLines(metricText);
+								details = withReadMetrics(details, lineCount, totalFileLines);
 								content = [{ type: "text", text: outputText }];
 							}
 

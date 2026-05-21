@@ -3,7 +3,7 @@
  * Used by auth-storage.ts and model-registry.ts.
  */
 
-import { execSync, spawnSync } from "child_process";
+import { spawnSync } from "child_process";
 import { getShellConfig } from "../utils/shell.js";
 
 // Cache for shell command results (persists for process lifetime)
@@ -53,16 +53,7 @@ function executeWithConfiguredShell(command: string): { executed: boolean; value
 }
 
 function executeWithDefaultShell(command: string): string | undefined {
-	try {
-		const output = execSync(command, {
-			encoding: "utf-8",
-			timeout: 10000,
-			stdio: ["ignore", "pipe", "ignore"],
-		});
-		return output.trim() || undefined;
-	} catch {
-		return undefined;
-	}
+	return executeWithConfiguredShell(command).value;
 }
 
 function executeCommandUncached(commandConfig: string): string | undefined {

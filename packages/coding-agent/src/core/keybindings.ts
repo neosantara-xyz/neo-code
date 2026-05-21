@@ -15,11 +15,14 @@ export interface AppKeybindings {
 	"app.clear": true;
 	"app.exit": true;
 	"app.suspend": true;
+	"app.mode.cycle": true;
 	"app.thinking.cycle": true;
 	"app.model.cycleForward": true;
 	"app.model.cycleBackward": true;
 	"app.model.select": true;
 	"app.tools.expand": true;
+	"app.task.background": true;
+	"app.tasks.open": true;
 	"app.thinking.toggle": true;
 	"app.session.toggleNamedFilter": true;
 	"app.editor.external": true;
@@ -69,8 +72,12 @@ export const KEYBINDINGS = {
 		defaultKeys: process.platform === "win32" ? [] : "ctrl+z",
 		description: "Suspend to background",
 	},
-	"app.thinking.cycle": {
+	"app.mode.cycle": {
 		defaultKeys: "shift+tab",
+		description: "Cycle workflow mode",
+	},
+	"app.thinking.cycle": {
+		defaultKeys: "alt+t",
 		description: "Cycle thinking level",
 	},
 	"app.model.cycleForward": {
@@ -83,6 +90,8 @@ export const KEYBINDINGS = {
 	},
 	"app.model.select": { defaultKeys: "ctrl+l", description: "Open model selector" },
 	"app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" },
+	"app.task.background": { defaultKeys: "ctrl+b", description: "Run current shell task in background" },
+	"app.tasks.open": { defaultKeys: [], description: "Show background tasks" },
 	"app.thinking.toggle": {
 		defaultKeys: "ctrl+t",
 		description: "Toggle thinking blocks",
@@ -237,6 +246,7 @@ const KEYBINDING_NAME_MIGRATIONS = {
 	clear: "app.clear",
 	exit: "app.exit",
 	suspend: "app.suspend",
+	cycleMode: "app.mode.cycle",
 	cycleThinkingLevel: "app.thinking.cycle",
 	cycleModelForward: "app.model.cycleForward",
 	cycleModelBackward: "app.model.cycleBackward",

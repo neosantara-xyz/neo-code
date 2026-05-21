@@ -48,6 +48,8 @@ export interface CompactionSummaryMessage {
 	role: "compactionSummary";
 	summary: string;
 	tokensBefore: number;
+	tokensAfter?: number;
+	summarizedMessages?: number;
 	timestamp: number;
 }
 

@@ -5,7 +5,7 @@ import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../src/core/provider-display-na
 describe("Neosantara coding-agent defaults", () => {
 	it("uses Neosantara as the only built-in provider default", () => {
 		expect(defaultModelPerProvider).toEqual({
-			neosantara: "grok-4.1-fast-non-reasoning",
+			neosantara: "grok-4.1-fast-reasoning",
 		});
 	});
 

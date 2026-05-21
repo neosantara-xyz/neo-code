@@ -3,6 +3,18 @@
  */
 
 export {
+	AGENT_WORK_MODE_CONFIG,
+	AGENT_WORK_MODES,
+	type AgentWorkMode,
+	type AgentWorkModeConfig,
+	DEFAULT_AGENT_WORK_MODE,
+	formatAgentWorkModeList,
+	getAgentModePromptAppend,
+	getAgentWorkModeLabel,
+	getAgentWorkModeShortLabel,
+	parseAgentWorkMode,
+} from "./agent-mode.js";
+export {
 	AgentSession,
 	type AgentSessionConfig,
 	type AgentSessionEvent,

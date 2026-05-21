@@ -378,13 +378,58 @@ async function executeToolCalls(
 	emit: AgentEventSink,
 ): Promise<ExecutedToolCallBatch> {
 	const toolCalls = assistantMessage.content.filter((c) => c.type === "toolCall");
-	const hasSequentialToolCall = toolCalls.some(
-		(tc) => currentContext.tools?.find((t) => t.name === tc.name)?.executionMode === "sequential",
-	);
-	if (config.toolExecution === "sequential" || hasSequentialToolCall) {
+	if (config.toolExecution === "sequential") {
 		return executeToolCallsSequential(currentContext, assistantMessage, toolCalls, config, signal, emit);
 	}
-	return executeToolCallsParallel(currentContext, assistantMessage, toolCalls, config, signal, emit);
+
+	const batches = partitionToolCallsByExecutionMode(currentContext, toolCalls);
+	if (batches.length === 1 && batches[0]?.executionMode === "parallel") {
+		return executeToolCallsParallel(currentContext, assistantMessage, toolCalls, config, signal, emit);
+	}
+
+	const messages: ToolResultMessage[] = [];
+	let terminate = false;
+	for (const batch of batches) {
+		const result =
+			batch.executionMode === "sequential"
+				? await executeToolCallsSequential(currentContext, assistantMessage, batch.toolCalls, config, signal, emit)
+				: await executeToolCallsParallel(currentContext, assistantMessage, batch.toolCalls, config, signal, emit);
+		messages.push(...result.messages);
+		if (result.terminate) {
+			terminate = true;
+			break;
+		}
+	}
+
+	return { messages, terminate };
+}
+
+type ToolCallBatch = {
+	executionMode: "parallel" | "sequential";
+	toolCalls: AgentToolCall[];
+};
+
+function getToolExecutionMode(currentContext: AgentContext, toolCall: AgentToolCall): "parallel" | "sequential" {
+	return currentContext.tools?.find((tool) => tool.name === toolCall.name)?.executionMode === "sequential"
+		? "sequential"
+		: "parallel";
+}
+
+function partitionToolCallsByExecutionMode(currentContext: AgentContext, toolCalls: AgentToolCall[]): ToolCallBatch[] {
+	const batches: ToolCallBatch[] = [];
+
+	for (const toolCall of toolCalls) {
+		const executionMode = getToolExecutionMode(currentContext, toolCall);
+		const lastBatch = batches.at(-1);
+		if (executionMode === "parallel" && lastBatch?.executionMode === "parallel") {
+			lastBatch.toolCalls.push(toolCall);
+			continue;
+		}
+
+		batches.push({ executionMode, toolCalls: [toolCall] });
+	}
+
+	return batches;
 }
 
 type ExecutedToolCallBatch = {
@@ -436,6 +481,9 @@ async function executeToolCallsSequential(
 		await emitToolResultMessage(toolResultMessage, emit);
 		finalizedCalls.push(finalized);
 		messages.push(toolResultMessage);
+		if (finalized.result.terminate === true) {
+			break;
+		}
 	}
 
 	return {
@@ -471,6 +519,9 @@ async function executeToolCallsParallel(
 			} satisfies FinalizedToolCallOutcome;
 			await emitToolExecutionEnd(finalized, emit);
 			finalizedCalls.push(finalized);
+			if (finalized.result.terminate === true) {
+				break;
+			}
 			continue;
 		}
 
@@ -581,7 +632,10 @@ async function prepareToolCall(
 			if (beforeResult?.block) {
 				return {
 					kind: "immediate",
-					result: createErrorToolResult(beforeResult.reason || "Tool execution was blocked"),
+					result: createErrorToolResult(
+						beforeResult.reason || "Tool execution was blocked",
+						beforeResult.terminate,
+					),
 					isError: true,
 				};
 			}
@@ -683,10 +737,11 @@ async function finalizeExecutedToolCall(
 	};
 }
 
-function createErrorToolResult(message: string): AgentToolResult<any> {
+function createErrorToolResult(message: string, terminate?: boolean): AgentToolResult<any> {
 	return {
 		content: [{ type: "text", text: message }],
 		details: {},
+		terminate,
 	};
 }
 

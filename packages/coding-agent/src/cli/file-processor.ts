@@ -6,6 +6,7 @@ import { access, readFile, stat } from "node:fs/promises";
 import type { ImageContent } from "@neosantara/ai";
 import chalk from "chalk";
 import { resolve } from "path";
+import { exitAfterCleanup } from "../core/process-lifecycle.js";
 import { resolveReadPath } from "../core/tools/path-utils.js";
 import { formatDimensionNote, resizeImage } from "../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../utils/mime.js";
@@ -35,7 +36,7 @@ export async function processFileArguments(fileArgs: string[], options?: Process
 			await access(absolutePath);
 		} catch {
 			console.error(chalk.red(`Error: File not found: ${absolutePath}`));
-			process.exit(1);
+			exitAfterCleanup(1);
 		}
 
 		// Check if file is empty
@@ -91,7 +92,7 @@ export async function processFileArguments(fileArgs: string[], options?: Process
 			} catch (error: unknown) {
 				const message = error instanceof Error ? error.message : String(error);
 				console.error(chalk.red(`Error: Could not read file ${absolutePath}: ${message}`));
-				process.exit(1);
+				exitAfterCleanup(1);
 			}
 		}
 	}

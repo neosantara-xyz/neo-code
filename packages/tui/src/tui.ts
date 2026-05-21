@@ -247,6 +247,10 @@ export class TUI extends Container {
 
 	/** Global callback for debug key (Shift+Ctrl+D). Called before input is forwarded to focused component. */
 	public onDebug?: () => void;
+	/** Called when terminal gains focus (DECSET 1004). */
+	public onFocusGained?: () => void;
+	/** Called when terminal loses focus (DECSET 1004). */
+	public onFocusLost?: () => void;
 	private renderRequested = false;
 	private renderTimer: NodeJS.Timeout | undefined;
 	private lastRenderAt = 0;
@@ -561,6 +565,16 @@ export class TUI extends Container {
 
 		// Consume terminal cell size responses without blocking unrelated input.
 		if (this.consumeCellSizeResponse(data)) {
+			return;
+		}
+
+		// Handle terminal focus events (DECSET 1004)
+		if (data === "\x1b[I") {
+			this.onFocusGained?.();
+			return;
+		}
+		if (data === "\x1b[O") {
+			this.onFocusLost?.();
 			return;
 		}
 

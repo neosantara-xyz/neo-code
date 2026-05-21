@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { Agent, type AgentMessage, type ThinkingLevel } from "@neosantara/agent-core";
 import { clampThinkingLevel, type Message, type Model, streamSimple } from "@neosantara/ai";
 import { getAgentDir } from "../config.js";
+import type { AgentWorkMode } from "./agent-mode.js";
 import { AgentSession } from "./agent-session.js";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.js";
 import { AuthStorage } from "./auth-storage.js";
@@ -46,6 +47,8 @@ export interface CreateAgentSessionOptions {
 	thinkingLevel?: ThinkingLevel;
 	/** Models available for cycling (Ctrl+P in interactive mode) */
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
+	/** Workflow/tool mode. Default: from settings, else agent. */
+	agentMode?: AgentWorkMode;
 
 	/**
 	 * Optional default tool suppression mode when no explicit allowlist is provided.
@@ -246,11 +249,13 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
-	const initialActiveToolNames: string[] = options.tools
+	const hasExplicitToolSelection = options.tools !== undefined || options.noTools !== undefined;
+	const initialActiveToolNames: string[] | undefined = options.tools
 		? [...options.tools]
 		: options.noTools
 			? []
-			: defaultActiveToolNames;
+			: undefined;
+	const agentMode = options.agentMode ?? settingsManager.getAgentMode();
 
 	let agent: Agent;
 
@@ -374,8 +379,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		resourceLoader,
 		customTools: options.customTools,
 		modelRegistry,
-		initialActiveToolNames,
+		initialActiveToolNames: initialActiveToolNames ?? defaultActiveToolNames,
 		allowedToolNames,
+		agentMode,
+		applyInitialAgentMode: !hasExplicitToolSelection,
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
 	});

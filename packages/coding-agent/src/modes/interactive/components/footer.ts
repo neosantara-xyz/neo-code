@@ -1,7 +1,14 @@
 import { type Component, truncateToWidth, visibleWidth } from "@neosantara/tui";
+import {
+	getAgentWorkModeFooterDetail,
+	getAgentWorkModeLabel,
+	getAgentWorkModeSymbol,
+	isDefaultAgentWorkMode,
+} from "../../../core/agent-mode.js";
 import type { AgentSession } from "../../../core/agent-session.js";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
 import { theme } from "../theme/theme.js";
+import { keyText } from "./keybinding-hints.js";
 
 /**
  * Sanitize text for display in a single-line status.
@@ -35,12 +42,85 @@ function formatIdrCompact(amount: number): string {
 	return `Rp${(amount / 1000000000).toFixed(1)}M`;
 }
 
+function formatPercentCompact(percent: number): string {
+	return percent >= 10 ? `${percent.toFixed(0)}%` : `${percent.toFixed(1)}%`;
+}
+
+export type ContextFooterSeverity = "ok" | "warning" | "error";
+
+export function formatContextFooterSegment(
+	percent: number | null | undefined,
+	contextWindow: number,
+	autoCompactEnabled: boolean,
+	tokens?: number | null,
+): { text: string; severity: ContextFooterSeverity } {
+	const strategy = autoCompactEnabled ? "auto" : "manual";
+	const windowText = contextWindow > 0 ? formatTokens(contextWindow) : "?";
+	if (typeof percent !== "number" || !Number.isFinite(percent)) {
+		return { text: `ctx ?/${windowText} · ${strategy}`, severity: "warning" };
+	}
+
+	const normalized = Math.max(0, percent);
+	const severity: ContextFooterSeverity = normalized >= 90 ? "error" : normalized >= 70 ? "warning" : "ok";
+	const percentText = formatPercentCompact(normalized);
+	if (typeof tokens !== "number" || !Number.isFinite(tokens)) {
+		return { text: `ctx ${percentText}/${windowText} · ${strategy}`, severity };
+	}
+
+	return { text: `ctx ${formatTokens(tokens)}/${windowText} (${percentText}) · ${strategy}`, severity };
+}
+
+export function formatFooterHint(isStreaming: boolean, hasBackgroundTasks: boolean): string {
+	const parts = isStreaming
+		? [`${keyText("app.interrupt")} interrupt`]
+		: ["? shortcuts", `${keyText("app.mode.cycle")} mode`];
+	if (hasBackgroundTasks) {
+		parts.push("/tasks manage");
+	}
+	return parts.join(" · ");
+}
+
+export function renderShortcutOverlay(width: number): string[] {
+	const shortcuts = [
+		["?", "toggle this overlay"],
+		[keyText("app.interrupt"), "interrupt / cancel"],
+		[keyText("app.mode.cycle"), "cycle mode"],
+		[keyText("app.tools.expand"), "expand tool output"],
+		[keyText("app.thinking.cycle"), "cycle thinking level"],
+		[keyText("app.model.select"), "select model"],
+		[keyText("app.session.tree"), "session tree"],
+		[keyText("app.session.new"), "new session"],
+		[keyText("app.session.resume"), "resume session"],
+		["!", "shell command prefix"],
+		["/compact", "compact context"],
+		["/usage", "show usage stats"],
+	];
+
+	const colWidth = Math.floor(width / 2);
+	const rows: string[] = [];
+	for (let i = 0; i < shortcuts.length; i += 2) {
+		const left = shortcuts[i]!;
+		const right = shortcuts[i + 1];
+		const leftStr = `  ${theme.fg("accent", left[0]!)}  ${left[1]}`;
+		const rightStr = right ? `  ${theme.fg("accent", right[0]!)}  ${right[1]}` : "";
+		rows.push(
+			truncateToWidth(
+				`${leftStr}${" ".repeat(Math.max(1, colWidth - visibleWidth(leftStr)))}${rightStr}`,
+				width,
+				"",
+			),
+		);
+	}
+	return [theme.fg("dim", "─".repeat(width)), ...rows, ""];
+}
+
 /**
  * Footer component that shows pwd, token stats, and context usage.
  * Computes token/context stats from session, gets git branch and extension statuses from provider.
  */
 export class FooterComponent implements Component {
 	private autoCompactEnabled = true;
+	public shortcutOverlayVisible = false;
 
 	constructor(
 		private session: AgentSession,
@@ -75,18 +155,10 @@ export class FooterComponent implements Component {
 		const state = this.session.state;
 
 		// Calculate cumulative usage from ALL session entries (not just post-compaction messages)
-		let totalInput = 0;
-		let totalOutput = 0;
-		let totalCacheRead = 0;
-		let totalCacheWrite = 0;
 		let totalCost = 0;
 
 		for (const entry of this.session.sessionManager.getEntries()) {
 			if (entry.type === "message" && entry.message.role === "assistant") {
-				totalInput += entry.message.usage.input;
-				totalOutput += entry.message.usage.output;
-				totalCacheRead += entry.message.usage.cacheRead;
-				totalCacheWrite += entry.message.usage.cacheWrite;
 				totalCost += entry.message.usage.cost.total;
 			}
 		}
@@ -95,8 +167,7 @@ export class FooterComponent implements Component {
 		// After compaction, tokens are unknown until the next LLM response.
 		const contextUsage = this.session.getContextUsage();
 		const contextWindow = contextUsage?.contextWindow ?? state.model?.contextWindow ?? 0;
-		const contextPercentValue = contextUsage?.percent ?? 0;
-		const contextPercent = contextUsage?.percent !== null ? contextPercentValue.toFixed(1) : "?";
+		const contextPercentValue = typeof contextUsage?.percent === "number" ? contextUsage.percent : null;
 
 		// Replace home directory with ~
 		let pwd = this.session.sessionManager.getCwd();
@@ -117,39 +188,50 @@ export class FooterComponent implements Component {
 			pwd = `${pwd} • ${sessionName}`;
 		}
 
-		// Build stats line
-		const statsParts = [];
-		if (totalInput) statsParts.push(`↑${formatTokens(totalInput)}`);
-		if (totalOutput) statsParts.push(`↓${formatTokens(totalOutput)}`);
-		if (totalCacheRead) statsParts.push(`R${formatTokens(totalCacheRead)}`);
-		if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
-
-		// Show cost with "(sub)" indicator if using browser-based OAuth credentials
+		// Build stats line. The primary footer number is the *current request context*,
+		// not cumulative session input. Cumulative billing still exists, but belongs
+		// in /usage and /context so compacted sessions show active context clearly.
 		const usingSubscription = state.model ? this.session.modelRegistry.isUsingOAuth(state.model) : false;
-		if (totalCost || usingSubscription) {
-			const costStr = `${formatIdrCompact(totalCost)}${usingSubscription ? " (sub)" : ""}`;
-			statsParts.push(costStr);
-		}
+		const costStr = `${formatIdrCompact(totalCost)}${usingSubscription ? " (sub)" : ""}`;
+		const contextTokensValue = typeof contextUsage?.tokens === "number" ? contextUsage.tokens : null;
+		const contextSegment = formatContextFooterSegment(
+			contextPercentValue,
+			contextWindow,
+			this.autoCompactEnabled,
+			contextTokensValue,
+		);
+		const contextColor =
+			contextSegment.severity === "error" ? "error" : contextSegment.severity === "warning" ? "warning" : "dim";
+		const billingText = `bill ${costStr}`;
+		const runningBackgroundTasks = this.session.getRunningBackgroundTaskCount();
+		const hasBackgroundTasks = runningBackgroundTasks > 0;
 
-		// Colorize context percentage based on usage
-		let contextPercentStr: string;
-		const autoIndicator = this.autoCompactEnabled ? " (auto)" : "";
-		const contextPercentDisplay =
-			contextPercent === "?"
-				? `?/${formatTokens(contextWindow)}${autoIndicator}`
-				: `${contextPercent}%/${formatTokens(contextWindow)}${autoIndicator}`;
-		if (contextPercentValue > 90) {
-			contextPercentStr = theme.fg("error", contextPercentDisplay);
-		} else if (contextPercentValue > 70) {
-			contextPercentStr = theme.fg("warning", contextPercentDisplay);
-		} else {
-			contextPercentStr = contextPercentDisplay;
-		}
-		statsParts.push(contextPercentStr);
+		// Claude Code keeps the prompt footer as a compact byline: active mode/pills,
+		// current context, billing, and one or two actionable hints. Keep the path on
+		// its own line so the status row remains stable and easy to scan.
+		const mode = this.session.agentMode;
+		const modeIsDefault = isDefaultAgentWorkMode(mode);
+		const modeColor = mode === "plan" ? "warning" : mode === "full" ? "error" : mode === "ask" ? "accent" : "success";
+		const modePill = modeIsDefault
+			? ""
+			: `${theme.fg(modeColor, `${getAgentWorkModeSymbol(mode)} ${getAgentWorkModeLabel(mode).toLowerCase()} on`)}${theme.fg(
+					"dim",
+					` · ${getAgentWorkModeFooterDetail(mode)}`,
+				)}`;
+		const backgroundPill = hasBackgroundTasks
+			? theme.fg("warning", `bg ${runningBackgroundTasks} shell${runningBackgroundTasks === 1 ? "" : "s"}`)
+			: "";
+		const hintText = theme.fg("dim", formatFooterHint(this.session.isStreaming, hasBackgroundTasks));
+		const statsParts = [
+			modePill,
+			backgroundPill,
+			theme.fg(contextColor, contextSegment.text),
+			theme.fg("dim", billingText),
+			hintText,
+		].filter((part) => part.length > 0);
+		let statsLeft = statsParts.join(` ${theme.fg("muted", "·")} `);
 
-		let statsLeft = statsParts.join(" ");
-
-		// Add model name on the right side, plus thinking level if model supports it
+		// Add model name on the right side.
 		const modelName = state.model?.id || "no-model";
 
 		let statsLeftWidth = visibleWidth(statsLeft);
@@ -164,17 +246,19 @@ export class FooterComponent implements Component {
 		const minPadding = 2;
 
 		// Add thinking level indicator if model supports reasoning
-		let rightSideWithoutProvider = modelName;
+		const modelParts = [modelName];
 		if (state.model?.reasoning) {
 			const thinkingLevel = state.thinkingLevel || "off";
-			rightSideWithoutProvider =
-				thinkingLevel === "off" ? `${modelName} • thinking off` : `${modelName} • ${thinkingLevel}`;
+			modelParts.push(thinkingLevel === "off" ? "thinking off" : thinkingLevel);
 		}
+		const modelText = theme.fg("dim", modelParts.join(" • "));
+		const rightSideWithoutProvider = modelText;
 
 		// Prepend the provider in parentheses if there are multiple providers and there's enough room
 		let rightSide = rightSideWithoutProvider;
 		if (this.footerData.getAvailableProviderCount() > 1 && state.model) {
-			rightSide = `(${state.model!.provider}) ${rightSideWithoutProvider}`;
+			const withProvider = `${theme.fg("dim", `(${state.model!.provider})`)} ${rightSideWithoutProvider}`;
+			rightSide = withProvider;
 			if (statsLeftWidth + minPadding + visibleWidth(rightSide) > width) {
 				// Too wide, fall back
 				rightSide = rightSideWithoutProvider;
@@ -203,15 +287,15 @@ export class FooterComponent implements Component {
 			}
 		}
 
-		// Apply dim to each part separately. statsLeft may contain color codes (for context %)
-		// that end with a reset, which would clear an outer dim wrapper. So we dim the parts
-		// before and after the colored section independently.
-		const dimStatsLeft = theme.fg("dim", statsLeft);
-		const remainder = statsLine.slice(statsLeft.length); // padding + rightSide
-		const dimRemainder = theme.fg("dim", remainder);
-
 		const pwdLine = truncateToWidth(theme.fg("dim", pwd), width, theme.fg("dim", "..."));
-		const lines = [pwdLine, dimStatsLeft + dimRemainder];
+		const lines: string[] = [];
+
+		// Shortcut overlay above footer
+		if (this.shortcutOverlayVisible) {
+			lines.push(...renderShortcutOverlay(width));
+		}
+
+		lines.push(pwdLine, statsLine);
 
 		// Add extension statuses on a single line, sorted by key alphabetically
 		const extensionStatuses = this.footerData.getExtensionStatuses();

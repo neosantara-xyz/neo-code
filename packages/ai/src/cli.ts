@@ -4,6 +4,7 @@ import { createInterface } from "node:readline";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { getOAuthProvider, getOAuthProviders } from "./utils/oauth/index.js";
 import type { OAuthCredentials, OAuthProviderId } from "./utils/oauth/types.js";
+import { exitAfterCleanup, installGlobalErrorHandlers } from "./utils/process-lifecycle.js";
 
 const AUTH_FILE = "auth.json";
 const PROVIDERS = getOAuthProviders();
@@ -29,7 +30,7 @@ async function login(providerId: OAuthProviderId): Promise<void> {
 	const provider = getOAuthProvider(providerId);
 	if (!provider) {
 		console.error(`Unknown provider: ${providerId}`);
-		process.exit(1);
+		exitAfterCleanup(1);
 	}
 
 	const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -106,7 +107,7 @@ Examples:
 			const index = parseInt(choice, 10) - 1;
 			if (index < 0 || index >= PROVIDERS.length) {
 				console.error("Invalid selection");
-				process.exit(1);
+				exitAfterCleanup(1);
 			}
 			provider = PROVIDERS[index].id;
 		}
@@ -114,7 +115,7 @@ Examples:
 		if (!PROVIDERS.some((p) => p.id === provider)) {
 			console.error(`Unknown provider: ${provider}`);
 			console.error(`Use 'npx @neosantara/ai list' to see available providers`);
-			process.exit(1);
+			exitAfterCleanup(1);
 		}
 
 		console.log(`Logging in to ${provider}...`);
@@ -124,10 +125,12 @@ Examples:
 
 	console.error(`Unknown command: ${command}`);
 	console.error(`Use 'npx @neosantara/ai --help' for usage`);
-	process.exit(1);
+	exitAfterCleanup(1);
 }
 
-main().catch((err) => {
-	console.error("Error:", err.message);
-	process.exit(1);
+installGlobalErrorHandlers();
+
+main().catch((err: unknown) => {
+	console.error("Error:", err instanceof Error ? err.message : String(err));
+	exitAfterCleanup(1);
 });

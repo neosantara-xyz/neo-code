@@ -1,6 +1,8 @@
-import { basename } from "node:path";
+import { homedir } from "node:os";
+import { basename, isAbsolute, relative, resolve, sep } from "node:path";
+import { formatSize } from "./truncate.js";
 
-export type ToolActivityKind = "search" | "read" | "list" | "write" | "edit" | "command" | "other";
+export type ToolActivityKind = "search" | "read" | "list" | "write" | "edit" | "command" | "agent" | "other";
 
 export interface ToolActivityClassification {
 	kind: ToolActivityKind;
@@ -17,6 +19,14 @@ export interface ToolActivityResultSummary {
 	count?: number;
 }
 
+export type ToolActivityGroupIntent = "inspect" | "command" | "mutation" | "other";
+
+export type ToolActivityKindCounts = Partial<Record<ToolActivityKind, number>>;
+
+export interface ToolActivityGroupFormatOptions {
+	minimumCounts?: ToolActivityKindCounts;
+}
+
 type TextBlock = {
 	type: string;
 	text?: string;
@@ -24,10 +34,36 @@ type TextBlock = {
 	mimeType?: string;
 };
 
+type ToolActivityKnownDetails = {
+	truncation?: { outputLines?: number; totalLines?: number; truncated?: boolean };
+	fullOutputPath?: string;
+	exitCode?: number | null;
+	noMatches?: boolean;
+	progress?: BashProgressLike;
+	backgroundTaskId?: string;
+	backgroundOutputPath?: string;
+	backgrounded?: boolean;
+	lineCount?: number;
+	totalLineCount?: number;
+	entryCount?: number;
+	fileCount?: number;
+	directoryCount?: number;
+	matchCount?: number;
+	matchedFileCount?: number;
+	resultCount?: number;
+	editCount?: number;
+};
+
 type ToolResultLike = {
 	content?: TextBlock[];
-	details?: any;
+	details?: unknown;
 };
+
+function knownDetails(result: ToolResultLike | undefined): ToolActivityKnownDetails | undefined {
+	return result?.details && typeof result.details === "object"
+		? (result.details as ToolActivityKnownDetails)
+		: undefined;
+}
 
 const SEARCH_COMMAND_RE = /(?:^|[\s|;&({])(?:grep|egrep|fgrep|rg|ag|ack)\b/;
 const FIND_COMMAND_RE = /(?:^|[\s|;&({])(?:find|fd|git\s+ls-files)\b/;
@@ -36,13 +72,62 @@ const READ_COMMAND_RE = /(?:^|[\s|;&({])(?:cat|head|tail|sed)\b/;
 const INSTALL_COMMAND_RE = /(?:^|[\s|;&({])(?:npm|pnpm|yarn|bun)\s+(?:i|install|add|remove|uninstall)\b/;
 const TEST_COMMAND_RE =
 	/(?:^|[\s|;&({])(?:npm|pnpm|yarn|bun)\s+(?:test|run\s+test)|(?:^|[\s|;&({])(?:vitest|jest|mocha|node\s+--test|pytest)\b/;
+const PATH_BOUNDARY_RE_SOURCE = String.raw`[\s'"\)\]};:,.]`;
 
 function normalizeWhitespace(value: string): string {
 	return value.replace(/\s+/g, " ").trim();
 }
 
+function toDisplaySeparators(value: string): string {
+	return value.replace(/\\/g, "/");
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function displayPath(filePath: string, fallback = "."): string {
+	const raw = filePath.trim();
+	if (!raw) return fallback;
+
+	const cwd = resolve(process.cwd());
+	const expandedHome = homedir();
+	const absolutePath = isAbsolute(raw) ? resolve(raw) : undefined;
+	if (absolutePath) {
+		const relativePath = relative(cwd, absolutePath);
+		const isInsideCwd =
+			relativePath === "" ||
+			(relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath));
+		if (isInsideCwd) return toDisplaySeparators(relativePath || ".");
+
+		if (absolutePath === expandedHome) return "~";
+		if (absolutePath.startsWith(`${expandedHome}${sep}`)) {
+			return `~/${toDisplaySeparators(absolutePath.slice(expandedHome.length + 1))}`;
+		}
+	}
+
+	return toDisplaySeparators(raw);
+}
+
+function normalizeKnownPaths(value: string): string {
+	const cwd = toDisplaySeparators(resolve(process.cwd()));
+	const home = toDisplaySeparators(homedir());
+	let normalized = toDisplaySeparators(value);
+
+	if (cwd !== "/") {
+		normalized = normalized.replace(new RegExp(`${escapeRegExp(cwd)}(?=$|${PATH_BOUNDARY_RE_SOURCE})`, "g"), ".");
+		normalized = normalized.replace(new RegExp(`${escapeRegExp(cwd)}/`, "g"), "");
+	}
+	if (home !== "/") {
+		normalized = normalized.replace(new RegExp(`${escapeRegExp(home)}(?=$|${PATH_BOUNDARY_RE_SOURCE})`, "g"), "~");
+		normalized = normalized.replace(new RegExp(`${escapeRegExp(home)}/`, "g"), "~/");
+	}
+
+	return normalized;
+}
+
 export function compactText(value: string | undefined, maxLength = 72): string {
-	const normalized = normalizeWhitespace(value ?? "");
+	const normalized = normalizeWhitespace(normalizeKnownPaths(value ?? ""));
 	if (normalized.length <= maxLength) return normalized;
 	return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
@@ -55,8 +140,8 @@ function quotePattern(value: unknown): string {
 
 function pathLabel(value: unknown, fallback = "."): string {
 	if (typeof value !== "string") return fallback;
-	const normalized = value || fallback;
-	return compactText(normalized.replace(/\\/g, "/"), 48) || fallback;
+	const normalized = displayPath(value || fallback, fallback);
+	return compactText(normalized, 48) || fallback;
 }
 
 function getTextOutput(result: ToolResultLike | undefined): string {
@@ -82,31 +167,97 @@ function outputDataLines(output: string): string[] {
 		});
 }
 
+function outputDisplayLines(output: string): string[] {
+	const normalized = output.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+	const lines = normalized.endsWith("\n") ? normalized.slice(0, -1).split("\n") : normalized.split("\n");
+	return lines.filter((line) => {
+		const trimmed = line.trim();
+		if (/^\[[^\]]+\]$/.test(trimmed)) return false;
+		if (/^No (?:files |matches )?found/i.test(trimmed)) return false;
+		if (/^\(no output\)$/i.test(trimmed)) return false;
+		if (/^\(empty directory\)$/i.test(trimmed)) return false;
+		return true;
+	});
+}
+
+function countOutputDisplayLines(output: string): number {
+	if (!output) return 0;
+	return outputDisplayLines(output).length;
+}
+
+function formatListCount(fileCount: number, directoryCount: number, totalCount: number): string {
+	if (totalCount === 0) return "empty directory";
+	if (directoryCount === 0) return `${plural(fileCount, "file")} found`;
+	if (fileCount === 0) return `${plural(directoryCount, "directory", "directories")} found`;
+	return `${plural(fileCount, "file")} + ${plural(directoryCount, "directory", "directories")} found`;
+}
+
+function countListedEntriesFromOutput(output: string): { total: number; files: number; directories: number } {
+	const lines = outputDataLines(output);
+	let directories = 0;
+	for (const line of lines) {
+		if (line.endsWith("/")) directories += 1;
+	}
+	return { total: lines.length, files: lines.length - directories, directories };
+}
+
+function countMatchedFilesFromOutput(output: string): number | undefined {
+	const files = new Set<string>();
+	for (const line of outputDataLines(output)) {
+		const match = line.match(/^([^:\n]+):\d+:/);
+		if (match?.[1]) files.add(match[1]);
+	}
+	return files.size > 0 ? files.size : undefined;
+}
+
 function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
 	return `${count} ${count === 1 ? singular : pluralForm}`;
 }
 
-function summarizeLines(output: string, noun: string, emptyLabel: string): ToolActivityResultSummary {
-	const lines = outputDataLines(output);
-	if (lines.length === 0) {
-		return { label: emptyLabel, status: "neutral", count: 0 };
-	}
-	return {
-		label: plural(lines.length, noun),
-		status: "success",
-		count: lines.length,
-	};
+type BashProgressLike = {
+	elapsedMs?: number;
+	totalLines?: number;
+	totalBytes?: number;
+	timeout?: number;
+};
+
+function formatDuration(ms: number): string {
+	return `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function classifyBashCommand(command: string | undefined): ToolActivityClassification {
-	const compact = compactText(command, 86) || "...";
+function getBashProgress(details: unknown): BashProgressLike | undefined {
+	if (!details || typeof details !== "object") return undefined;
+	const progress = (details as { progress?: BashProgressLike }).progress;
+	if (!progress || typeof progress !== "object") return undefined;
+	return progress;
+}
+
+function formatBashProgress(details: unknown): string | undefined {
+	const progress = getBashProgress(details);
+	if (!progress || typeof progress.elapsedMs !== "number") return undefined;
+	const parts = [formatDuration(progress.elapsedMs)];
+	if (typeof progress.totalLines === "number" && progress.totalLines > 1) {
+		parts.push(`${progress.totalLines.toLocaleString()} lines`);
+	}
+	if (typeof progress.totalBytes === "number" && progress.totalBytes > 0) {
+		parts.push(formatSize(progress.totalBytes));
+	}
+	if (typeof progress.timeout === "number" && progress.timeout > 0) {
+		parts.push(`timeout ${progress.timeout}s`);
+	}
+	return parts.join(" · ");
+}
+
+export function classifyBashCommand(command: string | undefined, description?: string): ToolActivityClassification {
+	const aiSummary = compactText(description, 86);
+	const compact = aiSummary || compactText(command, 86) || "...";
 	const normalized = normalizeWhitespace(command ?? "");
 	if (SEARCH_COMMAND_RE.test(normalized)) {
 		return {
 			kind: "search",
 			verb: "searched",
 			title: "Searching files",
-			compact: compactSearchCommand(normalized) || compact,
+			compact: aiSummary || compactSearchCommand(normalized) || compact,
 			isSearchOrRead: true,
 		};
 	}
@@ -115,7 +266,7 @@ export function classifyBashCommand(command: string | undefined): ToolActivityCl
 			kind: "search",
 			verb: "found",
 			title: "Finding files",
-			compact: compactFindCommand(normalized) || compact,
+			compact: aiSummary || compactFindCommand(normalized) || compact,
 			isSearchOrRead: true,
 		};
 	}
@@ -124,7 +275,7 @@ export function classifyBashCommand(command: string | undefined): ToolActivityCl
 			kind: "list",
 			verb: "listed",
 			title: "Listing files",
-			compact: compactListCommand(normalized) || compact,
+			compact: aiSummary || compactListCommand(normalized) || compact,
 			isSearchOrRead: true,
 		};
 	}
@@ -133,7 +284,7 @@ export function classifyBashCommand(command: string | undefined): ToolActivityCl
 			kind: "read",
 			verb: "read",
 			title: "Reading files",
-			compact: compactReadCommand(normalized) || compact,
+			compact: aiSummary || compactReadCommand(normalized) || compact,
 			isSearchOrRead: true,
 		};
 	}
@@ -210,7 +361,10 @@ export function isBenignBashExit(command: string | undefined, exitCode: number |
 export function summarizeToolCall(toolName: string, args: any): ToolActivityClassification {
 	switch (toolName) {
 		case "bash":
-			return classifyBashCommand(typeof args?.command === "string" ? args.command : undefined);
+			return classifyBashCommand(
+				typeof args?.command === "string" ? args.command : undefined,
+				typeof args?.description === "string" ? args.description : undefined,
+			);
 		case "grep": {
 			const pattern = quotePattern(args?.pattern);
 			const location = pathLabel(args?.path);
@@ -263,6 +417,22 @@ export function summarizeToolCall(toolName: string, args: any): ToolActivityClas
 				compact: `edit ${pathLabel(args?.file_path ?? args?.path, "file")}`,
 				isSearchOrRead: false,
 			};
+		case "ExitPlanMode":
+			return {
+				kind: "other",
+				verb: "submitted",
+				title: "Submitting plan",
+				compact: compactText(args?.plan, 86) || "final plan",
+				isSearchOrRead: false,
+			};
+		case "agent":
+			return {
+				kind: "agent",
+				verb: "dispatched",
+				title: "Sub-agent",
+				compact: `@${compactText(args?.name || args?.agent_name || "agent", 30)}: ${compactText(args?.prompt || args?.task || "working", 50)}`,
+				isSearchOrRead: false,
+			};
 		default:
 			return {
 				kind: "other",
@@ -280,29 +450,99 @@ export function summarizeToolResult(
 	result: ToolResultLike | undefined,
 	options: { isError?: boolean; isPartial?: boolean } = {},
 ): ToolActivityResultSummary {
-	if (options.isPartial) return { label: "running…", status: "running" };
+	if (options.isPartial) {
+		if (toolName === "bash") {
+			const progress = formatBashProgress(result?.details);
+			return { label: progress ? `running ${progress}` : "running…", status: "running" };
+		}
+		if (toolName === "agent") {
+			const name = args?.name || args?.agent_name || "agent";
+			return { label: `@${name} running…`, status: "running" };
+		}
+		return { label: "running…", status: "running" };
+	}
 	const output = getTextOutput(result).trim();
+	const details = knownDetails(result);
+	if (toolName === "bash" && details?.backgrounded && details.backgroundTaskId) {
+		return { label: `running in background · ${details.backgroundTaskId}`, status: "running" };
+	}
 	if (options.isError) {
 		return { label: compactText(output || "failed", 90), status: "error" };
 	}
 
 	switch (toolName) {
 		case "bash": {
-			const classification = classifyBashCommand(typeof args?.command === "string" ? args.command : undefined);
-			if (classification.kind === "search") return summarizeLines(output, "match", "no matches");
-			if (classification.kind === "list") return summarizeLines(output, "entry", "no entries");
-			if (classification.kind === "read") return summarizeLines(output, "line", "no output");
-			const exitCode = typeof result?.details?.exitCode === "number" ? `exit ${result.details.exitCode}` : "done";
-			return { label: exitCode, status: "success" };
+			const classification = classifyBashCommand(
+				typeof args?.command === "string" ? args.command : undefined,
+				typeof args?.description === "string" ? args.description : undefined,
+			);
+			if (classification.kind === "search") {
+				if (details?.noMatches) return { label: "no matches", status: "neutral", count: 0 };
+				const matches = details?.matchCount ?? outputDataLines(output).length;
+				if (matches === 0) return { label: "no matches", status: "neutral", count: 0 };
+				return {
+					label: plural(matches, "match", "matches"),
+					status: "success",
+					count: matches,
+				};
+			}
+			if (classification.kind === "list") {
+				const counts = countListedEntriesFromOutput(output);
+				return {
+					label: formatListCount(counts.files, counts.directories, counts.total),
+					status: counts.total > 0 ? "success" : "neutral",
+					count: counts.total,
+				};
+			}
+			if (classification.kind === "read") {
+				const lines = details?.lineCount ?? countOutputDisplayLines(output);
+				return {
+					label: lines > 0 ? plural(lines, "line") : "no output",
+					status: lines > 0 ? "success" : "neutral",
+					count: lines,
+				};
+			}
+			const exitCode = typeof details?.exitCode === "number" ? details.exitCode : undefined;
+			const lineCount = details?.progress?.totalLines ?? countOutputDisplayLines(output);
+			const linePart = lineCount > 0 ? ` · ${plural(lineCount, "line")}` : "";
+			return {
+				label: exitCode === undefined ? `done${linePart}` : `exit ${exitCode}${linePart}`,
+				status: exitCode === 0 || exitCode === undefined ? "success" : "error",
+			};
 		}
-		case "grep":
-			return summarizeLines(output, "match", "no matches");
-		case "find":
-			return summarizeLines(output, "file", "no files");
-		case "ls":
-			return summarizeLines(output, "entry", "empty directory");
+		case "grep": {
+			const matches = details?.matchCount ?? outputDataLines(output).length;
+			if (matches === 0) return { label: "no matches", status: "neutral", count: 0 };
+			const files = details?.matchedFileCount ?? countMatchedFilesFromOutput(output);
+			const suffix = files && files > 0 ? ` in ${plural(files, "file")}` : "";
+			return { label: `${plural(matches, "match", "matches")}${suffix}`, status: "success", count: matches };
+		}
+		case "find": {
+			const files = details?.resultCount ?? outputDataLines(output).length;
+			return {
+				label: files > 0 ? plural(files, "file") : "no files",
+				status: files > 0 ? "success" : "neutral",
+				count: files,
+			};
+		}
+		case "ls": {
+			const counts = {
+				total: details?.entryCount,
+				files: details?.fileCount,
+				directories: details?.directoryCount,
+			};
+			const fallback = countListedEntriesFromOutput(output);
+			const total = counts.total ?? fallback.total;
+			const files = counts.files ?? fallback.files;
+			const directories = counts.directories ?? fallback.directories;
+			return {
+				label: formatListCount(files, directories, total),
+				status: total > 0 ? "success" : "neutral",
+				count: total,
+			};
+		}
 		case "read": {
-			const lines = outputDataLines(output).length;
+			const lines = details?.lineCount ?? countOutputDisplayLines(output);
 			const file = typeof args?.path === "string" ? basename(args.path) : "file";
 			if (lines === 0 && /image file/i.test(output)) return { label: `read image ${file}`, status: "success" };
 			return {
@@ -311,16 +551,24 @@ export function summarizeToolResult(
 				count: lines,
 			};
 		}
-		case "write":
-			return { label: "written", status: "success" };
+		case "write": {
+			const lineCount = typeof args?.content === "string" ? countOutputDisplayLines(args.content) : undefined;
+			return {
+				label: lineCount !== undefined ? `wrote ${plural(lineCount, "line")}` : "written",
+				status: "success",
+				count: lineCount,
+			};
+		}
 		case "edit": {
-			const edits = Array.isArray(args?.edits) ? args.edits.length : 1;
+			const edits = details?.editCount ?? (Array.isArray(args?.edits) ? args.edits.length : 1);
 			return {
 				label: `${edits} ${edits === 1 ? "edit" : "edits"} applied`,
 				status: "success",
 				count: edits,
 			};
 		}
+		case "ExitPlanMode":
+			return { label: "approved", status: "success" };
 		default:
 			return {
 				label: output ? compactText(output, 90) : "done",
@@ -345,18 +593,41 @@ export function formatToolActivityResultLine(
 	return `  └─ ${summary.label}${suffix}`;
 }
 
+function compactLoadingTarget(activity: ToolActivityClassification): string | undefined {
+	const compact = activity.compact.trim();
+	if (!compact || compact === "...") return undefined;
+	switch (activity.kind) {
+		case "write":
+		case "edit":
+			return compactText(compact.replace(/^(?:write|edit)\s+/i, ""), 32);
+		case "read":
+			return compactText(compact.replace(/^read\s+/i, ""), 32);
+		case "list":
+			return compactText(compact.replace(/^list\s+/i, ""), 32);
+		case "search":
+			return compactText(compact, 36);
+		default:
+			return undefined;
+	}
+}
+
+function withLoadingTarget(label: string, activity: ToolActivityClassification): string {
+	const target = compactLoadingTarget(activity);
+	return target ? `${label}: ${target}` : label;
+}
+
 function neoToolLoadingLabel(activity: ToolActivityClassification): string {
 	switch (activity.kind) {
 		case "search":
-			return "nggoleki file";
+			return withLoadingTarget("nggoleki file", activity);
 		case "read":
-			return "mbukak file";
+			return withLoadingTarget("mbukak file", activity);
 		case "list":
-			return "nyawang folder";
+			return withLoadingTarget("nyawang folder", activity);
 		case "write":
-			return "nulis file";
+			return withLoadingTarget("nulis file", activity);
 		case "edit":
-			return "mbeneri file";
+			return withLoadingTarget("mbeneri file", activity);
 		case "command": {
 			if (activity.title === "Running tests") return "mriksa test";
 			if (activity.title === "Installing packages") return "masang paket";
@@ -370,9 +641,12 @@ function neoToolLoadingLabel(activity: ToolActivityClassification): string {
 function neoGroupLoadingLabel(items: ToolActivityGroupItem[]): string {
 	const title = toolGroupTitle(items);
 	if (title === "Inspecting project") return "nyawang project";
+	if (title === "Searching files") return "nggoleki file";
+	if (title === "Reading files") return "mbukak file";
+	if (title === "Listing files") return "nyawang folder";
 	if (title === "Updating files") return "nganyari file";
 	if (title === "Running tests") return "mriksa test";
-	if (title === "Running commands") return "mlakuake command";
+	if (title === "Running command" || title === "Running commands") return "mlakuake command";
 	return "ngulik";
 }
 
@@ -382,6 +656,10 @@ export function formatToolInputLoadingMessage(_toolName: string, _args: any): st
 
 export function formatToolLoadingMessage(toolName: string, args: any): string {
 	const activity = summarizeToolCall(toolName, args);
+	const description = typeof args?.description === "string" ? compactText(args.description, 44) : "";
+	if (toolName === "bash" && description) {
+		return `${description}…`;
+	}
 	return `${neoToolLoadingLabel(activity)}…`;
 }
 
@@ -395,47 +673,519 @@ export interface ToolActivityGroupItem {
 	executionStarted?: boolean;
 }
 
+export function toolActivityGroupIntentForItem(toolName: string, args: any): ToolActivityGroupIntent {
+	const activity = summarizeToolCall(toolName, args);
+	if (activity.isSearchOrRead) return "inspect";
+	if (activity.kind === "command") return "command";
+	if (activity.kind === "edit" || activity.kind === "write") return "mutation";
+	return "other";
+}
+
+export function toolActivityGroupIntent(items: ToolActivityGroupItem[]): ToolActivityGroupIntent | undefined {
+	if (items.length === 0) return undefined;
+	const intents = new Set(items.map((item) => toolActivityGroupIntentForItem(item.toolName, item.args)));
+	if (intents.size === 1) return intents.values().next().value;
+	if (intents.has("mutation")) return "mutation";
+	if (intents.has("command")) return "command";
+	if (intents.has("inspect")) return "inspect";
+	return "other";
+}
+
+export function canMergeToolIntoActivityGroup(items: ToolActivityGroupItem[], toolName: string, args: any): boolean {
+	if (items.length === 0) return true;
+	const currentIntent = toolActivityGroupIntent(items);
+	const nextIntent = toolActivityGroupIntentForItem(toolName, args);
+
+	// Claude Code keeps mutating commands as their own approval/result rows.
+	// Only independent read-only inspection calls are stacked into one activity tree.
+	return currentIntent === "inspect" && nextIntent === "inspect";
+}
+
 function toolGroupTitle(items: ToolActivityGroupItem[]): string {
 	if (items.length === 0) return "Working";
 	const activities = items.map((item) => summarizeToolCall(item.toolName, item.args));
 	const allSearchRead = activities.every((activity) => activity.isSearchOrRead);
-	if (allSearchRead) return "Inspecting project";
+	if (allSearchRead) {
+		const kinds = new Set(activities.map((activity) => activity.kind));
+		if (kinds.size === 1) {
+			if (kinds.has("search")) return "Searching files";
+			if (kinds.has("read")) return "Reading files";
+			if (kinds.has("list")) return "Listing files";
+		}
+		return "Inspecting project";
+	}
 	if (activities.some((activity) => activity.kind === "write" || activity.kind === "edit")) return "Updating files";
 	if (activities.some((activity) => activity.title === "Running tests")) return "Running tests";
-	if (activities.every((activity) => activity.kind === "command")) return "Running commands";
+	if (activities.every((activity) => activity.kind === "command"))
+		return items.length === 1 ? "Running command" : "Running commands";
 	return "Working";
+}
+
+function compactTargetForActivity(item: ToolActivityGroupItem): string {
+	const activity = summarizeToolCall(item.toolName, item.args);
+	const compact = activity.compact;
+	switch (activity.kind) {
+		case "list":
+			return compactText(compact.replace(/^list\s+/i, ""), 28) || ".";
+		case "read": {
+			const rawPath = typeof item.args?.file_path === "string" ? item.args.file_path : item.args?.path;
+			const label = typeof rawPath === "string" ? displayPath(rawPath, "file") : compact.replace(/^read\s+/i, "");
+			return compactText(label.includes("/") ? basename(label) : label, 28) || "file";
+		}
+		case "search":
+			return compactText(compact.replace(/^grep\s+/i, "").replace(/^find\s+/i, ""), 34) || "files";
+		case "command":
+			return compactText(compact, 44) || "command";
+		case "edit":
+			return compactText(compact.replace(/^edit\s+/i, ""), 32) || "file";
+		case "write":
+			return compactText(compact.replace(/^write\s+/i, ""), 32) || "file";
+		default:
+			return compactText(compact, 34) || item.toolName;
+	}
+}
+
+function uniqueCompactTargets(items: ToolActivityGroupItem[], maxItems = 3): string {
+	const uniqueLabels: string[] = [];
+	const seen = new Set<string>();
+	for (const item of items) {
+		const label = compactTargetForActivity(item);
+		if (seen.has(label)) continue;
+		seen.add(label);
+		uniqueLabels.push(label);
+	}
+	const labels = uniqueLabels.slice(0, maxItems);
+	const remaining = uniqueLabels.length - labels.length;
+	if (remaining > 0) labels.push(`+${remaining} more`);
+	return labels.join(" · ");
 }
 
 function hasIncompleteItems(items: ToolActivityGroupItem[]): boolean {
 	return items.some((item) => item.isPartial || !item.result);
 }
 
-function formatGroupItemLine(item: ToolActivityGroupItem, isLast: boolean): string {
-	const activity = summarizeToolCall(item.toolName, item.args);
-	const branch = isLast ? "└─" : "├─";
-	if (!item.result || item.isPartial) {
-		const stage = item.executionStarted ? neoToolLoadingLabel(activity) : "nyiapke";
-		return `  ${branch} ${stage}: ${activity.compact}`;
+function kindCountLabel(kind: ToolActivityKind, count: number): string {
+	switch (kind) {
+		case "search":
+			return plural(count, "pattern");
+		case "read":
+			return plural(count, "file");
+		case "list":
+			return plural(count, "directory", "directories");
+		case "command":
+			return plural(count, "command");
+		case "edit":
+			return plural(count, "file");
+		case "write":
+			return plural(count, "file");
+		default:
+			return plural(count, "tool");
 	}
+}
+
+function kindVerb(kind: ToolActivityKind, pending: boolean): string {
+	switch (kind) {
+		case "search":
+			return pending ? "searching" : "searched";
+		case "read":
+			return pending ? "reading" : "read";
+		case "list":
+			return pending ? "listing" : "listed";
+		case "command":
+			return pending ? "running" : "ran";
+		case "edit":
+			return pending ? "editing" : "edited";
+		case "write":
+			return pending ? "writing" : "wrote";
+		default:
+			return pending ? "using" : "used";
+	}
+}
+
+function formatKindCount(kind: ToolActivityKind, count: number, pending: boolean): string | undefined {
+	if (count <= 0) return undefined;
+	return `${kindVerb(kind, pending)} ${kindCountLabel(kind, count)}`;
+}
+
+function formatSingleItemHint(item: ToolActivityGroupItem): string {
+	const activity = summarizeToolCall(item.toolName, item.args);
+	const pending = !item.result || item.isPartial;
+	const action = activity.compact;
+	if (pending && !item.result) return `${action}…`;
 	const result = summarizeToolResult(item.toolName, item.args, item.result, {
 		isError: item.isError,
 		isPartial: item.isPartial,
 	});
-	return `  ${branch} ${activity.compact} → ${result.label}`;
+	return `${action} · ${result.label}`;
 }
 
-export function formatToolActivityGroup(items: ToolActivityGroupItem[]): string {
+function formatSameKindHint(
+	items: ToolActivityGroupItem[],
+	kind: ToolActivityKind,
+	pending: boolean,
+	minimumCounts: ToolActivityKindCounts = {},
+): string {
+	const count = Math.max(items.length, minimumCounts[kind] ?? 0);
+	if (count <= 1 && items.length === 1) return formatSingleItemHint(items[0]!);
+	const summary = formatKindCount(kind, count, pending) ?? `${kindVerb(kind, pending)} ${count}`;
+	const targets = uniqueCompactTargets(items);
+	return targets ? `${summary} · ${targets}${pending ? "…" : ""}` : `${summary}${pending ? "…" : ""}`;
+}
+
+function groupItemsByKind(items: ToolActivityGroupItem[]): Map<ToolActivityKind, ToolActivityGroupItem[]> {
+	const grouped = new Map<ToolActivityKind, ToolActivityGroupItem[]>();
+	for (const item of items) {
+		const kind = summarizeToolCall(item.toolName, item.args).kind;
+		const existing = grouped.get(kind);
+		if (existing) {
+			existing.push(item);
+		} else {
+			grouped.set(kind, [item]);
+		}
+	}
+	return grouped;
+}
+
+function orderedKindGroups(items: ToolActivityGroupItem[]): Array<[ToolActivityKind, ToolActivityGroupItem[]]> {
+	const grouped = groupItemsByKind(items);
+	const order: ToolActivityKind[] = ["list", "search", "read", "command", "write", "edit", "other"];
+	return order.flatMap((kind) => {
+		const kindItems = grouped.get(kind);
+		return kindItems ? ([[kind, kindItems]] as Array<[ToolActivityKind, ToolActivityGroupItem[]]>) : [];
+	});
+}
+
+function formatKindTreeLabel(
+	kind: ToolActivityKind,
+	items: ToolActivityGroupItem[],
+	options: ToolActivityGroupFormatOptions,
+	showTargets: boolean,
+): string {
+	const pending = hasIncompleteItems(items);
+	if (!showTargets) {
+		const count = Math.max(items.length, options.minimumCounts?.[kind] ?? 0);
+		return formatKindCount(kind, count, pending) ?? `${kindVerb(kind, pending)} ${count}`;
+	}
+	return formatSameKindHint(items, kind, pending, options.minimumCounts);
+}
+
+function currentActivityItem(items: ToolActivityGroupItem[]): ToolActivityGroupItem | undefined {
+	return [...items].reverse().find((item) => item.isPartial || !item.result);
+}
+
+function currentActivityLabel(item: ToolActivityGroupItem): string {
+	const activity = summarizeToolCall(item.toolName, item.args);
+	const target = compactTargetForActivity(item);
+	const suffix = target && target !== activity.compact ? ` ${target}` : "";
+	const result = item.result
+		? summarizeToolResult(item.toolName, item.args, item.result, {
+				isError: item.isError,
+				isPartial: true,
+			})
+		: undefined;
+	const progress = result?.label?.replace(/^running\s*/i, "").replace(/…$/, "");
+	const progressSuffix = progress ? ` · ${progress}` : "";
+	return compactText(`${kindVerb(activity.kind, true)}${suffix}${progressSuffix}`, 72) || "working";
+}
+
+function targetPathForAction(item: ToolActivityGroupItem, fallback = "."): string {
+	const rawPath = item.args?.file_path ?? item.args?.path;
+	if (typeof rawPath === "string" && rawPath.trim())
+		return compactText(displayPath(rawPath, fallback), 56) || fallback;
+	return compactTargetForActivity(item);
+}
+
+function sentenceCase(value: string): string {
+	return value ? `${value[0]?.toUpperCase() ?? ""}${value.slice(1)}` : value;
+}
+
+function singleToolActionLabel(item: ToolActivityGroupItem): string {
+	const activity = summarizeToolCall(item.toolName, item.args);
+	switch (activity.kind) {
+		case "list":
+			return `List directory ${targetPathForAction(item)}`;
+		case "read":
+			return `Read ${targetPathForAction(item, "file")}`;
+		case "search":
+			return sentenceCase(activity.compact.replace(/^grep\s+/i, "search ").replace(/^find\s+/i, "find "));
+		case "command":
+			return `${activity.compact} (shell)`;
+		case "write":
+			return `Write ${targetPathForAction(item, "file")}`;
+		case "edit":
+			return `Edit ${targetPathForAction(item, "file")}`;
+		default:
+			return sentenceCase(activity.compact || activity.title);
+	}
+}
+
+function formatCompletedSingleToolResult(item: ToolActivityGroupItem): string {
+	const activity = summarizeToolCall(item.toolName, item.args);
+	if (item.isError) {
+		const result = summarizeToolResult(item.toolName, item.args, item.result, { isError: true });
+		return result.label;
+	}
+	const output = getTextOutput(item.result).trim();
+	const details = knownDetails(item.result);
+	switch (activity.kind) {
+		case "list": {
+			const fallback = countListedEntriesFromOutput(output);
+			const total = details?.entryCount ?? fallback.total;
+			const files = details?.fileCount ?? fallback.files;
+			const directories = details?.directoryCount ?? fallback.directories;
+			return formatListCount(files, directories, total);
+		}
+		case "search": {
+			const summary = summarizeToolResult(item.toolName, item.args, item.result, { isError: item.isError });
+			return activity.verb === "found" && summary.count !== undefined
+				? `${plural(summary.count, "file")} found`
+				: `${summary.label} found`;
+		}
+		case "read": {
+			const lines = details?.lineCount ?? countOutputDisplayLines(output);
+			if (lines === 0 && /image file/i.test(output))
+				return summarizeToolResult(item.toolName, item.args, item.result).label;
+			return `${plural(lines, "line")} read`;
+		}
+		case "command": {
+			if (details?.backgrounded && details.backgroundTaskId) {
+				return `running in background · ${details.backgroundTaskId}`;
+			}
+			const progress = formatBashProgress(details);
+			if (progress && item.isPartial) return `running ${progress}`;
+			const exitCode = typeof details?.exitCode === "number" ? details.exitCode : undefined;
+			const elapsedMs = details?.progress?.elapsedMs;
+			const lines = details?.progress?.totalLines ?? countOutputDisplayLines(output);
+			const bytes = details?.progress?.totalBytes;
+			const parts = [exitCode === undefined ? "done" : `exit ${exitCode}`];
+			if (typeof elapsedMs === "number") parts.push(formatDuration(elapsedMs));
+			if (lines > 0) parts.push(plural(lines, "line"));
+			if (bytes && bytes > 0) parts.push(formatSize(bytes));
+			return parts.join(" · ");
+		}
+		case "write":
+			return summarizeToolResult(item.toolName, item.args, item.result, { isError: item.isError }).label;
+		case "edit": {
+			const edits = summarizeToolResult(item.toolName, item.args, item.result, { isError: item.isError });
+			return edits.label;
+		}
+		default:
+			return summarizeToolResult(item.toolName, item.args, item.result, { isError: item.isError }).label;
+	}
+}
+
+function formatPendingSingleToolResult(item: ToolActivityGroupItem): string {
+	if (item.result) {
+		const result = summarizeToolResult(item.toolName, item.args, item.result, {
+			isError: item.isError,
+			isPartial: true,
+		});
+		return result.label;
+	}
+	const activity = summarizeToolCall(item.toolName, item.args);
+	switch (activity.kind) {
+		case "list":
+			return "listing…";
+		case "read":
+			return "reading…";
+		case "search":
+			return "searching…";
+		case "command":
+			return "waiting for approval or running…";
+		case "write":
+			return "waiting for approval…";
+		case "edit":
+			return "waiting for approval…";
+		default:
+			return "working…";
+	}
+}
+
+function singleToolDetailLine(item: ToolActivityGroupItem): string | undefined {
+	const activity = summarizeToolCall(item.toolName, item.args);
+	if (activity.kind !== "command") return undefined;
+	const command = typeof item.args?.command === "string" ? compactText(item.args.command, 96) : undefined;
+	return command ? `  │ ${command}` : undefined;
+}
+
+function formatSingleToolActivityRows(item: ToolActivityGroupItem): string[] {
+	const activity = summarizeToolCall(item.toolName, item.args);
+	const pending = item.isPartial || !item.result;
+
+	// Agent tools use claude-code tree style:
+	// ✦ Working
+	//   └─ @name: activity… · N tool uses
+	if (activity.kind === "agent") {
+		const details = item.result?.details as { toolCalls?: number; subagentType?: string } | undefined;
+		const toolCalls = details?.toolCalls ?? 0;
+		const statsText = toolCalls > 0 ? ` · ${toolCalls} tool ${toolCalls === 1 ? "use" : "uses"}` : "";
+		if (pending) {
+			const desc = details
+				? `${details.subagentType || "agent"} using ${item.result?.content?.[0]?.text || "tools"}`
+				: "working…";
+			return [`  └─ ${activity.compact} · ${desc}${statsText}`];
+		}
+		const resultSummary = formatCompletedSingleToolResult(item);
+		return [`  └─ ${activity.compact} · ${resultSummary}${statsText}`];
+	}
+
+	const action = singleToolActionLabel(item);
+	const result = pending ? formatPendingSingleToolResult(item) : formatCompletedSingleToolResult(item);
+	const detail = singleToolDetailLine(item);
+	return detail ? [`● ${action}`, detail, `  └ ${result}`] : [`● ${action}`, `  └ ${result}`];
+}
+
+function shouldShowTargetDetails(
+	kind: ToolActivityKind,
+	items: ToolActivityGroupItem[],
+	usePhaseLayout: boolean,
+): boolean {
+	if (!usePhaseLayout || items.length === 0) return false;
+	return kind === "read" || kind === "write" || kind === "edit";
+}
+
+function kindPhaseLabel(kind: ToolActivityKind): string {
+	switch (kind) {
+		case "search":
+			return "Search";
+		case "read":
+			return "Read";
+		case "list":
+			return "List";
+		case "command":
+			return "Command";
+		case "edit":
+			return "Edit";
+		case "write":
+			return "Write";
+		case "agent":
+			return "Agent";
+		default:
+			return "Tool";
+	}
+}
+
+function targetDetailLabels(items: ToolActivityGroupItem[], maxItems = 3): string[] {
+	const labels: string[] = [];
+	const seen = new Set<string>();
+	for (const item of items) {
+		const label = compactTargetForActivity(item);
+		if (!label || seen.has(label)) continue;
+		seen.add(label);
+		labels.push(label);
+	}
+	const visible = labels.slice(0, maxItems);
+	const remaining = labels.length - visible.length;
+	if (remaining > 0) visible.push(`+${remaining} more files`);
+	return visible;
+}
+
+function appendTargetDetailRows(rows: string[], targets: string[], basePrefix: string): void {
+	for (let index = 0; index < targets.length; index++) {
+		const connector = index === targets.length - 1 ? "└─" : "├─";
+		rows.push(`${basePrefix}${connector} ${targets[index]}`);
+	}
+}
+
+function appendCurrentRows(rows: string[], item: ToolActivityGroupItem): void {
+	rows.push("  └─ Current");
+	rows.push(`     ⠋ ${currentActivityLabel(item)}`);
+}
+
+function appendPhaseRows(
+	rows: string[],
+	kind: ToolActivityKind,
+	kindItems: ToolActivityGroupItem[],
+	options: ToolActivityGroupFormatOptions,
+	showTargets: boolean,
+	connector: "├─" | "└─",
+): void {
+	rows.push(`  ${connector} ${kindPhaseLabel(kind)}`);
+	const childPrefix = connector === "└─" ? "     " : "  │  ";
+	const targets = shouldShowTargetDetails(kind, kindItems, true) ? targetDetailLabels(kindItems) : [];
+	const summaryConnector = targets.length > 0 ? "├─" : "└─";
+	const summary =
+		targets.length > 0
+			? (formatKindCount(
+					kind,
+					Math.max(kindItems.length, options.minimumCounts?.[kind] ?? 0),
+					hasIncompleteItems(kindItems),
+				) ?? `${kindVerb(kind, hasIncompleteItems(kindItems))} ${kindItems.length}`)
+			: formatKindTreeLabel(kind, kindItems, options, showTargets);
+	rows.push(`${childPrefix}${summaryConnector} ${summary}`);
+	appendTargetDetailRows(rows, targets, childPrefix);
+}
+
+function completedToolGroupTitle(items: ToolActivityGroupItem[]): string {
+	const base = toolGroupTitle(items);
+	switch (base) {
+		case "Inspecting project":
+			return "Inspected project";
+		case "Searching files":
+			return "Searched files";
+		case "Reading files":
+			return "Read files";
+		case "Listing files":
+			return "Listed files";
+		case "Updating files":
+			return "Updated files";
+		case "Running tests":
+			return "Ran tests";
+		case "Running command":
+			return "Ran command";
+		case "Running commands":
+			return "Ran commands";
+		default:
+			return base;
+	}
+}
+
+function formatToolActivityTree(
+	items: ToolActivityGroupItem[],
+	options: ToolActivityGroupFormatOptions = {},
+	forcePhaseLayout = false,
+): string[] {
+	const groups = orderedKindGroups(items);
+	if (groups.length === 0) return [];
+	const showTargets = groups.length === 1;
+	const current = currentActivityItem(items);
+	const hasCurrent = Boolean(current);
+	const usePhaseLayout = forcePhaseLayout || hasCurrent || groups.length > 1;
+
+	const rows: string[] = [];
+	for (let index = 0; index < groups.length; index++) {
+		const [kind, kindItems] = groups[index]!;
+		const connector = hasCurrent || index < groups.length - 1 ? "├─" : "└─";
+		if (usePhaseLayout) {
+			appendPhaseRows(rows, kind, kindItems, options, showTargets, connector);
+		} else {
+			rows.push(`  ${connector} ${formatKindTreeLabel(kind, kindItems, options, showTargets)}`);
+			const targets = shouldShowTargetDetails(kind, kindItems, false) ? targetDetailLabels(kindItems) : [];
+			appendTargetDetailRows(rows, targets, "  │  ");
+		}
+	}
+
+	if (current) appendCurrentRows(rows, current);
+
+	return rows;
+}
+
+export function formatToolActivityGroup(
+	items: ToolActivityGroupItem[],
+	options: ToolActivityGroupFormatOptions = {},
+): string {
 	const visibleItems = items.length > 0 ? items : [];
-	const title = toolGroupTitle(visibleItems);
-	const pending = hasIncompleteItems(visibleItems);
-	const header = `✦ ${title}${pending ? ` · ${neoGroupLoadingLabel(visibleItems)}…` : ""}`;
-	if (visibleItems.length === 0) return header;
-	return [
-		header,
-		...visibleItems.map((item, index) => formatGroupItemLine(item, index === visibleItems.length - 1)),
-	].join("\n");
+	if (visibleItems.length === 0) return "✦ Working";
+	if (visibleItems.length === 1) return formatSingleToolActivityRows(visibleItems[0]!).join("\n");
+	const completed = !hasIncompleteItems(visibleItems);
+	const title = completed ? completedToolGroupTitle(visibleItems) : toolGroupTitle(visibleItems);
+	const header = `✦ ${title}`;
+	const rows = completed
+		? formatToolActivityTree(visibleItems, options, true)
+		: formatToolActivityTree(visibleItems, options);
+	return [header, ...rows].join("\n");
 }
 
 export function formatToolActivityGroupLoading(items: ToolActivityGroupItem[]): string {
-	return `✦ ${neoGroupLoadingLabel(items)}…`;
+	return `${neoGroupLoadingLabel(items)}…`;
 }

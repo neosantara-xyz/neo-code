@@ -275,10 +275,16 @@ Use this EXACT format:
 ## Key Decisions
 - **[Decision]**: [Brief rationale]
 
+## Files & Symbols
+- [Exact file paths, functions, classes, command names, tests, and errors that matter]
+
+## Verification
+- [Commands/checks that passed, failed, or were not run]
+
 ## Next Steps
 1. [What should happen next to continue this work]
 
-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+Keep each section concise. Preserve exact file paths, function names, commands, and error messages.`;
 
 /**
  * Generate a summary of abandoned branch entries.

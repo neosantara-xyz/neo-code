@@ -8,8 +8,16 @@ import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
-import { resolveToCwd } from "./path-utils.js";
-import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
+import { resolveWorkspacePath } from "./path-utils.js";
+import {
+	appendToolNotice,
+	formatSourceMappingUrlFilterNotice,
+	getTextOutput,
+	invalidArgText,
+	isSourceMappingUrlLine,
+	shortenPath,
+	str,
+} from "./render-utils.js";
 import {
 	formatToolActivityLine,
 	formatToolActivityResultLine,
@@ -47,6 +55,9 @@ export interface GrepToolDetails {
 	truncation?: TruncationResult;
 	matchLimitReached?: number;
 	linesTruncated?: boolean;
+	matchCount?: number;
+	matchedFileCount?: number;
+	filteredSourceMappingURLLines?: number;
 }
 
 /**
@@ -200,7 +211,7 @@ export function createGrepToolDefinition(
 							return;
 						}
 
-						const searchPath = resolveToCwd(searchDir || ".", cwd);
+						const searchPath = resolveWorkspacePath(searchDir || ".", cwd, "Grep path");
 						const ops = customOps ?? defaultGrepOperations;
 						let isDirectory: boolean;
 						try {
@@ -249,6 +260,7 @@ export function createGrepToolDefinition(
 						let matchCount = 0;
 						let matchLimitReached = false;
 						let linesTruncated = false;
+						let filteredSourceMappingURLLines = 0;
 						let aborted = false;
 						let killedDueToLimit = false;
 						const outputLines: string[] = [];
@@ -282,6 +294,10 @@ export function createGrepToolDefinition(
 							for (let current = start; current <= end; current++) {
 								const lineText = lines[current - 1] ?? "";
 								const sanitized = lineText.replace(/\r/g, "");
+								if (isSourceMappingUrlLine(sanitized)) {
+									filteredSourceMappingURLLines += 1;
+									continue;
+								}
 								const isMatchLine = current === lineNumber;
 								// Truncate long lines so grep output stays compact.
 								const { text: truncatedText, wasTruncated } = truncateLine(sanitized);
@@ -303,10 +319,14 @@ export function createGrepToolDefinition(
 								return;
 							}
 							if (event.type === "match") {
-								matchCount++;
 								const filePath = event.data?.path?.text;
 								const lineNumber = event.data?.line_number;
 								const lineText = event.data?.lines?.text;
+								if (typeof lineText === "string" && isSourceMappingUrlLine(lineText.replace(/\r/g, ""))) {
+									filteredSourceMappingURLLines += 1;
+									return;
+								}
+								matchCount++;
 								if (filePath && typeof lineNumber === "number")
 									matches.push({ filePath, lineNumber, lineText });
 								if (matchCount >= effectiveLimit) {
@@ -332,8 +352,19 @@ export function createGrepToolDefinition(
 								return;
 							}
 							if (matchCount === 0) {
+								const text =
+									filteredSourceMappingURLLines > 0
+										? appendToolNotice(
+												"No matches found",
+												formatSourceMappingUrlFilterNotice(filteredSourceMappingURLLines),
+											)
+										: "No matches found";
 								settle(() =>
-									resolve({ content: [{ type: "text", text: "No matches found" }], details: undefined }),
+									resolve({
+										content: [{ type: "text", text }],
+										details:
+											filteredSourceMappingURLLines > 0 ? { filteredSourceMappingURLLines } : undefined,
+									}),
 								);
 								return;
 							}
@@ -346,6 +377,10 @@ export function createGrepToolDefinition(
 										.replace(/\r\n/g, "\n")
 										.replace(/\r/g, "")
 										.replace(/\n$/, "");
+									if (isSourceMappingUrlLine(sanitized)) {
+										filteredSourceMappingURLLines += 1;
+										continue;
+									}
 									const { text: truncatedText, wasTruncated } = truncateLine(sanitized);
 									if (wasTruncated) linesTruncated = true;
 									outputLines.push(`${relativePath}:${match.lineNumber}: ${truncatedText}`);
@@ -356,10 +391,24 @@ export function createGrepToolDefinition(
 							}
 
 							const rawOutput = outputLines.join("\n");
+							if (!rawOutput && filteredSourceMappingURLLines > 0) {
+								const text = appendToolNotice(
+									"No matches found",
+									formatSourceMappingUrlFilterNotice(filteredSourceMappingURLLines),
+								);
+								settle(() =>
+									resolve({
+										content: [{ type: "text", text }],
+										details: { filteredSourceMappingURLLines },
+									}),
+								);
+								return;
+							}
 							// Apply byte truncation. There is no line limit here because the match limit already capped rows.
 							const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
 							let output = truncation.content;
-							const details: GrepToolDetails = {};
+							const matchedFileCount = new Set(matches.map((match) => formatPath(match.filePath))).size;
+							const details: GrepToolDetails = { matchCount, matchedFileCount };
 							// Build actionable notices for truncation and match limits.
 							const notices: string[] = [];
 							if (matchLimitReached) {
@@ -377,6 +426,10 @@ export function createGrepToolDefinition(
 									`Some lines truncated to ${GREP_MAX_LINE_LENGTH} chars. Use read tool to see full lines`,
 								);
 								details.linesTruncated = true;
+							}
+							if (filteredSourceMappingURLLines > 0) {
+								notices.push(formatSourceMappingUrlFilterNotice(filteredSourceMappingURLLines).slice(1, -1));
+								details.filteredSourceMappingURLLines = filteredSourceMappingURLLines;
 							}
 							if (notices.length > 0) output += `\n\n[${notices.join(". ")}]`;
 							settle(() =>

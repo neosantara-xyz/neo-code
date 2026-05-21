@@ -31,6 +31,7 @@ import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { runNeosantaraDeviceLogin } from "./core/neosantara-device-auth.js";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
+import { exitAfterCleanup } from "./core/process-lifecycle.js";
 import type { CreateAgentSessionOptions } from "./core/sdk.js";
 import {
 	formatMissingSessionCwdPrompt,
@@ -198,7 +199,7 @@ function validateForkFlags(parsed: Args): void {
 
 	if (conflictingFlags.length > 0) {
 		console.error(chalk.red(`Error: --fork cannot be combined with ${conflictingFlags.join(", ")}`));
-		process.exit(1);
+		exitAfterCleanup(1);
 	}
 }
 
@@ -208,7 +209,7 @@ function forkSessionOrExit(sourcePath: string, cwd: string, sessionDir?: string)
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
 		console.error(chalk.red(`Error: ${message}`));
-		process.exit(1);
+		exitAfterCleanup(1);
 	}
 }
 
@@ -233,7 +234,7 @@ async function createSessionManager(
 
 			case "not_found":
 				console.error(chalk.red(`No session found matching '${resolved.arg}'`));
-				process.exit(1);
+				exitAfterCleanup(1);
 		}
 	}
 
@@ -250,14 +251,14 @@ async function createSessionManager(
 				const shouldFork = await promptConfirm("Fork this session into current directory?");
 				if (!shouldFork) {
 					console.log(chalk.dim("Aborted."));
-					process.exit(0);
+					exitAfterCleanup(0);
 				}
 				return forkSessionOrExit(resolved.path, cwd, sessionDir);
 			}
 
 			case "not_found":
 				console.error(chalk.red(`No session found matching '${resolved.arg}'`));
-				process.exit(1);
+				exitAfterCleanup(1);
 		}
 	}
 
@@ -270,7 +271,7 @@ async function createSessionManager(
 			);
 			if (!selectedPath) {
 				console.log(chalk.dim("No session selected"));
-				process.exit(0);
+				exitAfterCleanup(0);
 			}
 			return SessionManager.open(selectedPath, sessionDir);
 		} finally {
@@ -366,6 +367,11 @@ function buildSessionOptions(
 	// API key from CLI - set in authStorage
 	// (handled by caller before createAgentSession)
 
+	// Workflow/tool mode
+	if (parsed.agentMode) {
+		options.agentMode = parsed.agentMode;
+	}
+
 	// Tools
 	if (parsed.noTools) {
 		options.noTools = "all";
@@ -449,7 +455,7 @@ export async function main(args: string[], options?: MainOptions) {
 			console.error(color(`${d.type === "error" ? "Error" : "Warning"}: ${d.message}`));
 		}
 		if (parsed.diagnostics.some((d) => d.type === "error")) {
-			process.exit(1);
+			exitAfterCleanup(1);
 		}
 	}
 	time("parseArgs");
@@ -461,7 +467,7 @@ export async function main(args: string[], options?: MainOptions) {
 
 	if (parsed.version) {
 		console.log(VERSION);
-		process.exit(0);
+		exitAfterCleanup(0);
 	}
 
 	if (parsed.export) {
@@ -472,15 +478,15 @@ export async function main(args: string[], options?: MainOptions) {
 		} catch (error: unknown) {
 			const message = error instanceof Error ? error.message : "Failed to export session";
 			console.error(chalk.red(`Error: ${message}`));
-			process.exit(1);
+			exitAfterCleanup(1);
 		}
 		console.log(`Exported to: ${result}`);
-		process.exit(0);
+		exitAfterCleanup(0);
 	}
 
 	if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
 		console.error(chalk.red("Error: @file arguments are not supported in RPC mode"));
-		process.exit(1);
+		exitAfterCleanup(1);
 	}
 
 	validateForkFlags(parsed);
@@ -510,12 +516,12 @@ export async function main(args: string[], options?: MainOptions) {
 		if (appMode === "interactive") {
 			const selectedCwd = await promptForMissingSessionCwd(missingSessionCwdIssue, startupSettingsManager);
 			if (!selectedCwd) {
-				process.exit(0);
+				exitAfterCleanup(0);
 			}
 			sessionManager = SessionManager.open(missingSessionCwdIssue.sessionFile!, sessionDir, selectedCwd);
 		} else {
 			console.error(chalk.red(new MissingSessionCwdError(missingSessionCwdIssue).message));
-			process.exit(1);
+			exitAfterCleanup(1);
 		}
 	}
 	time("createSessionManager");
@@ -597,6 +603,7 @@ export async function main(args: string[], options?: MainOptions) {
 			scopedModels: sessionOptions.scopedModels,
 			tools: sessionOptions.tools,
 			noTools: sessionOptions.noTools,
+			agentMode: sessionOptions.agentMode,
 			customTools: sessionOptions.customTools,
 		});
 		const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
@@ -624,13 +631,13 @@ export async function main(args: string[], options?: MainOptions) {
 			.getExtensions()
 			.extensions.flatMap((extension) => Array.from(extension.flags.values()));
 		printHelp(extensionFlags);
-		process.exit(0);
+		exitAfterCleanup(0);
 	}
 
 	if (parsed.listModels !== undefined) {
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
 		await listModels(modelRegistry, searchPattern);
-		process.exit(0);
+		exitAfterCleanup(0);
 	}
 
 	// Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
@@ -661,19 +668,19 @@ export async function main(args: string[], options?: MainOptions) {
 	time("resolveModelScope");
 	reportDiagnostics(runtime.diagnostics);
 	if (runtime.diagnostics.some((diagnostic) => diagnostic.type === "error")) {
-		process.exit(1);
+		exitAfterCleanup(1);
 	}
 	time("createAgentSession");
 
 	if (appMode !== "interactive" && !session.model) {
 		console.error(chalk.red(formatNoModelsAvailableMessage()));
-		process.exit(1);
+		exitAfterCleanup(1);
 	}
 
 	const startupBenchmark = isTruthyEnvFlag(process.env.NEO_CODE_STARTUP_BENCHMARK);
 	if (startupBenchmark && appMode !== "interactive") {
 		console.error(chalk.red("Error: NEO_CODE_STARTUP_BENCHMARK only supports interactive mode"));
-		process.exit(1);
+		exitAfterCleanup(1);
 	}
 
 	if (appMode === "rpc") {

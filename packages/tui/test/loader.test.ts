@@ -83,7 +83,7 @@ describe("Loader", () => {
 		});
 	});
 
-	it("pulses the whole message in tool-use mode instead of adding a second symbol", () => {
+	it("pulses the whole message in tool-use mode without adding a second symbol", () => {
 		const clock = { now: 0 };
 		withMockedDateNow(clock, () => {
 			const tui = new FakeTui();
@@ -95,16 +95,17 @@ describe("Loader", () => {
 				{
 					frames: [],
 					mode: "tool-use",
+					shimmer: true,
 					shimmerColorFn: (text) => text.toUpperCase(),
 				},
 			);
 
 			try {
-				clock.now = 500;
+				clock.now = 2600;
 				loader.setMessage("searching files…");
 				const line = loader.render(40).join("\n");
 
-				assert.match(line, /SEARCHING FILES…/);
+				assert.match(line, /SEARCHING FILES/);
 				assert.doesNotMatch(line, /✦/);
 			} finally {
 				loader.stop();
@@ -143,6 +144,37 @@ describe("Loader", () => {
 			}
 		});
 	});
+
+	it("shows Claude-style elapsed time and streamed output token estimate after threshold", () => {
+		const clock = { now: 0 };
+		withMockedDateNow(clock, () => {
+			const tui = new FakeTui();
+			const loader = new Loader(
+				tui as unknown as TUI,
+				(text) => `[${text}]`,
+				(text) => text,
+				"ngulik...",
+				{
+					frames: [],
+					showStatus: true,
+					elapsedAfterMs: 0,
+					tokensAfterMs: 0,
+					statusColorFn: (text) => `DIM(${text})`,
+				},
+			);
+
+			try {
+				clock.now = 32_000;
+				loader.setStalledDetectionState(400, false);
+				const line = loader.render(80).join("\n");
+
+				assert.match(line, /DIM\( \(32s · ↓ 100 tokens\)\)/);
+			} finally {
+				loader.stop();
+			}
+		});
+	});
+
 	it("fades the loader toward warning/error when streaming stalls without active tools", () => {
 		const clock = { now: 0 };
 		withMockedDateNow(clock, () => {

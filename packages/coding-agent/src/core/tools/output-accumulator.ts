@@ -16,6 +16,11 @@ export interface OutputSnapshot {
 	fullOutputPath?: string;
 }
 
+export interface OutputAccumulatorMetrics {
+	totalLines: number;
+	totalBytes: number;
+}
+
 function defaultTempFilePath(prefix: string): string {
 	const id = randomBytes(8).toString("hex");
 	return join(tmpdir(), `${prefix}-${id}.log`);
@@ -141,6 +146,13 @@ export class OutputAccumulator {
 
 	getLastLineBytes(): number {
 		return this.currentLineBytes;
+	}
+
+	getMetrics(): OutputAccumulatorMetrics {
+		return {
+			totalLines: this.totalLines,
+			totalBytes: this.totalDecodedBytes,
+		};
 	}
 
 	private appendDecodedText(text: string): void {

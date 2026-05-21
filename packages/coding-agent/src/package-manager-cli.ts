@@ -12,6 +12,7 @@ import {
 	VERSION,
 } from "./config.js";
 import { DefaultPackageManager } from "./core/package-manager.js";
+import { exitAfterCleanup } from "./core/process-lifecycle.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { buildInstallTelemetryPayload } from "./core/telemetry.js";
 import { shouldUseWindowsShell } from "./utils/child-process.js";
@@ -407,7 +408,7 @@ export async function handleConfigCommand(args: string[]): Promise<boolean> {
 		agentDir,
 	});
 
-	process.exit(0);
+	exitAfterCleanup(0);
 }
 
 export async function handlePackageCommand(args: string[]): Promise<boolean> {

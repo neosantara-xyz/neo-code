@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { printHelp } from "../src/cli/args.js";
 import { APP_NAME, APP_TITLE, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../src/config.js";
+import { BUILTIN_SLASH_COMMANDS } from "../src/core/slash-commands.js";
 
 describe("Neo Code branding", () => {
 	it("uses Neo Code public names without a NAI legacy alias", () => {
@@ -18,6 +19,28 @@ describe("Neo Code branding", () => {
 		const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { bin?: Record<string, string> };
 		expect(pkg.bin).toEqual({ neo: "dist/cli.js" });
 		expect(pkg.bin).not.toHaveProperty("nai");
+	});
+
+	it("ships Neo Kanci mascot and SVG brand assets", () => {
+		const packageJsonPath = fileURLToPath(new URL("../package.json", import.meta.url));
+		const sourceRoot = new URL("../src/modes/interactive/assets/", import.meta.url);
+		const packageJson = readFileSync(packageJsonPath, "utf8");
+
+		for (const asset of ["neo-kanci.svg", "neo-code-mark.svg", "neo-code-wordmark.svg", "neo-code-favicon.svg"]) {
+			const assetSource = readFileSync(fileURLToPath(new URL(asset, sourceRoot)), "utf8");
+			expect(assetSource).toContain("<svg");
+		}
+
+		expect(packageJson).toContain("src/modes/interactive/assets/*.svg");
+	});
+
+	it("uses /compact as the only built-in compaction slash command", () => {
+		const commandNames = BUILTIN_SLASH_COMMANDS.map((command) => command.name);
+		const compact = BUILTIN_SLASH_COMMANDS.find((command) => command.name === "compact");
+
+		expect(commandNames).toContain("compact");
+		expect(commandNames).not.toContain("compress");
+		expect(compact?.argumentHint).toBe("<optional custom summarization instructions>");
 	});
 
 	it("prints Neo Code help with non-duplicated Neosantara env vars", () => {

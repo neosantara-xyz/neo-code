@@ -9,6 +9,7 @@
 import type { AssistantMessage, ImageContent } from "@neosantara/ai";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.js";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.js";
+import { exitAfterCleanup } from "../core/process-lifecycle.js";
 import { killTrackedDetachedChildren } from "../utils/shell.js";
 
 /**
@@ -54,7 +55,7 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 			const handler = () => {
 				killTrackedDetachedChildren();
 				void disposeRuntime().finally(() => {
-					process.exit(signal === "SIGHUP" ? 129 : 143);
+					exitAfterCleanup(signal === "SIGHUP" ? 129 : 143);
 				});
 			};
 			process.on(signal, handler);

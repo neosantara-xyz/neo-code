@@ -72,6 +72,20 @@ function extractFileOperations(
 // Message Extraction
 // ============================================================================
 
+type CompactionMetricsDetails = {
+	neoCompaction?: {
+		tokensAfter?: number;
+		summarizedMessages?: number;
+	};
+};
+
+function getCompactionMetrics(details: unknown): CompactionMetricsDetails["neoCompaction"] | undefined {
+	if (!details || typeof details !== "object") return undefined;
+	const metrics = (details as CompactionMetricsDetails).neoCompaction;
+	if (!metrics || typeof metrics !== "object") return undefined;
+	return metrics;
+}
+
 /**
  * Extract AgentMessage from an entry if it produces one.
  * Returns undefined for entries that don't contribute to LLM context.
@@ -87,7 +101,8 @@ function getMessageFromEntry(entry: SessionEntry): AgentMessage | undefined {
 		return createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp);
 	}
 	if (entry.type === "compaction") {
-		return createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp);
+		const metrics = getCompactionMetrics(entry.details);
+		return createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp, metrics);
 	}
 	return undefined;
 }
@@ -213,12 +228,48 @@ export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEst
 	};
 }
 
+const AUTO_COMPACT_BUFFER_TOKENS = 13000;
+const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20000;
+
+/**
+ * Estimate the active context directly from message payloads, ignoring stored API usage.
+ * Use this immediately after compaction, because kept assistant messages can still
+ * carry pre-compaction usage metadata that would make the active context look huge.
+ */
+export function estimateRawContextTokens(messages: AgentMessage[]): number {
+	let tokens = 0;
+	for (const message of messages) {
+		tokens += estimateTokens(message);
+	}
+	return tokens;
+}
+
+/**
+ * Claude-style proactive compact threshold.
+ * Reserve model output room plus a small buffer, while keeping the user-configured
+ * reserve as the floor so older settings keep their meaning.
+ */
+export function getAutoCompactTriggerTokens(
+	contextWindow: number,
+	settings: CompactionSettings,
+	maxOutputTokens = 0,
+): number {
+	const outputReserve = Math.min(Math.max(0, maxOutputTokens), MAX_OUTPUT_TOKENS_FOR_SUMMARY);
+	const effectiveReserve = Math.max(settings.reserveTokens, outputReserve + AUTO_COMPACT_BUFFER_TOKENS);
+	return Math.max(0, contextWindow - effectiveReserve);
+}
+
 /**
  * Check if compaction should trigger based on context usage.
  */
-export function shouldCompact(contextTokens: number, contextWindow: number, settings: CompactionSettings): boolean {
+export function shouldCompact(
+	contextTokens: number,
+	contextWindow: number,
+	settings: CompactionSettings,
+	maxOutputTokens = 0,
+): boolean {
 	if (!settings.enabled) return false;
-	return contextTokens > contextWindow - settings.reserveTokens;
+	return contextTokens >= getAutoCompactTriggerTokens(contextWindow, settings, maxOutputTokens);
 }
 
 // ============================================================================

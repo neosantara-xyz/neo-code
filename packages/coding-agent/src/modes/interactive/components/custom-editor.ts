@@ -14,6 +14,8 @@ export class CustomEditor extends Editor {
 	public onPasteImage?: () => void;
 	/** Handler for extension-registered shortcuts. Returns true if handled. */
 	public onExtensionShortcut?: (data: string) => boolean;
+	/** Handler for `?` shortcut overlay toggle. Returns true if handled. */
+	public onQuestionMark?: () => boolean;
 
 	constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, options?: EditorOptions) {
 		super(tui, theme, options);
@@ -30,6 +32,11 @@ export class CustomEditor extends Editor {
 	handleInput(data: string): void {
 		// Check extension-registered shortcuts first
 		if (this.onExtensionShortcut?.(data)) {
+			return;
+		}
+
+		// Toggle shortcut overlay on `?` when editor is empty
+		if (data === "?" && this.getText().length === 0 && this.onQuestionMark?.()) {
 			return;
 		}
 
