@@ -161,7 +161,8 @@ describe("tool approval request component", () => {
 		expect(rendered).toContain("Would you like to proceed?");
 		expect(rendered).toContain("1. Yes, auto-accept edits");
 		expect(rendered).toContain("2. Yes, manually approve edits");
-		expect(rendered).toContain("3. No, keep planning");
+		expect(rendered).toContain("3. Yes, fork to fresh context");
+		expect(rendered).toContain("4. No, keep planning");
 	});
 
 	it("keeps ExitPlanMode actions visible for long plans", () => {
@@ -182,7 +183,8 @@ describe("tool approval request component", () => {
 		expect(rendered).toContain("actions stay below");
 		expect(rendered).toContain("1. Yes, auto-accept edits");
 		expect(rendered).toContain("2. Yes, manually approve edits");
-		expect(rendered).toContain("3. No, keep planning");
+		expect(rendered).toContain("3. Yes, fork to fresh context");
+		expect(rendered).toContain("4. No, keep planning");
 	});
 
 	it("emits ExitPlanMode approval mode choices", () => {

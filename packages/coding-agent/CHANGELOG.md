@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- Replaced the rotating spinner-tip slot with a Claude Code-style persistent tip line below the working loader, picked once per agent turn from a Neosantara-only catalog and gated by per-tip session cooldowns.
+- Added `spinnerTipsEnabled` and `spinnerTipsOverride` settings so users can disable the tip line or supply custom strings (with optional `excludeDefault`).
+- Added `/statusline` slash command and configurable footer items via `settings.statusline.items`. The picker lets users toggle visibility and reorder segments (`Space` to toggle, `[`/`]` to reorder, `Enter` to save). `/statusline reset` restores defaults.
+- Added a Nusantara-themed nickname pool for spawned subagents. Nicknames are deterministic per invocation, surfaced in activity rendering and in the subagent's system prompt for stable identity.
+- Added `/rename` as an alias for `/name` so users coming from Codex or Claude Code reach the same command.
+- Added `/review` slash command with a Codex-style multi-step picker: review uncommitted changes, a base branch (PR-style), a specific commit, a GitHub PR (via `gh`), or custom free-form instructions. Direct shortcuts: `/review uncommitted`, `/review base <branch>`, `/review commit <sha>`, `/review pr <number>`, `/review <free text>`. Findings render with priority tags (P0–P3) and a verdict section.
+- Added a built-in `reviewer` subagent definition for context-isolated reviews via the `agent` tool.
+- Added `/fork` slash command. Spawns a new persisted session that records the current one as its parent so the session tree picker can navigate back. Falls back to a hint when the current session is in-memory.
+- Added a high-context tip override that nudges toward `/compact` when the context window utilization crosses 70% (warning) and escalates to "urgent" wording above 90%. The override is rendered every turn until context drops, independent of the cooldown-based tip catalog.
+- Added a "Yes, fork to fresh context" option to the ExitPlanMode approval popup. When selected, Neo waits for the current turn to drain, forks the persisted session, and re-submits the approved plan as the opening user message in the new thread so the implementation runs against a clean context window.
+
 ### Changed
 
 - Keep this package changelog in sync with `releases/NOTES.md` before each release.

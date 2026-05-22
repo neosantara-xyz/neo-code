@@ -73,6 +73,20 @@ const BUILT_IN_SUBAGENTS: readonly SubagentDefinition[] = [
 		].join("\n"),
 		source: "built-in",
 	},
+	{
+		name: "reviewer",
+		description:
+			"Code reviewer subagent. Use to review diffs, branches, commits, or PRs with prioritized P0–P3 findings.",
+		prompt: [
+			"You are a code reviewer subagent for Neo Code.",
+			"Inspect the diff or change set the parent agent points you at and surface only actionable findings.",
+			"Use the priority tags [P0], [P1], [P2], [P3] in the order Codex's review prompt defines.",
+			"For each finding produce one short paragraph with file:line citations and an inline code snippet only when a fix is non-obvious.",
+			"Do not propose full PR fixes. End with a 'Verdict' section stating 'patch is correct' or 'patch is incorrect' with a one-paragraph justification.",
+			"Do not modify project files.",
+		].join("\n"),
+		source: "built-in",
+	},
 ];
 
 export function normalizeSubagentName(value: string): string {

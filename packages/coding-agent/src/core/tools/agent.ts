@@ -5,6 +5,7 @@ import { type Static, Type } from "typebox";
 import type { ToolDefinition } from "../extensions/types.js";
 import type { McpServersSettings } from "../mcp.js";
 import { findExactModelReferenceMatch } from "../model-resolver.js";
+import { pickAgentNickname } from "./agent-nicknames.js";
 import { createFindTool } from "./find.js";
 import { createGrepTool } from "./grep.js";
 import { createLsTool } from "./ls.js";
@@ -38,6 +39,12 @@ export type AgentToolInput = Static<typeof agentSchema>;
 
 export interface AgentToolDetails {
 	subagentType: string;
+	/**
+	 * Human-friendly nickname assigned for this subagent run, drawn from the
+	 * Nusantara nickname pool. Cosmetic only — used for activity rendering and
+	 * to give the subagent a stable identity in its system prompt.
+	 */
+	nickname: string;
 	messageCount: number;
 	toolCalls: number;
 	tools: string[];
@@ -141,9 +148,14 @@ function resolveModelOverride(
 	return resolved;
 }
 
-function buildSubagentSystemPrompt(cwd: string, definition: SubagentDefinition, tools: AgentTool[]): string {
+function buildSubagentSystemPrompt(
+	cwd: string,
+	definition: SubagentDefinition,
+	tools: AgentTool[],
+	nickname: string,
+): string {
 	return [
-		`You are the '${definition.name}' Neo Code subagent.`,
+		`You are '${nickname}', the '${definition.name}' Neo Code subagent for this run.`,
 		definition.prompt,
 		"",
 		"Subagent operating rules:",
@@ -164,6 +176,19 @@ function buildToolDescription(cwd: string): string {
 		"Available subagent_type values:",
 		formatSubagentList(agents),
 	].join("\n");
+}
+
+/**
+ * Derive a stable seed for {@link pickAgentNickname} from a subagent invocation's
+ * arguments. The seed must be the same in `renderCall` and `execute` so the
+ * nickname rendered in the activity row matches the one announced via
+ * `onUpdate` and stamped into the subagent's system prompt.
+ */
+function deriveNicknameSeed(args: AgentToolInput): string {
+	const subagentType = (args.subagent_type ?? "agent").trim();
+	const description = (args.description ?? "").trim();
+	const promptSeed = (args.prompt ?? "").trim().slice(0, 80);
+	return `${subagentType}|${description}|${promptSeed}`;
 }
 
 export function createAgentToolDefinition(
@@ -188,16 +213,20 @@ export function createAgentToolDefinition(
 		renderCall(args, theme, context) {
 			const name = args.subagent_type || "agent";
 			const desc = args.description || args.prompt?.slice(0, 80) || "working";
-			const label =
-				context.isPartial && context.executionStarted
-					? `${theme.fg("accent", `@${name}`)} ${theme.fg("dim", `${desc}…`)}`
-					: `${theme.fg("accent", `@${name}`)} ${desc}`;
+			const nickname = pickAgentNickname(deriveNicknameSeed(args));
+			const handle = `@${name}`;
+			const trailingDesc = context.isPartial && context.executionStarted ? `${desc}…` : desc;
+			const label = [
+				theme.fg("accent", handle),
+				theme.fg("muted", `(${nickname})`),
+				theme.fg("dim", trailingDesc),
+			].join(" ");
 			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
 			text.setText(label);
 			return text;
 		},
 		renderToolResultSummary: (result) =>
-			`${result.details.subagentType} subagent returned ${result.details.messageCount} messages`,
+			`${result.details.subagentType} subagent (${result.details.nickname}) returned ${result.details.messageCount} messages`,
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			const inheritedModel = ctx.model;
 			if (!inheritedModel) throw new Error("No active model is available for subagent delegation");
@@ -205,10 +234,17 @@ export function createAgentToolDefinition(
 			const definition = findSubagentDefinition(cwd, params.subagent_type);
 			const tools = createSubagentTools(cwd, definition, options);
 			const model = resolveModelOverride(params.model, definition, inheritedModel, ctx.modelRegistry.getAvailable());
+			const nickname = pickAgentNickname(deriveNicknameSeed(params));
 			onUpdate?.({
-				content: [{ type: "text", text: `Starting ${definition.name} subagent with ${tools.length} tools...` }],
+				content: [
+					{
+						type: "text",
+						text: `Starting ${definition.name} subagent (${nickname}) with ${tools.length} tools...`,
+					},
+				],
 				details: {
 					subagentType: definition.name,
+					nickname,
 					messageCount: 0,
 					toolCalls: 0,
 					tools: tools.map((tool) => tool.name),
@@ -222,7 +258,7 @@ export function createAgentToolDefinition(
 				initialState: {
 					model,
 					thinkingLevel: "off",
-					systemPrompt: buildSubagentSystemPrompt(cwd, definition, tools),
+					systemPrompt: buildSubagentSystemPrompt(cwd, definition, tools, nickname),
 					tools,
 				},
 				streamFn: async (activeModel, context, streamOptions) => {
@@ -248,9 +284,10 @@ export function createAgentToolDefinition(
 				if (event.type === "tool_execution_start") {
 					toolCalls += 1;
 					onUpdate?.({
-						content: [{ type: "text", text: `${definition.name} using ${event.toolName}...` }],
+						content: [{ type: "text", text: `${nickname} using ${event.toolName}...` }],
 						details: {
 							subagentType: definition.name,
+							nickname,
 							messageCount: subagent.state.messages.length,
 							toolCalls,
 							tools: tools.map((tool) => tool.name),
@@ -278,6 +315,7 @@ export function createAgentToolDefinition(
 				content: [{ type: "text", text: extractAssistantText(messages) }],
 				details: {
 					subagentType: definition.name,
+					nickname,
 					messageCount: messages.length,
 					toolCalls,
 					tools: tools.map((tool) => tool.name),

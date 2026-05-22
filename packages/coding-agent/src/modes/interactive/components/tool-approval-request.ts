@@ -80,12 +80,21 @@ const EXIT_PLAN_MODE_APPROVAL_OPTIONS: ApprovalOption[] = [
 	},
 	{
 		key: "3",
+		label: "Yes, fork to fresh context",
+		hint: "implement in a new thread",
+		// Codex's "Yes, clear context and implement" branch: fork the session
+		// after approval and re-submit the approved plan as a fresh user
+		// message. Default mode after fork; the user can switch later.
+		decision: { behavior: "allow", scope: "once", nextMode: "default", forkAfterApproval: true },
+	},
+	{
+		key: "4",
 		label: "No, keep planning",
 		hint: "revise the plan",
 		decision: { behavior: "deny" },
 	},
 	{
-		key: "4",
+		key: "5",
 		label: "No, tell Neo",
 		hint: "what to change in the plan",
 		startsFeedback: true,

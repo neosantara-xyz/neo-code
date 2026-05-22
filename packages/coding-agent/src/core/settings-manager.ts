@@ -6,6 +6,7 @@ import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import { type AgentWorkMode, DEFAULT_AGENT_WORK_MODE, parseAgentWorkMode } from "./agent-mode.js";
 import { type McpServersSettings, validateMcpServers } from "./mcp.js";
+import { normalizeStatuslineItems, type StatuslineItemConfig } from "./statusline.js";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -55,6 +56,16 @@ export interface MarkdownSettings {
 }
 
 export interface WarningSettings {}
+
+/**
+ * Override the built-in spinner tip catalog with custom strings.
+ * - `tips`: each entry becomes a tip, displayed verbatim with the `tip:` prefix.
+ * - `excludeDefault`: when true and `tips` is non-empty, built-in tips are skipped.
+ */
+export interface SpinnerTipsOverrideSettings {
+	excludeDefault?: boolean;
+	tips: string[];
+}
 
 export type { McpServerConfig, McpServersSettings } from "./mcp.js";
 
@@ -114,6 +125,11 @@ export interface Settings {
 	warnings?: WarningSettings;
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
 	mcpServers?: McpServersSettings; // Model Context Protocol stdio server configuration
+	spinnerTipsEnabled?: boolean; // default: true. When false, the working spinner tip line is suppressed.
+	spinnerTipsOverride?: SpinnerTipsOverrideSettings; // Override the built-in tip catalog with custom strings.
+	statusline?: {
+		items: StatuslineItemConfig[];
+	}; // Configurable status line items (order + on/off). When omitted, defaults from `core/statusline.ts` are used.
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -820,6 +836,67 @@ export class SettingsManager {
 	setCollapseChangelog(collapse: boolean): void {
 		this.globalSettings.collapseChangelog = collapse;
 		this.markModified("collapseChangelog");
+		this.save();
+	}
+
+	/** Whether the working spinner shows a rotating tip line. Default: true. */
+	getSpinnerTipsEnabled(): boolean {
+		return this.settings.spinnerTipsEnabled ?? true;
+	}
+
+	setSpinnerTipsEnabled(enabled: boolean): void {
+		this.globalSettings.spinnerTipsEnabled = enabled;
+		this.markModified("spinnerTipsEnabled");
+		this.save();
+	}
+
+	/**
+	 * Returns the user-supplied tip override, or `undefined` when no override
+	 * is configured. The returned object is a deep copy so callers cannot
+	 * mutate cached settings.
+	 */
+	getSpinnerTipsOverride(): SpinnerTipsOverrideSettings | undefined {
+		const override = this.settings.spinnerTipsOverride;
+		if (!override) return undefined;
+		return {
+			excludeDefault: override.excludeDefault,
+			tips: [...override.tips],
+		};
+	}
+
+	setSpinnerTipsOverride(override: SpinnerTipsOverrideSettings | undefined): void {
+		this.globalSettings.spinnerTipsOverride = override
+			? {
+					excludeDefault: override.excludeDefault,
+					tips: [...override.tips],
+				}
+			: undefined;
+		this.markModified("spinnerTipsOverride");
+		this.save();
+	}
+
+	/**
+	 * Read the configured status line items, normalizing user input (drops
+	 * unknown ids, dedupes, appends missing defaults as disabled). Always
+	 * returns at least the default catalog.
+	 */
+	getStatuslineItems(): StatuslineItemConfig[] {
+		return normalizeStatuslineItems(this.settings.statusline?.items);
+	}
+
+	/**
+	 * Persist a new status line configuration. Pass `undefined` to clear the
+	 * override and fall back to {@link normalizeStatuslineItems} defaults.
+	 */
+	setStatuslineItems(items: StatuslineItemConfig[] | undefined): void {
+		if (!items) {
+			this.globalSettings.statusline = undefined;
+		} else {
+			this.globalSettings.statusline = {
+				items: normalizeStatuslineItems(items),
+			};
+		}
+		this.markModified("statusline");
 		this.save();
 	}
 

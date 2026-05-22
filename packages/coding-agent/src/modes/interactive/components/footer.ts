@@ -2,6 +2,12 @@ import { type Component, truncateToWidth, visibleWidth } from "@neosantara/tui";
 import { getAgentWorkModeLabel, getAgentWorkModeSymbol, isDefaultAgentWorkMode } from "../../../core/agent-mode.js";
 import type { AgentSession } from "../../../core/agent-session.js";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
+import type { SettingsManager } from "../../../core/settings-manager.js";
+import {
+	DEFAULT_STATUSLINE_ITEMS,
+	type StatuslineItemConfig,
+	type StatuslineItemId,
+} from "../../../core/statusline.js";
 import { theme } from "../theme/theme.js";
 import { keyText } from "./keybinding-hints.js";
 
@@ -112,6 +118,9 @@ export function renderShortcutOverlay(width: number): string[] {
 /**
  * Footer component that shows pwd, token stats, and context usage.
  * Computes token/context stats from session, gets git branch and extension statuses from provider.
+ *
+ * Item visibility and ordering is configurable via `settings.statusline.items`.
+ * See `core/statusline.ts` for the item catalog.
  */
 export class FooterComponent implements Component {
 	private autoCompactEnabled = true;
@@ -120,10 +129,32 @@ export class FooterComponent implements Component {
 	constructor(
 		private session: AgentSession,
 		private footerData: ReadonlyFooterDataProvider,
+		private settingsManager?: SettingsManager,
 	) {}
 
 	setSession(session: AgentSession): void {
 		this.session = session;
+	}
+
+	setSettingsManager(settingsManager: SettingsManager): void {
+		this.settingsManager = settingsManager;
+	}
+
+	private getStatuslineItems(): StatuslineItemConfig[] {
+		if (this.settingsManager) {
+			return this.settingsManager.getStatuslineItems();
+		}
+		return DEFAULT_STATUSLINE_ITEMS.map((item) => ({ ...item }));
+	}
+
+	private isItemEnabled(items: StatuslineItemConfig[], id: StatuslineItemId): boolean {
+		return items.find((item) => item.id === id)?.enabled === true;
+	}
+
+	private getEnabledLeftItemsInOrder(items: StatuslineItemConfig[]): StatuslineItemId[] {
+		const leftIds: StatuslineItemId[] = ["modePill", "backgroundPill", "context", "billing", "hint"];
+		const leftSet = new Set<StatuslineItemId>(leftIds);
+		return items.filter((item) => item.enabled && leftSet.has(item.id)).map((item) => item.id);
 	}
 
 	setAutoCompactEnabled(enabled: boolean): void {
@@ -148,6 +179,7 @@ export class FooterComponent implements Component {
 
 	render(width: number): string[] {
 		const state = this.session.state;
+		const statuslineItems = this.getStatuslineItems();
 
 		// Calculate cumulative usage from ALL session entries (not just post-compaction messages)
 		let totalCost = 0;
@@ -171,15 +203,15 @@ export class FooterComponent implements Component {
 			pwd = `~${pwd.slice(home.length)}`;
 		}
 
-		// Add git branch if available
+		// Add git branch if enabled and available
 		const branch = this.footerData.getGitBranch();
-		if (branch) {
+		if (branch && this.isItemEnabled(statuslineItems, "branch")) {
 			pwd = `${pwd} (${branch})`;
 		}
 
-		// Add session name if set
+		// Add session name if enabled and set
 		const sessionName = this.session.sessionManager.getSessionName();
-		if (sessionName) {
+		if (sessionName && this.isItemEnabled(statuslineItems, "sessionName")) {
 			pwd = `${pwd} • ${sessionName}`;
 		}
 
@@ -201,9 +233,7 @@ export class FooterComponent implements Component {
 		const runningBackgroundTasks = this.session.getRunningBackgroundTaskCount();
 		const hasBackgroundTasks = runningBackgroundTasks > 0;
 
-		// Claude Code keeps the prompt footer as a compact byline: active mode/pills,
-		// current context, billing, and one or two actionable hints. Keep the path on
-		// its own line so the status row remains stable and easy to scan.
+		// Mode pill
 		const mode = this.session.agentMode;
 		const modeIsDefault = isDefaultAgentWorkMode(mode);
 		const modeColor = mode === "plan" ? "warning" : mode === "full" ? "error" : mode === "ask" ? "accent" : "success";
@@ -214,16 +244,31 @@ export class FooterComponent implements Component {
 			? theme.fg("warning", `bg ${runningBackgroundTasks} shell${runningBackgroundTasks === 1 ? "" : "s"}`)
 			: "";
 		const hintText = theme.fg("dim", formatFooterHint(this.session.isStreaming, hasBackgroundTasks));
-		const statsParts = [
+
+		// Map each left-column statusline item id to its rendered string. Items
+		// that have no content for the current state (e.g. modePill in default
+		// mode) collapse to empty strings and are filtered below.
+		const leftRenderers: Record<StatuslineItemId, string> = {
 			modePill,
 			backgroundPill,
-			theme.fg(contextColor, contextSegment.text),
-			theme.fg("dim", billingText),
-			hintText,
-		].filter((part) => part.length > 0);
+			context: theme.fg(contextColor, contextSegment.text),
+			billing: theme.fg("dim", billingText),
+			hint: hintText,
+			modelName: "",
+			thinkingLevel: "",
+			providerName: "",
+			branch: "",
+			sessionName: "",
+		};
+
+		const leftOrder = this.getEnabledLeftItemsInOrder(statuslineItems);
+		const statsParts = leftOrder.map((id) => leftRenderers[id]).filter((part) => part.length > 0);
 		let statsLeft = statsParts.join(` ${theme.fg("muted", "·")} `);
 
-		// Add model name on the right side.
+		// Build right-side items (model + thinking + provider).
+		const showModelName = this.isItemEnabled(statuslineItems, "modelName");
+		const showThinking = this.isItemEnabled(statuslineItems, "thinkingLevel");
+		const showProvider = this.isItemEnabled(statuslineItems, "providerName");
 		const modelName = state.model?.id || "no-model";
 
 		let statsLeftWidth = visibleWidth(statsLeft);
@@ -237,20 +282,25 @@ export class FooterComponent implements Component {
 		// Calculate available space for padding (minimum 2 spaces between stats and model)
 		const minPadding = 2;
 
-		// Add thinking level indicator if model supports reasoning
-		const modelParts = [modelName];
-		if (state.model?.reasoning) {
+		const modelParts: string[] = [];
+		if (showModelName) modelParts.push(modelName);
+		if (showThinking && state.model?.reasoning) {
 			const thinkingLevel = state.thinkingLevel || "off";
 			const effortSymbol = thinkingLevel === "high" ? "●" : thinkingLevel === "medium" ? "◐" : "○";
 			modelParts.push(`${effortSymbol} ${thinkingLevel}`);
 		}
-		const modelText = theme.fg("dim", modelParts.join(" • "));
+		const modelText = modelParts.length > 0 ? theme.fg("dim", modelParts.join(" • ")) : "";
 		const rightSideWithoutProvider = modelText;
 
 		// Prepend the provider in parentheses if there are multiple providers and there's enough room
 		let rightSide = rightSideWithoutProvider;
-		if (this.footerData.getAvailableProviderCount() > 1 && state.model) {
-			const withProvider = `${theme.fg("dim", `(${state.model!.provider})`)} ${rightSideWithoutProvider}`;
+		if (
+			showProvider &&
+			rightSideWithoutProvider.length > 0 &&
+			this.footerData.getAvailableProviderCount() > 1 &&
+			state.model
+		) {
+			const withProvider = `${theme.fg("dim", `(${state.model.provider})`)} ${rightSideWithoutProvider}`;
 			rightSide = withProvider;
 			if (statsLeftWidth + minPadding + visibleWidth(rightSide) > width) {
 				// Too wide, fall back
@@ -262,7 +312,9 @@ export class FooterComponent implements Component {
 		const totalNeeded = statsLeftWidth + minPadding + rightSideWidth;
 
 		let statsLine: string;
-		if (totalNeeded <= width) {
+		if (rightSideWidth === 0) {
+			statsLine = statsLeft;
+		} else if (totalNeeded <= width) {
 			// Both fit - add padding to right-align model
 			const padding = " ".repeat(width - statsLeftWidth - rightSideWidth);
 			statsLine = statsLeft + padding + rightSide;
@@ -288,7 +340,10 @@ export class FooterComponent implements Component {
 			lines.push(...renderShortcutOverlay(width));
 		}
 
-		lines.push(pwdLine, statsLine);
+		lines.push(pwdLine);
+		if (statsLine.length > 0) {
+			lines.push(statsLine);
+		}
 
 		// Add extension statuses on a single line, sorted by key alphabetically
 		const extensionStatuses = this.footerData.getExtensionStatuses();

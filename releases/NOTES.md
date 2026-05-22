@@ -347,3 +347,43 @@
 - mode: patch
 - notes: feat(ui): claude-code style spinner glyphs and effort symbols in footer
 
+## v0.76.42 (2026-05-22)
+- mode: patch
+- notes: feat(activity): use flat stacked format during gradual reveal for smoother tree build-up
+
+## v0.76.43 (2026-05-22)
+- mode: patch
+- notes: fix(activity): tree builds up progressively per reveal (500ms stagger), no flat-to-tree jump
+
+## v0.76.44 (2026-05-22)
+- mode: patch
+- notes: fix(activity): smoother tree growth - hide file targets during running, remove redundant Current line
+
+## v0.76.45 (2026-05-22)
+- mode: patch
+- notes: fix(activity): summary as tree parent with targets indented below, cleaner hierarchy
+
+## v0.76.46 (2026-05-22)
+- mode: patch
+- notes: fix(tui): show ctrl+o expand hint on completed tool groups too
+
+## v0.76.47 (2026-05-22)
+- mode: patch
+- notes: fix(tui): ctrl+o only expands last tool group when idle, not entire history
+
+## v0.76.48 (2026-05-22)
+- mode: patch
+- notes: feat(coding-agent): port Claude Code spinner-tip line below the working loader, gated by Neosantara-only catalog with per-tip session cooldowns and override settings
+
+## v0.76.49 (2026-05-22)
+- mode: patch
+- notes: feat(coding-agent): port Codex-style /statusline picker, Nusantara subagent nicknames, and /rename alias
+
+## v0.76.50 (2026-05-22)
+- mode: patch
+- notes: feat(coding-agent): add Codex/Claude-style /review with multi-target picker, prompt templates, and reviewer subagent
+
+## v0.76.51 (2026-05-22)
+- mode: patch
+- notes: feat(coding-agent): add /fork slash, high-context tip override, and Codex-style fork-to-fresh-context plan handoff
+

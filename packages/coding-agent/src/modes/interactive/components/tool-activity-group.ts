@@ -23,7 +23,7 @@ interface ToolActivityGroupOptions {
 }
 
 const MIN_HINT_DISPLAY_MS = 700;
-const DEFAULT_TOOL_REVEAL_DELAY_MS = 300;
+const DEFAULT_TOOL_REVEAL_DELAY_MS = 500;
 
 const graphemeSegmenter =
 	typeof Intl !== "undefined" && "Segmenter" in Intl
@@ -437,6 +437,8 @@ export class ToolActivityGroupComponent extends Container {
 					? `    ${keyHint("app.tools.expand", "expand live output")} · ${keyHint("app.task.background", "background")}`
 					: `    ${keyHint("app.tools.expand", "expand live tool output")}`;
 			coloredLines.push(expandHint);
+		} else if (!this.expanded && !hasRunningItems && snapshots.length > 1) {
+			coloredLines.push(`    ${keyHint("app.tools.expand", "expand output")}`);
 		}
 		return coloredLines.join("\n");
 	}

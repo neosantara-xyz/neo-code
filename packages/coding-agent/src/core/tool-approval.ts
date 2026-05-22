@@ -25,6 +25,14 @@ export interface ToolApprovalDecision {
 	reason?: string;
 	/** ExitPlanMode-only: permission mode to use after the plan is approved. */
 	nextMode?: Exclude<AgentWorkMode, "plan">;
+	/**
+	 * ExitPlanMode-only: when true, the interactive UI forks the session
+	 * after approval and re-submits the approved plan as a fresh user
+	 * message in the new thread. This mirrors Codex's "Yes, clear context
+	 * and implement" branch from `/plan` mode handoff so the implementation
+	 * starts with a clean context window.
+	 */
+	forkAfterApproval?: boolean;
 }
 
 export type ToolApprovalHandler = (

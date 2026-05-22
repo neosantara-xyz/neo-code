@@ -92,6 +92,16 @@ import { DefaultPackageManager } from "../../core/package-manager.js";
 import { exitAfterCleanup } from "../../core/process-lifecycle.js";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.js";
 import type { ResourceDiagnostic } from "../../core/resource-loader.js";
+import {
+	buildReviewKickoffMessage,
+	buildReviewUserPrompt,
+	getCommitSubject,
+	isGitRepository,
+	listLocalBranches,
+	listRecentCommits,
+	type ReviewTarget,
+	resolveMergeBase,
+} from "../../core/review/index.js";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import { getSkillDescription, getSkillDisplayName } from "../../core/skills.js";
@@ -107,10 +117,20 @@ import {
 	applyNeoTermuxTouchKeyboard,
 	findLatestTermuxPropertiesBackup,
 	getTermuxTouchKeyboardStatus,
+	isTermuxEnvironment,
 	NEO_TERMUX_EXTRA_KEYS,
 	restoreLatestTermuxTouchKeyboardBackup,
 } from "../../core/termux-touch-keyboard.js";
-import type { ToolApprovalDecision, ToolApprovalRequest } from "../../core/tool-approval.js";
+import {
+	FileTipHistoryStore,
+	pickContextOverrideTip,
+	pickTipForTurn,
+	recordShownTip,
+	type Tip,
+	type TipContext,
+	type TipHistoryStore,
+} from "../../core/tips/index.js";
+import { getExitPlanModePlan, type ToolApprovalDecision, type ToolApprovalRequest } from "../../core/tool-approval.js";
 import { formatToolInputLoadingMessage, formatToolLoadingMessage } from "../../core/tools/tool-activity.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { formatChangelogEntries, getAllChangelogEntries, getNewEntries } from "../../utils/changelog.js";
@@ -142,10 +162,12 @@ import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
 import { NeosantaraAnnouncementComponent } from "./components/neosantara-announcement.js";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.js";
+import { ReviewSelectorComponent } from "./components/review-selector.js";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.js";
+import { StatuslineSelectorComponent } from "./components/statusline-selector.js";
 import { ToolActivityGroupComponent } from "./components/tool-activity-group.js";
 import { ToolApprovalRequestComponent } from "./components/tool-approval-request.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
@@ -524,18 +546,20 @@ export class InteractiveMode {
 	private workingVisible = true;
 	private workingIndicatorOptions: LoaderIndicatorOptions | undefined = undefined;
 	private readonly defaultWorkingMessages = ["ngulik", "ngetik", "ngritik", "ngoprek"];
-	private readonly spinnerTips = [
-		"tip: /compact to free context window",
-		"tip: @file to reference files in prompt",
-		"tip: /tree to navigate conversation history",
-		"tip: ? to see all keyboard shortcuts",
-		"tip: /todo to track tasks across sessions",
-	];
 	private defaultWorkingMessageIndex = 0;
-	private spinnerTipCycle = 0;
 	private defaultWorkingMessageTimer: ReturnType<typeof setInterval> | undefined = undefined;
 	private readonly defaultHiddenThinkingLabel = "Thinking...";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
+
+	// Spinner tip line state. The tip is picked once per agent turn (in
+	// `agent_start`) and rendered as a separate `└─ tip: ...` line below
+	// the loader. Both the loader and the tip line live inside
+	// `statusContainer`, so `agent_end` clears them together.
+	private readonly tipHistory: TipHistoryStore = new FileTipHistoryStore();
+	private numStartups = 0;
+	private currentTip: Tip | undefined = undefined;
+	private currentTipText: TruncatedText | undefined = undefined;
+	private tipPickedThisTurn = false;
 
 	// Away summary state
 	private terminalBlurredAt: number | undefined = undefined;
@@ -679,7 +703,7 @@ export class InteractiveMode {
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
-		this.footer = new FooterComponent(this.session, this.footerDataProvider);
+		this.footer = new FooterComponent(this.session, this.footerDataProvider, this.settingsManager);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 
 		// Load hide thinking block setting
@@ -1010,6 +1034,12 @@ export class InteractiveMode {
 	 * Initializes the UI, shows warnings, processes initial messages, and starts the interactive loop.
 	 */
 	async run(): Promise<void> {
+		// Bump the persisted startup counter once per interactive session.
+		// This drives the spinner-tip cooldown logic in `pickTipForTurn` and
+		// is intentionally NOT bumped in `init()` so startup-benchmark mode
+		// (which calls `init()` and exits) does not inflate the counter.
+		this.numStartups = this.tipHistory.bumpNumStartups();
+
 		await this.init();
 
 		// Start version check asynchronously
@@ -2070,21 +2100,11 @@ export class InteractiveMode {
 
 	private rotateDefaultWorkingMessage(): void {
 		if (!this.loadingAnimation || this.workingMessage !== undefined) return;
-		this.spinnerTipCycle += 1;
-		// Show a tip every 3rd rotation instead of the default message
-		if (this.spinnerTipCycle % 3 === 0) {
-			const tipIndex = Math.floor(this.spinnerTipCycle / 3) % this.spinnerTips.length;
-			this.loadingAnimation.setMessage(
-				`${this.spinnerTips[tipIndex]!} (${keyText("app.interrupt")} to interrupt)`,
-				this.getWorkingIndicatorOptions(),
-			);
-		} else {
-			this.defaultWorkingMessageIndex = (this.defaultWorkingMessageIndex + 1) % this.defaultWorkingMessages.length;
-			this.loadingAnimation.setMessage(
-				`${this.getDefaultWorkingMessageText()} (${keyText("app.interrupt")} to interrupt)`,
-				this.getWorkingIndicatorOptions(),
-			);
-		}
+		this.defaultWorkingMessageIndex = (this.defaultWorkingMessageIndex + 1) % this.defaultWorkingMessages.length;
+		this.loadingAnimation.setMessage(
+			`${this.getDefaultWorkingMessageText()} (${keyText("app.interrupt")} to interrupt)`,
+			this.getWorkingIndicatorOptions(),
+		);
 		this.updateWorkingStalledState();
 	}
 
@@ -2143,6 +2163,104 @@ export class InteractiveMode {
 			this.getWorkingLoaderMessage(),
 			this.getWorkingIndicatorOptions(),
 		);
+	}
+
+	/**
+	 * Build a TipContext snapshot from current runtime state. Used both when
+	 * picking a fresh tip on `agent_start` and when re-evaluating relevance
+	 * during the same session (currently we only pick once per turn).
+	 */
+	private buildTipContext(): TipContext {
+		const contextUsage = this.session.getContextUsage();
+		const contextPercent =
+			typeof contextUsage?.percent === "number" && Number.isFinite(contextUsage.percent)
+				? contextUsage.percent
+				: undefined;
+		return {
+			settings: this.settingsManager.getGlobalSettings(),
+			platform: process.platform,
+			isTermux: isTermuxEnvironment(),
+			isSshSession: Boolean(process.env.SSH_CONNECTION || process.env.SSH_CLIENT || process.env.MOSH_CONNECTION),
+			numStartups: Math.max(1, this.numStartups),
+			contextPercent,
+		};
+	}
+
+	/**
+	 * Pick a tip for the current turn (once per `agent_start`) and append a
+	 * `└─ tip: ...` line to `statusContainer`. No-op when tips are disabled,
+	 * the catalog has no eligible entries, or the working loader is hidden.
+	 *
+	 * Pick order:
+	 *  1. Render-time overrides (e.g. high-context `/compact` reminder).
+	 *     Override tips are not recorded, so they re-fire every turn until
+	 *     the underlying condition clears.
+	 *  2. Cooldown-based catalog pick. Recorded so the per-id cooldown
+	 *     counter advances even if the line is later torn down (e.g. by an
+	 *     extension UI takeover).
+	 */
+	private pickAndAttachTipLine(): void {
+		if (this.tipPickedThisTurn) {
+			this.attachExistingTipLine();
+			return;
+		}
+		this.tipPickedThisTurn = true;
+		if (!this.workingVisible || !this.loadingAnimation) return;
+		if (!this.settingsManager.getSpinnerTipsEnabled()) {
+			this.currentTip = undefined;
+			this.currentTipText = undefined;
+			return;
+		}
+		const ctx = this.buildTipContext();
+		const override = pickContextOverrideTip(ctx);
+		if (override) {
+			// Render-time override: do NOT record. The tip should keep firing
+			// until the user reduces context (e.g. via /compact).
+			this.currentTip = override;
+			this.currentTipText = this.createTipLineComponent(override);
+			this.statusContainer.addChild(this.currentTipText);
+			return;
+		}
+		const tip = pickTipForTurn(ctx, this.tipHistory);
+		if (!tip) {
+			this.currentTip = undefined;
+			this.currentTipText = undefined;
+			return;
+		}
+		recordShownTip(tip, this.tipHistory);
+		this.currentTip = tip;
+		this.currentTipText = this.createTipLineComponent(tip);
+		this.statusContainer.addChild(this.currentTipText);
+	}
+
+	/**
+	 * Re-attach the tip line for the current turn after the loader was
+	 * recreated (retry success, working-visibility toggle). Skips when no
+	 * tip was picked this turn or when the line is already attached.
+	 */
+	private attachExistingTipLine(): void {
+		if (!this.currentTip || !this.workingVisible || !this.loadingAnimation) return;
+		if (this.currentTipText && this.statusContainer.children.includes(this.currentTipText)) {
+			return;
+		}
+		this.currentTipText = this.createTipLineComponent(this.currentTip);
+		this.statusContainer.addChild(this.currentTipText);
+	}
+
+	private createTipLineComponent(tip: Tip): TruncatedText {
+		// `TruncatedText` truncates to the current viewport width on render
+		// so very narrow terminals (Termux portrait, split panes) never
+		// wrap the tip line and break the 2-row spinner footprint.
+		const prefix = theme.fg("dim", "└─ tip:");
+		const body = theme.fg("dim", ` ${tip.content}`);
+		return new TruncatedText(`${prefix}${body}`, 1, 0);
+	}
+
+	/** Reset per-turn tip state. Called at `agent_end` and on hard resets. */
+	private clearSpinnerTipState(): void {
+		this.tipPickedThisTurn = false;
+		this.currentTip = undefined;
+		this.currentTipText = undefined;
 	}
 
 	private getStreamingProgressValue(message: AssistantMessage | undefined = this.streamingMessage): number {
@@ -2209,6 +2327,7 @@ export class InteractiveMode {
 			this.statusContainer.clear();
 			this.loadingAnimation = this.createWorkingLoader();
 			this.statusContainer.addChild(this.loadingAnimation);
+			this.attachExistingTipLine();
 			this.startDefaultWorkingMessageRotation();
 		}
 		this.ui.requestRender();
@@ -3124,6 +3243,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/review" || text.startsWith("/review ")) {
+				this.editor.setText("");
+				await this.handleReviewCommand(text);
+				return;
+			}
 			if (text === "/init") {
 				this.editor.addToHistory?.(text);
 				this.editor.setText("");
@@ -3143,6 +3267,11 @@ export class InteractiveMode {
 			if (text === "/hooks") {
 				this.handleHooksCommand();
 				this.editor.setText("");
+				return;
+			}
+			if (text === "/statusline" || text.startsWith("/statusline ")) {
+				this.editor.setText("");
+				this.handleStatuslineCommand(text);
 				return;
 			}
 			if (text === "/scoped-models") {
@@ -3176,8 +3305,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
-			if (text === "/name" || text.startsWith("/name ")) {
-				this.handleNameCommand(text);
+			if (text === "/name" || text.startsWith("/name ") || text === "/rename" || text.startsWith("/rename ")) {
+				// `/rename` is an alias for `/name` so users coming from Codex
+				// or Claude Code reach the same command.
+				const normalized = text.startsWith("/rename") ? `/name${text.slice("/rename".length)}` : text;
+				this.handleNameCommand(normalized);
 				this.editor.setText("");
 				return;
 			}
@@ -3224,6 +3356,11 @@ export class InteractiveMode {
 			if (text === "/new") {
 				this.editor.setText("");
 				await this.handleClearCommand();
+				return;
+			}
+			if (text === "/fork") {
+				this.editor.setText("");
+				await this.handleForkCommand();
 				return;
 			}
 			if (text === "/compact" || text.startsWith("/compact ")) {
@@ -3388,11 +3525,24 @@ export class InteractiveMode {
 	private resolveToolApproval(decision: ToolApprovalDecision): void {
 		const pending = this.pendingToolApproval;
 		if (!pending) return;
+
+		// Capture the plan BEFORE resolving so we can re-submit it in the fresh
+		// thread regardless of whether the underlying tool surfaces it later.
+		const forkPlan =
+			decision.forkAfterApproval && pending.request.toolName === "ExitPlanMode"
+				? getExitPlanModePlan(pending.request.args)
+				: undefined;
+
 		this.pendingToolApproval = undefined;
 		this.approvalContainer.clear();
 		this.appendResolvedToolApproval(pending.request, decision);
 		this.restorePromptEditorFocus();
 		this.setToolActivityAnimationPaused(false);
+		// Forward the decision to the agent. We do not strip `forkAfterApproval`
+		// here — downstream callers ignore unknown fields and the original
+		// behavior (`allow` / `nextMode`) remains correct so the agent's
+		// existing exit-plan-mode flow can record the approval and update its
+		// internal mode before we fork.
 		pending.resolve(decision);
 		this.setWorkingVisible(true);
 		if (decision.behavior === "allow") {
@@ -3402,6 +3552,10 @@ export class InteractiveMode {
 		}
 		this.footer.invalidate();
 		this.ui.requestRender();
+
+		if (forkPlan && forkPlan.trim().length > 0) {
+			void this.forkSessionWithPlan(forkPlan);
+		}
 	}
 
 	private handleToolApprovalInput(text: string): void {
@@ -3533,6 +3687,7 @@ export class InteractiveMode {
 				if (this.workingVisible) {
 					this.loadingAnimation = this.createWorkingLoader();
 					this.statusContainer.addChild(this.loadingAnimation);
+					this.pickAndAttachTipLine();
 					this.updateWorkingStalledState();
 				}
 				this.ui.requestRender();
@@ -3735,6 +3890,7 @@ export class InteractiveMode {
 					this.loadingAnimation = undefined;
 					this.statusContainer.clear();
 				}
+				this.clearSpinnerTipState();
 				if (this.streamingComponent) {
 					this.chatContainer.removeChild(this.streamingComponent);
 					this.streamingComponent = undefined;
@@ -4395,8 +4551,8 @@ export class InteractiveMode {
 		if (isExpandable(activeHeader)) {
 			activeHeader.setExpanded(expanded);
 		}
-		// When streaming: expand only current/pending groups (live output).
-		// When idle: expand ALL tool groups in chat (transcript-like view).
+		// When streaming: expand current/pending groups (live output).
+		// When idle: expand only the LAST tool group (most recent result).
 		if (this.session.isStreaming) {
 			if (this.currentToolActivityGroup) {
 				this.currentToolActivityGroup.setExpanded(expanded);
@@ -4405,16 +4561,14 @@ export class InteractiveMode {
 				group.setExpanded(expanded);
 			}
 		} else {
+			let lastGroup: ToolActivityGroupComponent | undefined;
 			for (const child of this.chatContainer.children) {
 				if (child instanceof ToolActivityGroupComponent) {
-					child.setExpanded(expanded);
+					lastGroup = child;
 				}
 			}
-			if (this.currentToolActivityGroup) {
-				this.currentToolActivityGroup.setExpanded(expanded);
-			}
-			for (const group of this.pendingToolGroups.values()) {
-				group.setExpanded(expanded);
+			if (lastGroup) {
+				lastGroup.setExpanded(expanded);
 			}
 		}
 		this.ui.requestRender();
@@ -4744,6 +4898,39 @@ export class InteractiveMode {
 		this.editorContainer.addChild(component);
 		this.ui.setFocus(focus);
 		this.ui.requestRender();
+	}
+
+	private handleStatuslineCommand(text: string): void {
+		const arg = text.slice("/statusline".length).trim().toLowerCase();
+		if (arg === "reset") {
+			this.settingsManager.setStatuslineItems(undefined);
+			this.footer.invalidate();
+			this.ui.requestRender();
+			this.showStatus("Status line reset to defaults");
+			return;
+		}
+		this.showStatuslineSelector();
+	}
+
+	private showStatuslineSelector(): void {
+		this.showSelector((done) => {
+			const current = this.settingsManager.getStatuslineItems();
+			const selector = new StatuslineSelectorComponent(
+				current,
+				(items) => {
+					this.settingsManager.setStatuslineItems(items);
+					this.footer.invalidate();
+					this.ui.requestRender();
+					this.showStatus("Status line updated");
+					done();
+				},
+				() => {
+					this.showStatus("Status line unchanged");
+					done();
+				},
+			);
+			return { component: selector, focus: selector };
+		});
 	}
 
 	private showSettingsSelector(): void {
@@ -7203,6 +7390,132 @@ ${theme.fg("success", "✓ Restored latest backup")}
 		return `${text.slice(0, maxChars)}\n\n${theme.fg("warning", `[truncated ${text.length - maxChars} characters]`)}`;
 	}
 
+	private async handleReviewCommand(text: string): Promise<void> {
+		if (this.session.isStreaming || this.session.isCompacting) {
+			this.showWarning("/review is unavailable while Neo Code is already working.");
+			return;
+		}
+
+		const cwd = this.sessionManager.getCwd();
+		if (!isGitRepository(cwd)) {
+			this.addPlainInfoBlock(
+				`${theme.bold("Code Review")}\n\n${theme.fg("warning", "No Git repository detected.")} /review needs Git to inspect diffs and commits.`,
+			);
+			return;
+		}
+
+		const arg = text.slice("/review".length).trim();
+		const target = await this.resolveReviewTargetFromArg(arg, cwd);
+		if (target === undefined) {
+			// Caller aborted (escape from picker or empty custom prompt). No echo.
+			return;
+		}
+		if (target === null) {
+			// Couldn't resolve due to bad arg; helper already showed the error.
+			return;
+		}
+
+		await this.runReviewWithTarget(target);
+	}
+
+	/**
+	 * Map a `/review` argument to a {@link ReviewTarget}.
+	 *
+	 * Returns:
+	 *  - `target` when the argument produced an actionable selection.
+	 *  - `null` when the argument was invalid (helper already surfaced the error).
+	 *  - `undefined` when the user opened the picker and dismissed it.
+	 */
+	private async resolveReviewTargetFromArg(arg: string, cwd: string): Promise<ReviewTarget | null | undefined> {
+		if (arg.length === 0) {
+			return await this.openReviewPicker(cwd);
+		}
+
+		const lower = arg.toLowerCase();
+
+		if (lower === "uncommitted" || lower === "diff" || lower === "wip") {
+			return { kind: "uncommitted" };
+		}
+
+		const baseMatch = arg.match(/^(?:base|branch)\s+(\S+)$/i);
+		if (baseMatch) {
+			const branch = baseMatch[1]!;
+			const sha = resolveMergeBase(cwd, branch) ?? undefined;
+			return { kind: "base-branch", branch, mergeBaseSha: sha };
+		}
+
+		const commitMatch = arg.match(/^commit\s+(\S+)$/i);
+		if (commitMatch) {
+			const sha = commitMatch[1]!;
+			const subject = getCommitSubject(cwd, sha) ?? undefined;
+			return { kind: "commit", sha, title: subject };
+		}
+
+		const prMatch = arg.match(/^pr\s+#?(\d+)$/i);
+		if (prMatch) {
+			const number = Number.parseInt(prMatch[1]!, 10);
+			if (!Number.isFinite(number) || number <= 0) {
+				this.showError(`/review pr expects a positive number, got '${prMatch[1]}'.`);
+				return null;
+			}
+			return { kind: "pull-request", number };
+		}
+
+		// Fall back to custom instructions.
+		return { kind: "custom", instructions: arg };
+	}
+
+	private openReviewPicker(cwd: string): Promise<ReviewTarget | undefined> {
+		return new Promise((resolve) => {
+			this.showSelector((done) => {
+				const branches = listLocalBranches(cwd);
+				const commits = listRecentCommits(cwd, 100);
+				const selector = new ReviewSelectorComponent(
+					{ branches, commits, cwd },
+					(target) => {
+						resolve(target);
+						done();
+					},
+					() => {
+						resolve(undefined);
+						done();
+					},
+				);
+				return { component: selector, focus: selector };
+			});
+		});
+	}
+
+	private async runReviewWithTarget(target: ReviewTarget): Promise<void> {
+		// Custom selected from picker without inline instructions: surface a
+		// hint rather than firing an empty review. Users can re-invoke with
+		// `/review <free-form text>`.
+		if (target.kind === "custom" && target.instructions.trim().length === 0) {
+			this.showWarning('Type "/review <your instructions>" to run a custom review.');
+			return;
+		}
+
+		// Hydrate base-branch merge-base if it was deferred (e.g. CLI shortcut
+		// path resolved already, but the picker path resolves here so the
+		// prompt always carries the SHA when available).
+		let resolved = target;
+		if (resolved.kind === "base-branch" && !resolved.mergeBaseSha) {
+			const sha = resolveMergeBase(this.sessionManager.getCwd(), resolved.branch) ?? undefined;
+			resolved = { ...resolved, mergeBaseSha: sha };
+		}
+
+		const kickoff = buildReviewKickoffMessage(resolved);
+		this.addPlainInfoBlock(`${theme.bold("Code Review")}\n\n${theme.fg("dim", kickoff)}`);
+
+		const userPrompt = buildReviewUserPrompt(resolved);
+		try {
+			await this.session.prompt(userPrompt);
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			this.showError(`/review failed: ${message}`);
+		}
+	}
+
 	private handleDiffCommand(text: string): void {
 		const args = text.slice("/diff".length).trim().split(/\s+/).filter(Boolean);
 		const showStatOnly = args.includes("--stat") || args.includes("stat");
@@ -7605,6 +7918,128 @@ ${theme.fg("success", "✓ Restored latest backup")}
 		} catch (error: unknown) {
 			await this.handleFatalRuntimeError("Failed to create session", error);
 		}
+	}
+
+	/**
+	 * Spawn a new session that records the current one as its parent.
+	 *
+	 * Mirrors Codex's `/fork` command: the new session is fresh (no inherited
+	 * messages), but the session-tree picker keeps the original visible as
+	 * the parent so the user can navigate back. In-memory sessions cannot
+	 * be referenced as a parent, so we treat them like `/new` instead.
+	 */
+	private async handleForkCommand(): Promise<void> {
+		const currentSessionFile = this.session.sessionFile;
+		if (!currentSessionFile) {
+			this.showWarning("/fork is unavailable in in-memory sessions; use /new instead.");
+			return;
+		}
+		if (this.session.isStreaming || this.session.isCompacting) {
+			this.showWarning("/fork is unavailable while Neo Code is already working.");
+			return;
+		}
+		if (this.loadingAnimation) {
+			this.loadingAnimation.stop();
+			this.loadingAnimation = undefined;
+		}
+		this.statusContainer.clear();
+		try {
+			const result = await this.runtimeHost.newSession({ parentSession: currentSessionFile });
+			if (result.cancelled) {
+				return;
+			}
+			this.renderCurrentSessionState();
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ Forked into a new session")}`, 1, 1));
+			this.ui.requestRender();
+		} catch (error: unknown) {
+			await this.handleFatalRuntimeError("Failed to fork session", error);
+		}
+	}
+
+	/**
+	 * Hand off an approved plan into a fresh session.
+	 *
+	 * Triggered by the "Yes, fork to fresh context" branch of the ExitPlanMode
+	 * approval popup. We wait for the current turn to wrap up after the agent
+	 * sees the approval, then fork the session (preserving the parent link in
+	 * the session tree) and submit the plan as a new user message so the
+	 * implementation runs against a clean context window.
+	 *
+	 * Failures here are surfaced to the user as warnings rather than fatal
+	 * runtime errors because the plan has already been approved in the
+	 * original thread; partial failure (e.g. fork succeeds but submit fails)
+	 * is recoverable manually.
+	 */
+	private async forkSessionWithPlan(plan: string): Promise<void> {
+		const trimmedPlan = plan.trim();
+		if (!trimmedPlan) return;
+
+		// Wait for the current turn to drain so the parent session has a
+		// chance to record the approval message before we tear it down.
+		await this.waitForSessionIdle();
+
+		const currentSessionFile = this.session.sessionFile;
+		if (!currentSessionFile) {
+			this.showWarning("Cannot fork to fresh context: current session is not persisted.");
+			return;
+		}
+
+		try {
+			const forkResult = await this.runtimeHost.newSession({ parentSession: currentSessionFile });
+			if (forkResult.cancelled) {
+				this.showStatus("Fork cancelled");
+				return;
+			}
+			this.renderCurrentSessionState();
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(
+				new Text(`${theme.fg("accent", "✓ Forked into a fresh context. Implementing plan…")}`, 1, 1),
+			);
+			this.ui.requestRender();
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			this.showWarning(`Failed to fork into fresh context: ${message}`);
+			return;
+		}
+
+		const userPrompt = [
+			"A previous plan-mode agent in this project produced the plan below to accomplish the user's task.",
+			"Implement the plan in a fresh context. Treat the plan as the source of user intent, re-read files as needed, and carry the work through implementation and verification.",
+			"",
+			trimmedPlan,
+		].join("\n");
+		try {
+			await this.session.prompt(userPrompt);
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			this.showError(`Plan implementation prompt failed: ${message}`);
+		}
+	}
+
+	/**
+	 * Resolve once the current session has stopped streaming/compacting. Polls
+	 * with a short delay; bounded so a stuck session cannot hang the fork
+	 * handoff indefinitely.
+	 */
+	private waitForSessionIdle(): Promise<void> {
+		return new Promise((resolve) => {
+			const start = Date.now();
+			const check = () => {
+				if (!this.session.isStreaming && !this.session.isCompacting) {
+					resolve();
+					return;
+				}
+				if (Date.now() - start > 30_000) {
+					// Bail out after 30s so we never deadlock the user; the
+					// caller surfaces a warning if the fork itself fails.
+					resolve();
+					return;
+				}
+				setTimeout(check, 50);
+			};
+			check();
+		});
 	}
 
 	private checkLowBalance(): void {

@@ -30,7 +30,9 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "permissions", description: "Show or change active tool permissions for the next turn" },
 	{ name: "tasks", description: "Show, inspect, or stop background shell tasks" },
 	{ name: "diff", description: "Show current Git workspace diff" },
+	{ name: "review", description: "Review uncommitted changes, a branch, a commit, or a pull request" },
 	{ name: "init", description: "Create an AGENTS.md contributor guide for this repository" },
+	{ name: "statusline", description: "Choose which items appear in the footer status line" },
 	{ name: "agents", description: "Show or initialize AGENTS.md project instructions" },
 	{ name: "skills", description: "Install or list skills" },
 	{ name: "model", description: "Select model" },
@@ -40,6 +42,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "login", description: "Configure provider authentication" },
 	{ name: "logout", description: "Remove provider authentication" },
 	{ name: "new", description: "Start a new session" },
+	{ name: "fork", description: "Fork the current chat into a new session that branches off this one" },
 	{
 		name: "compact",
 		description: "Manually compact the session context",

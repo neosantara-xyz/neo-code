@@ -869,25 +869,6 @@ function formatKindTreeLabel(
 	return formatSameKindHint(items, kind, pending, options.minimumCounts);
 }
 
-function currentActivityItem(items: ToolActivityGroupItem[]): ToolActivityGroupItem | undefined {
-	return [...items].reverse().find((item) => item.isPartial || !item.result);
-}
-
-function currentActivityLabel(item: ToolActivityGroupItem): string {
-	const activity = summarizeToolCall(item.toolName, item.args);
-	const target = compactTargetForActivity(item);
-	const suffix = target && target !== activity.compact ? ` ${target}` : "";
-	const result = item.result
-		? summarizeToolResult(item.toolName, item.args, item.result, {
-				isError: item.isError,
-				isPartial: true,
-			})
-		: undefined;
-	const progress = result?.label?.replace(/^running\s*/i, "").replace(/…$/, "");
-	const progressSuffix = progress ? ` · ${progress}` : "";
-	return compactText(`${kindVerb(activity.kind, true)}${suffix}${progressSuffix}`, 72) || "working";
-}
-
 function targetPathForAction(item: ToolActivityGroupItem, fallback = "."): string {
 	const rawPath = item.args?.file_path ?? item.args?.path;
 	if (typeof rawPath === "string" && rawPath.trim())
@@ -1041,28 +1022,9 @@ function shouldShowTargetDetails(
 	usePhaseLayout: boolean,
 ): boolean {
 	if (!usePhaseLayout || items.length === 0) return false;
+	// Only show file targets after all items in this kind are complete
+	if (items.some((item) => item.isPartial || !item.result)) return false;
 	return kind === "read" || kind === "write" || kind === "edit";
-}
-
-function kindPhaseLabel(kind: ToolActivityKind): string {
-	switch (kind) {
-		case "search":
-			return "Search";
-		case "read":
-			return "Read";
-		case "list":
-			return "List";
-		case "command":
-			return "Command";
-		case "edit":
-			return "Edit";
-		case "write":
-			return "Write";
-		case "agent":
-			return "Agent";
-		default:
-			return "Tool";
-	}
 }
 
 function targetDetailLabels(items: ToolActivityGroupItem[], maxItems = 3): string[] {
@@ -1087,11 +1049,6 @@ function appendTargetDetailRows(rows: string[], targets: string[], basePrefix: s
 	}
 }
 
-function appendCurrentRows(rows: string[], item: ToolActivityGroupItem): void {
-	rows.push("  └─ Current");
-	rows.push(`     ⠋ ${currentActivityLabel(item)}`);
-}
-
 function appendPhaseRows(
 	rows: string[],
 	kind: ToolActivityKind,
@@ -1100,10 +1057,7 @@ function appendPhaseRows(
 	showTargets: boolean,
 	connector: "├─" | "└─",
 ): void {
-	rows.push(`  ${connector} ${kindPhaseLabel(kind)}`);
-	const childPrefix = connector === "└─" ? "     " : "  │  ";
 	const targets = shouldShowTargetDetails(kind, kindItems, true) ? targetDetailLabels(kindItems) : [];
-	const summaryConnector = targets.length > 0 ? "├─" : "└─";
 	const summary =
 		targets.length > 0
 			? (formatKindCount(
@@ -1112,7 +1066,8 @@ function appendPhaseRows(
 					hasIncompleteItems(kindItems),
 				) ?? `${kindVerb(kind, hasIncompleteItems(kindItems))} ${kindItems.length}`)
 			: formatKindTreeLabel(kind, kindItems, options, showTargets);
-	rows.push(`${childPrefix}${summaryConnector} ${summary}`);
+	rows.push(`  ${connector} ${summary}`);
+	const childPrefix = connector === "└─" ? "     " : "  │  ";
 	appendTargetDetailRows(rows, targets, childPrefix);
 }
 
@@ -1148,14 +1103,13 @@ function formatToolActivityTree(
 	const groups = orderedKindGroups(items);
 	if (groups.length === 0) return [];
 	const showTargets = groups.length === 1;
-	const current = currentActivityItem(items);
-	const hasCurrent = Boolean(current);
-	const usePhaseLayout = forcePhaseLayout || hasCurrent || groups.length > 1;
+	const hasIncomplete = hasIncompleteItems(items);
+	const usePhaseLayout = forcePhaseLayout || hasIncomplete || groups.length > 1;
 
 	const rows: string[] = [];
 	for (let index = 0; index < groups.length; index++) {
 		const [kind, kindItems] = groups[index]!;
-		const connector = hasCurrent || index < groups.length - 1 ? "├─" : "└─";
+		const connector = index < groups.length - 1 ? "├─" : "└─";
 		if (usePhaseLayout) {
 			appendPhaseRows(rows, kind, kindItems, options, showTargets, connector);
 		} else {
@@ -1164,8 +1118,6 @@ function formatToolActivityTree(
 			appendTargetDetailRows(rows, targets, "  │  ");
 		}
 	}
-
-	if (current) appendCurrentRows(rows, current);
 
 	return rows;
 }
