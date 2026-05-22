@@ -331,3 +331,19 @@
 - mode: patch
 - notes: fix(tui): slower tool reveal stagger (300ms) for smoother tree build-up like codex
 
+## v0.76.38 (2026-05-22)
+- mode: patch
+- notes: fix(interrupt): Ctrl+C now resolves pending tool approval before aborting - prevents stuck agent
+
+## v0.76.39 (2026-05-22)
+- mode: patch
+- notes: fix(compaction): remove redundant _resolveRetry in input rate limit handler - _runAutoCompaction already retries
+
+## v0.76.40 (2026-05-22)
+- mode: patch
+- notes: fix(footer): shorten mode pill to prevent truncation on narrow terminals (Termux)
+
+## v0.76.41 (2026-05-22)
+- mode: patch
+- notes: feat(ui): claude-code style spinner glyphs and effort symbols in footer
+

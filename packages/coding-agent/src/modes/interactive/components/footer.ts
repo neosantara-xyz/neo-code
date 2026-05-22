@@ -1,10 +1,5 @@
 import { type Component, truncateToWidth, visibleWidth } from "@neosantara/tui";
-import {
-	getAgentWorkModeFooterDetail,
-	getAgentWorkModeLabel,
-	getAgentWorkModeSymbol,
-	isDefaultAgentWorkMode,
-} from "../../../core/agent-mode.js";
+import { getAgentWorkModeLabel, getAgentWorkModeSymbol, isDefaultAgentWorkMode } from "../../../core/agent-mode.js";
 import type { AgentSession } from "../../../core/agent-session.js";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
 import { theme } from "../theme/theme.js";
@@ -214,10 +209,7 @@ export class FooterComponent implements Component {
 		const modeColor = mode === "plan" ? "warning" : mode === "full" ? "error" : mode === "ask" ? "accent" : "success";
 		const modePill = modeIsDefault
 			? ""
-			: `${theme.fg(modeColor, `${getAgentWorkModeSymbol(mode)} ${getAgentWorkModeLabel(mode).toLowerCase()} on`)}${theme.fg(
-					"dim",
-					` · ${getAgentWorkModeFooterDetail(mode)}`,
-				)}`;
+			: theme.fg(modeColor, `${getAgentWorkModeSymbol(mode)} ${getAgentWorkModeLabel(mode).toLowerCase()}`);
 		const backgroundPill = hasBackgroundTasks
 			? theme.fg("warning", `bg ${runningBackgroundTasks} shell${runningBackgroundTasks === 1 ? "" : "s"}`)
 			: "";
@@ -249,7 +241,8 @@ export class FooterComponent implements Component {
 		const modelParts = [modelName];
 		if (state.model?.reasoning) {
 			const thinkingLevel = state.thinkingLevel || "off";
-			modelParts.push(thinkingLevel === "off" ? "thinking off" : thinkingLevel);
+			const effortSymbol = thinkingLevel === "high" ? "●" : thinkingLevel === "medium" ? "◐" : "○";
+			modelParts.push(`${effortSymbol} ${thinkingLevel}`);
 		}
 		const modelText = theme.fg("dim", modelParts.join(" • "));
 		const rightSideWithoutProvider = modelText;

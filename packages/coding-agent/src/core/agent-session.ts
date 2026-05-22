@@ -111,6 +111,16 @@ export interface ParsedSkillBlock {
 	userMessage: string | undefined;
 }
 
+export function isInputTokenRateLimitErrorMessage(
+	message: Pick<AssistantMessage, "stopReason" | "errorMessage">,
+): boolean {
+	if (message.stopReason !== "error" || !message.errorMessage) return false;
+	const err = message.errorMessage;
+	const isRateLimit = /429|rate.?limit|too many requests|itpm_exceeded/i.test(err);
+	if (!isRateLimit) return false;
+	return /itpm|input.?tokens?|input token throughput|tokens per minute|tpm/i.test(err);
+}
+
 /**
  * Parse a skill block from message text.
  * Returns null if the text doesn't contain a skill block.
@@ -136,13 +146,13 @@ export type AgentSessionEvent =
 			steering: readonly string[];
 			followUp: readonly string[];
 	  }
-	| { type: "compaction_start"; reason: "manual" | "threshold" | "overflow" }
+	| { type: "compaction_start"; reason: "manual" | "threshold" | "overflow" | "input_rate_limit" }
 	| { type: "session_info_changed"; name: string | undefined }
 	| { type: "thinking_level_changed"; level: ThinkingLevel }
 	| { type: "agent_mode_changed"; mode: AgentWorkMode }
 	| {
 			type: "compaction_end";
-			reason: "manual" | "threshold" | "overflow";
+			reason: "manual" | "threshold" | "overflow" | "input_rate_limit";
 			result: CompactionResult | undefined;
 			aborted: boolean;
 			willRetry: boolean;
@@ -326,6 +336,7 @@ export class AgentSession {
 	private _compactionAbortController: AbortController | undefined = undefined;
 	private _autoCompactionAbortController: AbortController | undefined = undefined;
 	private _overflowRecoveryAttempted = false;
+	private _inputRateLimitRecoveryAttempted = false;
 	private _autoCompactionFailureCount = 0;
 
 	// Branch summarization state
@@ -591,6 +602,7 @@ export class AgentSession {
 		// This ensures the UI sees the updated queue state
 		if (event.type === "message_start" && event.message.role === "user") {
 			this._overflowRecoveryAttempted = false;
+			this._inputRateLimitRecoveryAttempted = false;
 			const messageText = this._getUserMessageText(event.message);
 			if (messageText) {
 				// Check steering queue first
@@ -662,6 +674,11 @@ export class AgentSession {
 		if (event.type === "agent_end" && this._lastAssistantMessage) {
 			const msg = this._lastAssistantMessage;
 			this._lastAssistantMessage = undefined;
+
+			if (this._isInputTokenRateLimitError(msg)) {
+				const didRecover = await this._handleInputTokenRateLimit(msg);
+				if (didRecover) return;
+			}
 
 			// Check for retryable errors first (overloaded, rate limit, server errors)
 			if (this._isRetryableError(msg)) {
@@ -2150,10 +2167,34 @@ export class AgentSession {
 		}
 	}
 
+	private _isInputTokenRateLimitError(message: AssistantMessage): boolean {
+		return isInputTokenRateLimitErrorMessage(message);
+	}
+
+	private async _handleInputTokenRateLimit(message: AssistantMessage): Promise<boolean> {
+		if (this._inputRateLimitRecoveryAttempted) return false;
+
+		const settings = this.settingsManager.getCompactionSettings();
+		if (!settings.enabled) return false;
+		if (!prepareCompaction(this.sessionManager.getBranch(), settings)) return false;
+
+		this._inputRateLimitRecoveryAttempted = true;
+		const messages = this.agent.state.messages;
+		if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
+			this.agent.state.messages = messages.slice(0, -1);
+		}
+		this._branchBeforeAssistantMessage(message);
+		await this._runAutoCompaction("input_rate_limit", true);
+		return true;
+	}
+
 	/**
 	 * Internal: Run auto-compaction with events.
 	 */
-	private async _runAutoCompaction(reason: "overflow" | "threshold", willRetry: boolean): Promise<void> {
+	private async _runAutoCompaction(
+		reason: "overflow" | "threshold" | "input_rate_limit",
+		willRetry: boolean,
+	): Promise<void> {
 		const settings = this.settingsManager.getCompactionSettings();
 
 		if (reason === "threshold" && this._autoCompactionFailureCount >= MAX_AUTO_COMPACTION_FAILURES) {

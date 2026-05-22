@@ -3763,7 +3763,13 @@ export class InteractiveMode {
 				const label =
 					event.reason === "manual"
 						? `Compacting context... ${cancelHint}`
-						: `${event.reason === "overflow" ? "Context overflow detected, " : ""}Auto-compacting... ${cancelHint}`;
+						: `${
+								event.reason === "overflow"
+									? "Context overflow detected, "
+									: event.reason === "input_rate_limit"
+										? "Input token limit hit, "
+										: ""
+							}Auto-compacting... ${cancelHint}`;
 				this.autoCompactionLoader = new Loader(
 					this.ui,
 					(spinner) => theme.fg("accent", spinner),
@@ -4122,6 +4128,12 @@ export class InteractiveMode {
 			void this.shutdown();
 		} else {
 			// First Ctrl+C: abort agent if running/retrying, otherwise clear editor
+			if (this.pendingToolApproval) {
+				this.resolveToolApproval({
+					behavior: "deny",
+					reason: "User interrupted with Ctrl+C",
+				});
+			}
 			if (this.session.isStreaming || this.session.isBashRunning || this.session.retryAttempt > 0) {
 				this.restoreQueuedMessagesToEditor({ abort: true });
 			}

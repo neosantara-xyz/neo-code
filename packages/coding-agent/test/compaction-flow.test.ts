@@ -1,5 +1,6 @@
 import type { AssistantMessage } from "@neosantara/ai";
 import { describe, expect, it } from "vitest";
+import { isInputTokenRateLimitErrorMessage } from "../src/core/agent-session.js";
 import {
 	calculateContextTokens,
 	estimateRawContextTokens,
@@ -54,5 +55,39 @@ describe("post-compact context estimates", () => {
 
 		expect(calculateContextTokens(assistant.usage)).toBe(910_000);
 		expect(estimateRawContextTokens([assistant])).toBeLessThan(20);
+	});
+});
+
+describe("input token rate limit detection", () => {
+	it("detects ITPM 429s as compaction-recoverable", () => {
+		expect(
+			isInputTokenRateLimitErrorMessage({
+				stopReason: "error",
+				errorMessage: "429 rate_limit_exceeded: Input token throughput limit exceeded. Please try again later.",
+			}),
+		).toBe(true);
+
+		expect(
+			isInputTokenRateLimitErrorMessage({
+				stopReason: "error",
+				errorMessage: "itpm_exceeded: input tokens per minute quota exceeded",
+			}),
+		).toBe(true);
+	});
+
+	it("does not treat output-token or generic server 429s as input compaction signals", () => {
+		expect(
+			isInputTokenRateLimitErrorMessage({
+				stopReason: "error",
+				errorMessage: "429 rate_limit_exceeded: Output token throughput limit exceeded.",
+			}),
+		).toBe(false);
+
+		expect(
+			isInputTokenRateLimitErrorMessage({
+				stopReason: "error",
+				errorMessage: "429 Too many requests. Please try again later.",
+			}),
+		).toBe(false);
 	});
 });

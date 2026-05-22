@@ -56,22 +56,18 @@ ok()      { printf "  ${GREEN}[%s]${RESET} ${DIM}ok${RESET}\n" "$1"; }
 print_header() {
   ref="${1:-latest}"
   printf '\n'
-  printf "${BLUE}  ╔══════════════════════════════════════╗${RESET}\n"
-  printf "${BLUE}  ║${RESET}  ${BOLD}Neo Code Installer${RESET}               ${BLUE}║${RESET}\n"
-  printf "${BLUE}  ║${RESET}  ${DIM}%s${RESET}                   ${BLUE}║${RESET}\n" "$ref"
-  printf "${BLUE}  ╚══════════════════════════════════════╝${RESET}\n"
+  printf "  ${CYAN}[o_o]${RESET} ${BOLD}Neo Code${RESET}\n"
+  printf "  ${CYAN}/|_|\\${RESET} ${DIM}installer ${ref}${RESET}\n"
   printf '\n'
 }
 
 print_summary() {
   cmd="${1:-neo}"
   printf '\n'
-  printf "${GREEN}  ╔══════════════════════════════════════╗${RESET}\n"
-  printf "${GREEN}  ║${RESET}  ${BOLD}Neo Code installed${RESET}                ${GREEN}║${RESET}\n"
+  printf "  ${GREEN}[o_o]${RESET} ${BOLD}Neo Code installed${RESET}\n"
   if [ -n "${INSTALLED_VERSION:-}" ]; then
-    printf "${GREEN}  ║${RESET}  ${DIM}version %s${RESET}                   ${GREEN}║${RESET}\n" "$INSTALLED_VERSION"
+    printf "  ${GREEN}/|_|\\${RESET} ${DIM}version %s${RESET}\n" "$INSTALLED_VERSION"
   fi
-  printf "${GREEN}  ╚══════════════════════════════════════╝${RESET}\n"
   printf '\n'
   success "Run: ${BOLD}neo${RESET} login"
   if ! command -v neo >/dev/null 2>&1 && [ "$DRY_RUN" != "1" ] && [ "$cmd" = "neo" ]; then
@@ -85,10 +81,11 @@ print_summary() {
 
 bundle_install_url() {
   release_ref="$1"
+  cache_buster="$(date +%s 2>/dev/null || printf '%s' "$release_ref")"
   if [ -n "$DOWNLOAD_BASE_URL" ]; then
-    printf '%s/releases/%s/neo-termux-npm-bundle.tar.gz' "$DOWNLOAD_BASE_URL" "$release_ref"
+    printf '%s/releases/%s/neo-termux-npm-bundle.tar.gz?neo_code_cache=%s' "$DOWNLOAD_BASE_URL" "$release_ref" "$cache_buster"
   else
-    printf 'https://github.com/%s/releases/download/%s/neo-termux-npm-bundle.tar.gz' "$REPO" "$release_ref"
+    printf 'https://github.com/%s/releases/download/%s/neo-termux-npm-bundle.tar.gz?neo_code_cache=%s' "$REPO" "$release_ref" "$cache_buster"
   fi
 }
 

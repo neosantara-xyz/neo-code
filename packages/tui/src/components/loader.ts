@@ -44,7 +44,8 @@ export interface LoaderIndicatorOptions {
 	statusColorFn?: (str: string) => string;
 }
 
-const DEFAULT_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const GLYPH_CHARS = ["·", "✢", "✳", "✶", "✻", "✽"];
+const DEFAULT_FRAMES = [...GLYPH_CHARS, ...[...GLYPH_CHARS].reverse()];
 const DEFAULT_INTERVAL_MS = 80;
 const DEFAULT_SHIMMER_INTERVAL_MS = 60;
 const DEFAULT_SHIMMER_WIDTH = 3;

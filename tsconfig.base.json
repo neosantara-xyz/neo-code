@@ -10,7 +10,7 @@
 		"declaration": true,
 		"declarationMap": true,
 		"sourceMap": true,
-		"inlineSources": true,
+		"inlineSources": false,
 		"inlineSourceMap": false,
 		"moduleResolution": "Node16",
 		"resolveJsonModule": true,

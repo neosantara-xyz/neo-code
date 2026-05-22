@@ -42,7 +42,7 @@ describe("install.sh", () => {
 		);
 
 		expect(output).toContain("https://code.neosantara.xyz/releases/v0.74.0/neo-linux-x64.tar.gz");
-		expect(output).toContain("Neo Code Installer");
+		expect(output).toContain("Neo Code");
 		expect(output).toContain("[fetch] Downloading neo-linux-x64.tar.gz");
 		expect(output).toContain(`ln -s ${home}/.local/neo/neo ${home}/.local/bin/neo`);
 	});
