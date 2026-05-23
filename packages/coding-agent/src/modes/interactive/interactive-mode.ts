@@ -88,6 +88,7 @@ import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.js";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.js";
 import { loginWithNeosantaraDeviceAuth } from "../../core/neosantara-device-auth.js";
+import { openLocal } from "../../core/open-file.js";
 import { DefaultPackageManager } from "../../core/package-manager.js";
 import { exitAfterCleanup } from "../../core/process-lifecycle.js";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.js";
@@ -113,6 +114,14 @@ import {
 	type InstallTelemetryEvent,
 	isInstallTelemetryEnabled,
 } from "../../core/telemetry.js";
+import {
+	getTermuxApiCapabilities,
+	getTermuxStatusSnapshot,
+	listTermuxApiTools,
+	summarizeTermuxApiCapabilities,
+	termuxNotify,
+	termuxVibrate,
+} from "../../core/termux-api.js";
 import {
 	applyNeoTermuxTouchKeyboard,
 	findLatestTermuxPropertiesBackup,
@@ -564,6 +573,11 @@ export class InteractiveMode {
 	// Away summary state
 	private terminalBlurredAt: number | undefined = undefined;
 	private workCompletedWhileAway = false;
+	/**
+	 * `Date.now()` at the most recent `agent_start`. Used by the opt-in
+	 * Termux completion notification to filter short turns.
+	 */
+	private currentTurnStartedAt: number | undefined = undefined;
 
 	// Low balance warning state
 	private lowBalanceWarningShown = false;
@@ -2180,6 +2194,7 @@ export class InteractiveMode {
 			settings: this.settingsManager.getGlobalSettings(),
 			platform: process.platform,
 			isTermux: isTermuxEnvironment(),
+			termuxApiAvailable: getTermuxApiCapabilities().available,
 			isSshSession: Boolean(process.env.SSH_CONNECTION || process.env.SSH_CLIENT || process.env.MOSH_CONNECTION),
 			numStartups: Math.max(1, this.numStartups),
 			contextPercent,
@@ -3179,6 +3194,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/termux-status") {
+				this.handleTermuxStatusCommand();
+				this.editor.setText("");
+				return;
+			}
 			if (text === "/mode" || text.startsWith("/mode ")) {
 				this.editor.setText("");
 				await this.handleModeCommand(text);
@@ -3297,6 +3317,11 @@ export class InteractiveMode {
 			}
 			if (text === "/share") {
 				await this.handleShareCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text.startsWith("/share ")) {
+				await this.handleShareCommand(text.slice("/share ".length).trim());
 				this.editor.setText("");
 				return;
 			}
@@ -3666,6 +3691,7 @@ export class InteractiveMode {
 				this.pendingToolGroups.clear();
 				this.activeToolExecutionIds.clear();
 				this.currentToolActivityGroup = undefined;
+				this.currentTurnStartedAt = Date.now();
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
 				}
@@ -3881,6 +3907,8 @@ export class InteractiveMode {
 				if (this.terminalBlurredAt) {
 					this.workCompletedWhileAway = true;
 				}
+				this.maybeSendTermuxCompletionNotification();
+				this.currentTurnStartedAt = undefined;
 				this.checkLowBalance();
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
@@ -6111,7 +6139,17 @@ export class InteractiveMode {
 		}
 	}
 
-	private async handleShareCommand(): Promise<void> {
+	private async handleShareCommand(arg?: string): Promise<void> {
+		const subcommand = arg?.trim().toLowerCase();
+		if (subcommand === "local" || subcommand === "open") {
+			await this.handleShareLocal();
+			return;
+		}
+		if (subcommand && subcommand !== "gist") {
+			this.showError(`Unknown /share argument: ${subcommand}. Try /share, /share local, or /share gist.`);
+			return;
+		}
+
 		// Check if gh is available and logged in
 		try {
 			const authResult = spawnSync("gh", ["auth", "status"], {
@@ -6209,6 +6247,54 @@ export class InteractiveMode {
 				this.showError(`Failed to create gist: ${error instanceof Error ? error.message : "Unknown error"}`);
 			}
 		}
+	}
+
+	/**
+	 * Local share: export the session to HTML, then hand the file off to
+	 * the OS share/open mechanism. On Termux that's `termux-share`
+	 * (which opens the Android share sheet), on macOS `open`, on Linux
+	 * `xdg-open`, on Windows `start`.
+	 *
+	 * Unlike `/share` (gist), this never uploads anything: the file
+	 * stays in `~/.neo-code/exports/` so the user controls what leaves
+	 * the device.
+	 */
+	private async handleShareLocal(): Promise<void> {
+		const exportsDir = path.join(getAgentDir(), "exports");
+		try {
+			fs.mkdirSync(exportsDir, { recursive: true });
+		} catch (error) {
+			this.showError(
+				`Failed to prepare export directory: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			return;
+		}
+		const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+		const filePath = path.join(exportsDir, `session-${stamp}.html`);
+
+		try {
+			await this.session.exportToHtml(filePath);
+		} catch (error: unknown) {
+			this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
+			return;
+		}
+
+		const result = openLocal(filePath);
+		if (result.ok) {
+			this.showStatus(`Shared via ${result.resolution.label}\n${filePath}`);
+			return;
+		}
+
+		// Surface a useful fallback so the user can still pick the file up
+		// manually if the OS opener was missing or denied.
+		const detail = result.error ? ` (${result.error})` : "";
+		this.addPlainInfoBlock(
+			`${theme.bold("Local share")}
+
+${theme.fg("warning", `Could not auto-open via ${result.resolution.label}${detail}.`)}
+${theme.fg("dim", "File:")} ${filePath}
+${theme.fg("dim", "Hint:")} on Termux run \`pkg install termux-api\` and grant the matching Android app's storage permission.`,
+		);
 	}
 
 	private async handleCopyCommand(): Promise<void> {
@@ -6994,6 +7080,78 @@ ${theme.fg("success", "✓ Restored latest backup")}
 		this.addPlainInfoBlock(info);
 	}
 
+	private handleTermuxStatusCommand(): void {
+		const snapshot = getTermuxStatusSnapshot();
+		const keyboardStatus = getTermuxTouchKeyboardStatus();
+		const tools = listTermuxApiTools();
+
+		let info = `${theme.bold("Termux environment")}
+
+`;
+		info += `${this.formatDoctorLine("Termux app:", snapshot.isTermux ? "ok" : "warn", snapshot.isTermux ? `detected${snapshot.termuxVersion ? ` (TERMUX_VERSION=${snapshot.termuxVersion})` : ""}` : "not detected; this command is intended for Termux on Android")}
+`;
+		info += `${this.formatDoctorLine("Termux:API package:", snapshot.capabilities.available ? "ok" : "warn", snapshot.capabilities.available ? `installed (${snapshot.availableCount}/${snapshot.totalCount} tools)` : "missing — install with: pkg install termux-api")}
+`;
+		info += `${this.formatDoctorLine("PREFIX:", snapshot.prefix ? "ok" : "warn", snapshot.prefix ?? "not set")}
+
+`;
+
+		info += `${theme.bold("Touch keyboard")}
+`;
+		info += `${this.formatDoctorLine("~/.termux/termux.properties:", keyboardStatus.usesNeoLayout ? "ok" : keyboardStatus.exists ? "warn" : "warn", keyboardStatus.usesNeoLayout ? "Neo layout active" : keyboardStatus.exists ? "custom layout present; /termux-keys apply installs Neo layout" : "not configured; /termux-keys apply on Termux")}
+`;
+		info += `${this.formatDoctorLine("termux-reload-settings:", keyboardStatus.reloadCommandAvailable ? "ok" : "warn", keyboardStatus.reloadCommandAvailable ? "available" : "not found; restart Termux after applying")}
+
+`;
+
+		info += `${theme.bold("Clipboard")}
+`;
+		info += `${this.formatDoctorLine("text get:", snapshot.capabilities.clipboardGet ? "ok" : "warn", snapshot.capabilities.clipboardGet ? "termux-clipboard-get ok" : "termux-clipboard-get missing")}
+`;
+		info += `${this.formatDoctorLine("text set:", snapshot.capabilities.clipboardSet ? "ok" : "warn", snapshot.capabilities.clipboardSet ? "termux-clipboard-set ok" : "termux-clipboard-set missing")}
+`;
+		info += `${this.formatDoctorLine("image:", "warn", "not available on Termux (text-only clipboard)")}
+
+`;
+
+		info += `${theme.bold("Notifications")}
+`;
+		info += `${this.formatDoctorLine("termux-notification:", snapshot.capabilities.notification ? "ok" : "warn", snapshot.capabilities.notification ? "ok" : "missing")}
+`;
+		info += `${this.formatDoctorLine("termux-vibrate:", snapshot.capabilities.vibrate ? "ok" : "warn", snapshot.capabilities.vibrate ? "ok" : "missing")}
+`;
+		info += `${this.formatDoctorLine("termux-toast:", snapshot.capabilities.toast ? "ok" : "warn", snapshot.capabilities.toast ? "ok" : "missing")}
+
+`;
+
+		info += `${theme.bold("Sharing")}
+`;
+		info += `${this.formatDoctorLine("termux-share:", snapshot.capabilities.share ? "ok" : "warn", snapshot.capabilities.share ? "ok" : "missing")}
+
+`;
+
+		info += `${theme.bold("Tool catalog")}
+`;
+		for (let i = 0; i < tools.length; i++) {
+			const [id, command] = tools[i]!;
+			const branch = i === tools.length - 1 ? "└─" : "├─";
+			const ok = snapshot.capabilities[id];
+			const marker = ok ? theme.fg("success", "ok  ") : theme.fg("warning", "miss");
+			info += `${branch} ${marker} ${theme.fg("dim", command)}
+`;
+		}
+
+		if (!snapshot.capabilities.available) {
+			info += `
+${theme.fg("dim", "Tip: install Termux:API with `pkg install termux-api`, then install the matching Termux:API Android app from F-Droid.")}`;
+		} else {
+			info += `
+${theme.fg("dim", "Tip: enable opt-in completion notifications via /settings (notifications.termux.enabled).")}`;
+		}
+
+		this.addPlainInfoBlock(info);
+	}
+
 	private handleDoctorCommand(): void {
 		const stats = this.session.getSessionStats();
 		const model = this.session.model;
@@ -7037,7 +7195,9 @@ ${theme.fg("success", "✓ Restored latest backup")}
 		info += `${this.formatDoctorLine("fd:", fdPath ? "ok" : "warn", fdPath ?? "not found; file autocomplete may be degraded")}\n\n`;
 		info += `${theme.bold("Termux")}\n`;
 		info += `${this.formatDoctorLine("Environment:", termuxKeyboard.isTermux ? "ok" : "warn", termuxKeyboard.isTermux ? "detected" : "not detected")}\n`;
-		info += `${this.formatDoctorLine("Touch keys:", termuxKeyboard.usesNeoLayout ? "ok" : termuxKeyboard.hasExtraKeys ? "warn" : "warn", termuxKeyboard.usesNeoLayout ? "Neo layout active" : termuxKeyboard.hasExtraKeys ? "custom layout present; /termux-keys apply can install Neo layout" : "not configured; use /termux-keys apply on Termux")}\n\n`;
+		info += `${this.formatDoctorLine("Touch keys:", termuxKeyboard.usesNeoLayout ? "ok" : termuxKeyboard.hasExtraKeys ? "warn" : "warn", termuxKeyboard.usesNeoLayout ? "Neo layout active" : termuxKeyboard.hasExtraKeys ? "custom layout present; /termux-keys apply can install Neo layout" : "not configured; use /termux-keys apply on Termux")}\n`;
+		const termuxApiCaps = getTermuxApiCapabilities();
+		info += `${this.formatDoctorLine("Termux:API tools:", termuxApiCaps.available ? "ok" : "warn", `${summarizeTermuxApiCapabilities(termuxApiCaps)} — see /termux-status`)}\n\n`;
 		info += `${theme.bold("Resources")}\n`;
 		info += `${this.formatDoctorLine("Diagnostics:", errors.length > 0 ? "fail" : warnings.length > 0 ? "warn" : "ok", `${errors.length} errors, ${warnings.length} warnings`)}\n`;
 		for (const diagnostic of [...errors, ...warnings].slice(0, 5)) {
@@ -8076,6 +8236,54 @@ ${theme.fg("success", "✓ Restored latest backup")}
 	private handleTerminalBlur(): void {
 		this.terminalBlurredAt = Date.now();
 		this.workCompletedWhileAway = false;
+	}
+
+	/**
+	 * Fire an opt-in Termux:API completion notification when:
+	 *  - `notifications.termux.enabled` is true,
+	 *  - the terminal is currently unfocused (or was blurred at any point
+	 *    during the turn — `terminalBlurredAt` is set), and
+	 *  - the turn took at least `minDurationMs`.
+	 *
+	 * Safe no-op when Termux:API is not installed or anything fails: the
+	 * underlying wrappers never throw.
+	 */
+	private maybeSendTermuxCompletionNotification(): void {
+		const startedAt = this.currentTurnStartedAt;
+		if (!startedAt) return;
+		if (!this.terminalBlurredAt) return;
+		const settings = this.settingsManager.getTermuxNotificationSettings();
+		if (!settings.enabled) return;
+		const durationMs = Date.now() - startedAt;
+		if (durationMs < settings.minDurationMs) return;
+		const caps = getTermuxApiCapabilities();
+		if (!caps.notification && !caps.vibrate) return;
+
+		const seconds = Math.round(durationMs / 1000);
+		const durationLabel = seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
+		const sessionName = this.session.sessionManager.getSessionName();
+		const title = sessionName ? `Neo Code · ${sessionName}` : "Neo Code";
+		const content = `Turn finished in ${durationLabel}. Tap to return.`;
+
+		try {
+			termuxNotify({
+				title,
+				content,
+				id: "neo-code-turn-complete",
+				priority: "default",
+				sound: settings.sound,
+				group: "neo-code",
+			});
+		} catch {
+			// termuxNotify already swallows errors; this is belt-and-braces.
+		}
+		if (settings.vibrate) {
+			try {
+				termuxVibrate(150);
+			} catch {
+				// no-op
+			}
+		}
 	}
 
 	private handleTerminalFocus(): void {
