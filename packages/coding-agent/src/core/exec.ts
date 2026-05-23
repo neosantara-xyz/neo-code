@@ -48,13 +48,16 @@ export async function execCommand(
 		let stderr = "";
 		let killed = false;
 		let timeoutId: NodeJS.Timeout | undefined;
+		let sigkillTimeoutId: NodeJS.Timeout | undefined;
 
 		const killProcess = () => {
 			if (!killed) {
 				killed = true;
 				proc.kill("SIGTERM");
-				// Force kill after 5 seconds if SIGTERM doesn't work
-				setTimeout(() => {
+				// Force kill after 5 seconds if SIGTERM doesn't work. The handle is
+				// captured so the timer can be cleared once the child exits cleanly,
+				// avoiding a 5-second event loop hold per killed command.
+				sigkillTimeoutId = setTimeout(() => {
 					if (!proc.killed) {
 						proc.kill("SIGKILL");
 					}
@@ -86,18 +89,23 @@ export async function execCommand(
 			stderr += data.toString();
 		});
 
+		const cleanupTimers = () => {
+			if (timeoutId) clearTimeout(timeoutId);
+			if (sigkillTimeoutId) clearTimeout(sigkillTimeoutId);
+		};
+
 		// Wait for process termination without hanging on inherited stdio handles
 		// held open by detached descendants.
 		waitForChildProcess(proc)
 			.then((code) => {
-				if (timeoutId) clearTimeout(timeoutId);
+				cleanupTimers();
 				if (options?.signal) {
 					options.signal.removeEventListener("abort", killProcess);
 				}
 				resolve({ stdout, stderr, code: code ?? 0, killed });
 			})
 			.catch((_err) => {
-				if (timeoutId) clearTimeout(timeoutId);
+				cleanupTimers();
 				if (options?.signal) {
 					options.signal.removeEventListener("abort", killProcess);
 				}
