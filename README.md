@@ -11,6 +11,30 @@ Neo Code is a Neosantara-first coding agent CLI.
 | `@neosantara/agent-core` | Agent loop/runtime primitives. |
 | `@neosantara/tui` | Terminal UI primitives. |
 
+## Development workflow
+
+```bash
+# Install all workspace dependencies.
+npm install --ignore-scripts
+
+# Build all packages in dependency order. Uses npm workspace flags
+# (-w @neosantara/...), portable on POSIX shells and Windows.
+npm run build
+
+# Lint + typecheck. Run after every change. Tests are not invoked by `check`.
+npm run check
+
+# Run tests across all packages.
+npm test
+
+# Link the CLI for local use.
+npm link --workspace @neosantara/code
+neo login
+```
+
+Environment variables consumed by the CLI are documented in
+[`docs/env.md`](docs/env.md); the starter `.env.example` lives at the repo root.
+
 ## Install from source
 
 ```bash

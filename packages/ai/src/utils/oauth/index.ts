@@ -1,8 +1,15 @@
 /**
  * OAuth credential registry.
  *
- * The Neosantara-first build intentionally ships with no built-in OAuth providers.
- * Custom extensions can still register OAuth providers at runtime.
+ * The Neosantara-first build intentionally ships with no built-in OAuth
+ * providers. Neosantara itself uses a device-authorization flow that yields
+ * a long-lived API key, not OAuth tokens (see
+ * `packages/coding-agent/src/core/neosantara-device-auth.ts`).
+ *
+ * This registry is a stable extension point: third-party CLI extensions can
+ * register OAuth providers at runtime via `registerOAuthProvider`, and the
+ * coding-agent's `AuthStorage` will resolve their tokens through the same
+ * code path as built-in API keys. Removing it would break the extension API.
  */
 
 export * from "./types.js";

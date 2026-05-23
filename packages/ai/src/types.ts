@@ -358,6 +358,12 @@ export interface OpenAIResponsesCompat {
 	supportsLongCacheRetention?: boolean;
 	/** Whether the model supports sending Responses `reasoning` together with function tools. Default: true. */
 	supportsReasoningWithTools?: boolean;
+	/**
+	 * Cost multiplier for the `priority` service tier. The OpenAI Responses
+	 * API charges 2× base price by default; some upstream models price the
+	 * priority tier differently. Default: 2.
+	 */
+	priorityCostMultiplier?: number;
 }
 
 // Model interface for the unified model system

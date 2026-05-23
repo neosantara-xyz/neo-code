@@ -70,6 +70,10 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 		const maxAttempts = 10;
 		const delayMs = 20;
 		let lastError: unknown;
+		// Pre-allocate a SharedArrayBuffer once so we can use Atomics.wait as a
+		// non-spinning sync sleep. Atomics.wait blocks the calling thread without
+		// burning CPU, unlike a busy-wait loop.
+		const sleepView = new Int32Array(new SharedArrayBuffer(4));
 
 		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 			try {
@@ -83,10 +87,8 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 					throw error;
 				}
 				lastError = error;
-				const start = Date.now();
-				while (Date.now() - start < delayMs) {
-					// Sleep synchronously to avoid changing callers to async.
-				}
+				// Block synchronously without spinning the event loop.
+				Atomics.wait(sleepView, 0, 0, delayMs);
 			}
 		}
 

@@ -36,13 +36,23 @@ export function getModels<TProvider extends KnownProvider>(
 	return models ? (Array.from(models.values()) as Model<ModelApi<TProvider, keyof (typeof MODELS)[TProvider]>>[]) : [];
 }
 
+/**
+ * Calculate per-section USD/IDR cost for a usage record. Does not mutate the
+ * input — callers that need to update an existing `Usage["cost"]` should
+ * assign the returned object explicitly (e.g. `usage.cost = calculateCost(...)`).
+ */
 export function calculateCost<TApi extends Api>(model: Model<TApi>, usage: Usage): Usage["cost"] {
-	usage.cost.input = (model.cost.input / 1000000) * usage.input;
-	usage.cost.output = (model.cost.output / 1000000) * usage.output;
-	usage.cost.cacheRead = (model.cost.cacheRead / 1000000) * usage.cacheRead;
-	usage.cost.cacheWrite = (model.cost.cacheWrite / 1000000) * usage.cacheWrite;
-	usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
-	return usage.cost;
+	const input = (model.cost.input / 1_000_000) * usage.input;
+	const output = (model.cost.output / 1_000_000) * usage.output;
+	const cacheRead = (model.cost.cacheRead / 1_000_000) * usage.cacheRead;
+	const cacheWrite = (model.cost.cacheWrite / 1_000_000) * usage.cacheWrite;
+	return {
+		input,
+		output,
+		cacheRead,
+		cacheWrite,
+		total: input + output + cacheRead + cacheWrite,
+	};
 }
 
 const EXTENDED_THINKING_LEVELS: ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];

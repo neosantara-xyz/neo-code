@@ -244,7 +244,10 @@ detect_bundle_version() {
   dir="$1"
   pkg="$dir/neosantara-code.tgz"
   if [ -f "$pkg" ] && command -v tar >/dev/null 2>&1; then
-    ver="$(tar -xzf "$pkg" -O package/package.json 2>/dev/null | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+    # Stream just package/package.json out of the tarball instead of extracting
+    # the entire archive. -O writes to stdout, the trailing path filter limits
+    # the entries actually decoded.
+    ver="$(tar -xzOf "$pkg" package/package.json 2>/dev/null | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
     if [ -n "$ver" ]; then
       printf '%s' "$ver"
       return
@@ -327,6 +330,13 @@ fetch_latest_version() {
 download() {
   url="$1"
   out="$2"
+  if [ "$DRY_RUN" = "1" ]; then
+    # In dry-run we never call curl/wget, so subsequent steps would be unable to
+    # operate on $out. Short-circuit with success and let the caller print
+    # the would-be command.
+    printf '+ download %s -> %s\n' "$url" "$out"
+    return 0
+  fi
   if command -v curl >/dev/null 2>&1; then
     run curl -fL --progress-bar "$url" -o "$out"
   elif command -v wget >/dev/null 2>&1; then
