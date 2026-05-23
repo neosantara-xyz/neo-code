@@ -8,9 +8,9 @@
 	"scripts": {
 		"clean": "npm run clean --workspaces && npm run clean:termux-tarballs",
 		"clean:termux-tarballs": "shx rm -f neosantara-ai-*.tgz neosantara-agent-core-*.tgz neosantara-code-*.tgz neosantara-tui-*.tgz",
-		"build": "cd packages/tui && npm run build && cd ../ai && npm run build && cd ../agent && npm run build && cd ../coding-agent && npm run build",
-		"dev": "concurrently --names \"ai,agent,coding-agent,tui\" --prefix-colors \"cyan,yellow,red,magenta\" \"cd packages/ai && npm run dev\" \"cd packages/agent && npm run dev\" \"cd packages/coding-agent && npm run dev\" \"cd packages/tui && npm run dev\"",
-		"dev:tsc": "cd packages/ai && npm run dev:tsc",
+		"build": "npm run build -w @neosantara/tui && npm run build -w @neosantara/ai && npm run build -w @neosantara/agent-core && npm run build -w @neosantara/code",
+		"dev": "concurrently --names \"ai,agent,coding-agent,tui\" --prefix-colors \"cyan,yellow,red,magenta\" \"npm run dev -w @neosantara/ai\" \"npm run dev -w @neosantara/agent-core\" \"npm run dev -w @neosantara/code\" \"npm run dev -w @neosantara/tui\"",
+		"dev:tsc": "npm run dev -w @neosantara/ai",
 		"check": "biome check --write --error-on-warnings . && tsgo --noEmit",
 		"check:browser-smoke": "node scripts/check-browser-smoke.mjs",
 		"build:termux-bundle": "bash scripts/build-termux-bundle.sh",
