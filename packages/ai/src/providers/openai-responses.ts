@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
 import { getEnvApiKey } from "../env-api-keys.js";
+import { resolveCacheRetention } from "../env-flags.js";
 import { clampThinkingLevel } from "../models.js";
 import type {
 	Api,
@@ -22,24 +23,21 @@ import { buildBaseOptions } from "./simple-options.js";
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["neosantara"]);
 
 /**
- * Resolve cache retention preference.
- * Defaults to "short" and uses NEO_CODE_CACHE_RETENTION for backward compatibility.
+ * Default `priority` service-tier cost multiplier when a model does not
+ * declare its own. The OpenAI Responses API charges 2× base price for the
+ * priority tier, but individual upstream models may differ; per-model
+ * overrides ride on `model.compat.priorityCostMultiplier`.
  */
-function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention {
-	if (cacheRetention) {
-		return cacheRetention;
-	}
-	if (typeof process !== "undefined" && process.env.NEO_CODE_CACHE_RETENTION === "long") {
-		return "long";
-	}
-	return "short";
-}
+const DEFAULT_PRIORITY_COST_MULTIPLIER = 2;
+/** Default `flex` service-tier cost multiplier (50% of base price). */
+const FLEX_COST_MULTIPLIER = 0.5;
 
 function getCompat(model: Model<"openai-responses">): Required<OpenAIResponsesCompat> {
 	return {
 		sendSessionIdHeader: model.compat?.sendSessionIdHeader ?? true,
 		supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? true,
 		supportsReasoningWithTools: model.compat?.supportsReasoningWithTools ?? true,
+		priorityCostMultiplier: model.compat?.priorityCostMultiplier ?? DEFAULT_PRIORITY_COST_MULTIPLIER,
 	};
 }
 
@@ -165,13 +163,11 @@ function createClient(
 	optionsHeaders?: Record<string, string>,
 	sessionId?: string,
 ) {
-	if (!apiKey) {
-		if (!process.env.NEOSANTARA_API_KEY) {
-			throw new Error(
-				"OpenAI API key is required. Set NEOSANTARA_API_KEY environment variable or pass it as an argument.",
-			);
-		}
-		apiKey = process.env.NEOSANTARA_API_KEY;
+	const resolvedKey = apiKey ?? getEnvApiKey(model.provider);
+	if (!resolvedKey) {
+		throw new Error(
+			"Neosantara API key is required. Set NEOSANTARA_API_KEY in your environment or pass it as an argument.",
+		);
 	}
 
 	const compat = getCompat(model);
@@ -192,9 +188,8 @@ function createClient(
 	const defaultHeaders = headers;
 
 	return new OpenAI({
-		apiKey,
+		apiKey: resolvedKey,
 		baseURL: model.baseUrl,
-		dangerouslyAllowBrowser: true,
 		defaultHeaders,
 	});
 }
@@ -248,14 +243,14 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 }
 
 function getServiceTierCostMultiplier(
-	model: Pick<Model<"openai-responses">, "id">,
+	compat: Required<OpenAIResponsesCompat>,
 	serviceTier: ResponseCreateParamsStreaming["service_tier"] | undefined,
 ): number {
 	switch (serviceTier) {
 		case "flex":
-			return 0.5;
+			return FLEX_COST_MULTIPLIER;
 		case "priority":
-			return model.id === "gpt-5.5" ? 2.5 : 2;
+			return compat.priorityCostMultiplier;
 		default:
 			return 1;
 	}
@@ -264,9 +259,9 @@ function getServiceTierCostMultiplier(
 function applyServiceTierPricing(
 	usage: Usage,
 	serviceTier: ResponseCreateParamsStreaming["service_tier"] | undefined,
-	model: Pick<Model<"openai-responses">, "id">,
+	model: Model<"openai-responses">,
 ) {
-	const multiplier = getServiceTierCostMultiplier(model, serviceTier);
+	const multiplier = getServiceTierCostMultiplier(getCompat(model), serviceTier);
 	if (multiplier === 1) return;
 
 	usage.cost.input *= multiplier;

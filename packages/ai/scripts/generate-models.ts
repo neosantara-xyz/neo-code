@@ -114,12 +114,6 @@ function buildModelLines(model: GeneratedModelEntry): string {
 		options.push(`costCurrency: ${JSON.stringify(model.costCurrency)}`);
 	}
 
-	// Models known to support reasoning but not advertised by /v1/models
-	const FORCE_REASONING_MODELS = ["gemini-3-flash", "gemini-3-pro-preview", "gemini-3.1-flash-lite-preview", "gemini-3.1-pro-preview"];
-	if (!model.reasoning && FORCE_REASONING_MODELS.includes(model.id)) {
-		options.unshift("reasoning: true");
-	}
-
 	const optionsSuffix = options.length > 0 ? `, { ${options.join(", ")} }` : "";
 	return `\t\t${JSON.stringify(model.id)}: neosantaraModel(${JSON.stringify(model.id)}, ${JSON.stringify(model.name)}${optionsSuffix}),`;
 }

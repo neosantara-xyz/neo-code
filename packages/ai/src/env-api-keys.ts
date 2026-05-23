@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { KnownProvider } from "./types.js";
 
 let _procEnvCache: Map<string, string> | null = null;
@@ -6,10 +7,13 @@ let _procEnvCache: Map<string, string> | null = null;
  * Fallback for https://github.com/oven-sh/bun/issues/27802
  * Bun compiled binaries have an empty `process.env` inside sandbox
  * environments on Linux. We can recover the env from `/proc/self/environ`.
+ *
+ * Only consulted when running under Bun and `process.env` is empty, so this
+ * has no impact on Node.js installs.
  */
 function getProcEnv(key: string): string | undefined {
-	if (!process.versions?.bun) return undefined;
 	if (typeof process === "undefined") return undefined;
+	if (!process.versions?.bun) return undefined;
 
 	// If process.env already has entries, the bug is not triggered.
 	if (Object.keys(process.env).length > 0) return undefined;
@@ -17,7 +21,6 @@ function getProcEnv(key: string): string | undefined {
 	if (_procEnvCache === null) {
 		_procEnvCache = new Map();
 		try {
-			const { readFileSync } = require("node:fs") as typeof import("node:fs");
 			const data = readFileSync("/proc/self/environ", "utf-8");
 			for (const entry of data.split("\0")) {
 				const idx = entry.indexOf("=");
