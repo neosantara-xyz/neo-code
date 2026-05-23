@@ -55,6 +55,30 @@ export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
 
+/**
+ * Termux:API notification preferences.
+ *
+ * When `enabled` is true and the agent finishes a turn that took at least
+ * `minDurationMs` while the terminal was unfocused, Neo fires a Termux
+ * notification (and optional vibration) so the user can return to the app.
+ *
+ * Defaults are off so existing users see no behavior change.
+ */
+export interface TermuxNotificationSettings {
+	/** default: false. */
+	enabled?: boolean;
+	/** default: 30000 (30s). Turns shorter than this never notify. */
+	minDurationMs?: number;
+	/** default: true when enabled. Adds a short haptic pulse with the notification. */
+	vibrate?: boolean;
+	/** default: false. Plays the system notification sound when supported. */
+	sound?: boolean;
+}
+
+export interface NotificationSettings {
+	termux?: TermuxNotificationSettings;
+}
+
 export interface WarningSettings {}
 
 /**
@@ -130,6 +154,7 @@ export interface Settings {
 	statusline?: {
 		items: StatuslineItemConfig[];
 	}; // Configurable status line items (order + on/off). When omitted, defaults from `core/statusline.ts` are used.
+	notifications?: NotificationSettings; // Opt-in OS notifications (Termux:API). Off by default.
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -1066,6 +1091,34 @@ export class SettingsManager {
 		}
 		this.globalSettings.terminal.showTerminalProgress = enabled;
 		this.markModified("terminal", "showTerminalProgress");
+		this.save();
+	}
+
+	/**
+	 * Effective Termux notification preferences with defaults applied.
+	 * Always returns a complete object so callers don't repeat default
+	 * fallbacks.
+	 */
+	getTermuxNotificationSettings(): Required<TermuxNotificationSettings> {
+		const cfg = this.settings.notifications?.termux;
+		const enabled = cfg?.enabled === true;
+		return {
+			enabled,
+			minDurationMs: cfg?.minDurationMs ?? 30_000,
+			vibrate: cfg?.vibrate ?? enabled,
+			sound: cfg?.sound ?? false,
+		};
+	}
+
+	setTermuxNotificationsEnabled(enabled: boolean): void {
+		if (!this.globalSettings.notifications) {
+			this.globalSettings.notifications = {};
+		}
+		if (!this.globalSettings.notifications.termux) {
+			this.globalSettings.notifications.termux = {};
+		}
+		this.globalSettings.notifications.termux.enabled = enabled;
+		this.markModified("notifications", "termux");
 		this.save();
 	}
 
