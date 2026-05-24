@@ -169,22 +169,33 @@ function deepMergeSettings(base: Settings, overrides: Settings): Settings {
 			continue;
 		}
 
-		// For nested objects, merge recursively
-		if (
-			typeof overrideValue === "object" &&
-			overrideValue !== null &&
-			!Array.isArray(overrideValue) &&
-			typeof baseValue === "object" &&
-			baseValue !== null &&
-			!Array.isArray(baseValue)
-		) {
-			(result as Record<string, unknown>)[key] = { ...baseValue, ...overrideValue };
+		if (isPlainObject(baseValue) && isPlainObject(overrideValue)) {
+			(result as Record<string, unknown>)[key] = deepMergePlainObjects(baseValue, overrideValue);
 		} else {
 			// For primitives and arrays, override value wins
 			(result as Record<string, unknown>)[key] = overrideValue;
 		}
 	}
 
+	return result;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function deepMergePlainObjects(
+	base: Record<string, unknown>,
+	overrides: Record<string, unknown>,
+): Record<string, unknown> {
+	const result: Record<string, unknown> = { ...base };
+	for (const [key, overrideValue] of Object.entries(overrides)) {
+		const baseValue = base[key];
+		result[key] =
+			isPlainObject(baseValue) && isPlainObject(overrideValue)
+				? deepMergePlainObjects(baseValue, overrideValue)
+				: overrideValue;
+	}
 	return result;
 }
 
@@ -458,6 +469,10 @@ export class SettingsManager {
 
 	getProjectSettings(): Settings {
 		return structuredClone(this.projectSettings);
+	}
+
+	getSettings(): Settings {
+		return structuredClone(this.settings);
 	}
 
 	async reload(): Promise<void> {
@@ -1102,9 +1117,14 @@ export class SettingsManager {
 	getTermuxNotificationSettings(): Required<TermuxNotificationSettings> {
 		const cfg = this.settings.notifications?.termux;
 		const enabled = cfg?.enabled === true;
+		const configuredMinDurationMs = cfg?.minDurationMs;
+		const minDurationMs =
+			typeof configuredMinDurationMs === "number" && Number.isFinite(configuredMinDurationMs)
+				? Math.max(0, configuredMinDurationMs)
+				: 30_000;
 		return {
 			enabled,
-			minDurationMs: cfg?.minDurationMs ?? 30_000,
+			minDurationMs,
 			vibrate: cfg?.vibrate ?? enabled,
 			sound: cfg?.sound ?? false,
 		};

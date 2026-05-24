@@ -20,6 +20,7 @@ export interface AppKeybindings {
 	"app.model.cycleForward": true;
 	"app.model.cycleBackward": true;
 	"app.model.select": true;
+	"app.transcript.view": true;
 	"app.tools.expand": true;
 	"app.task.background": true;
 	"app.tasks.open": true;
@@ -89,11 +90,12 @@ export const KEYBINDINGS = {
 		description: "Cycle to previous model",
 	},
 	"app.model.select": { defaultKeys: "ctrl+l", description: "Open model selector" },
+	"app.transcript.view": { defaultKeys: "ctrl+t", description: "View transcript or tool output" },
 	"app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" },
 	"app.task.background": { defaultKeys: "ctrl+b", description: "Run current shell task in background" },
 	"app.tasks.open": { defaultKeys: [], description: "Show background tasks" },
 	"app.thinking.toggle": {
-		defaultKeys: "ctrl+t",
+		defaultKeys: [],
 		description: "Toggle thinking blocks",
 	},
 	"app.session.toggleNamedFilter": {
@@ -251,6 +253,7 @@ const KEYBINDING_NAME_MIGRATIONS = {
 	cycleModelForward: "app.model.cycleForward",
 	cycleModelBackward: "app.model.cycleBackward",
 	selectModel: "app.model.select",
+	viewTranscript: "app.transcript.view",
 	expandTools: "app.tools.expand",
 	toggleThinking: "app.thinking.toggle",
 	toggleSessionNamedFilter: "app.session.toggleNamedFilter",

@@ -1,5 +1,16 @@
-import { describe, expect, it } from "vitest";
-import { resolveOpenStrategy } from "../src/core/open-file.js";
+import { spawn, spawnSync } from "node:child_process";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { openLocal, resolveOpenStrategy } from "../src/core/open-file.js";
+
+vi.mock("node:child_process", () => ({
+	spawn: vi.fn(),
+	spawnSync: vi.fn(),
+}));
+
+afterEach(() => {
+	vi.mocked(spawn).mockReset();
+	vi.mocked(spawnSync).mockReset();
+});
 
 const NON_TERMUX_ENV: NodeJS.ProcessEnv = { HOME: "/home/user", PATH: "/usr/bin" };
 
@@ -57,5 +68,48 @@ describe("resolveOpenStrategy", () => {
 		expect(r.strategy).toBe("unsupported");
 		expect(r.argv).toEqual([]);
 		expect(r.label).toContain("aix");
+	});
+});
+
+describe("openLocal", () => {
+	it("treats xdg-open as a successful handoff after spawning it", () => {
+		vi.mocked(spawnSync).mockReturnValueOnce({
+			status: 0,
+			signal: null,
+			output: [],
+			pid: 123,
+			stdout: null,
+			stderr: null,
+		});
+		const unref = vi.fn();
+		vi.mocked(spawn).mockReturnValueOnce({ pid: 456, unref } as never);
+
+		const result = openLocal("/tmp/session.html", { platform: "linux", env: NON_TERMUX_ENV });
+
+		expect(result.ok).toBe(true);
+		expect(spawnSync).toHaveBeenCalledWith("sh", ["-c", "command -v xdg-open"], expect.any(Object));
+		expect(spawn).toHaveBeenCalledWith(
+			"xdg-open",
+			["/tmp/session.html"],
+			expect.objectContaining({ detached: true }),
+		);
+		expect(unref).toHaveBeenCalled();
+	});
+
+	it("reports missing xdg-open before trying to spawn it", () => {
+		vi.mocked(spawnSync).mockReturnValueOnce({
+			status: 1,
+			signal: null,
+			output: [],
+			pid: 123,
+			stdout: null,
+			stderr: null,
+		});
+
+		const result = openLocal("/tmp/session.html", { platform: "linux", env: NON_TERMUX_ENV });
+
+		expect(result.ok).toBe(false);
+		expect(result.error).toBe("xdg-open not found");
+		expect(spawn).not.toHaveBeenCalled();
 	});
 });

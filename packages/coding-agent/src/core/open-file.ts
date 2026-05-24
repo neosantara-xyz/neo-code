@@ -12,7 +12,7 @@
  * unit-testable without spawning anything.
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { getTermuxApiCapabilities, termuxShare } from "./termux-api.js";
 import { isTermuxEnvironment } from "./termux-touch-keyboard.js";
 
@@ -88,6 +88,21 @@ export function openLocal(filePath: string, options: OpenStrategyOptions = {}): 
 	const [cmd, ...args] = resolution.argv;
 	if (!cmd) return { ok: false, resolution, error: "no command resolved" };
 	try {
+		if (resolution.strategy === "xdg-open") {
+			const commandProbe = spawnSync("sh", ["-c", `command -v ${cmd}`], {
+				stdio: "ignore",
+				timeout: 1500,
+			});
+			if (commandProbe.error || commandProbe.status !== 0) {
+				return { ok: false, resolution, error: `${cmd} not found` };
+			}
+			const child = spawn(cmd, args, {
+				detached: true,
+				stdio: "ignore",
+			});
+			child.unref();
+			return { ok: true, resolution };
+		}
 		const result = spawnSync(cmd, args, {
 			stdio: "ignore",
 			timeout: 5000,

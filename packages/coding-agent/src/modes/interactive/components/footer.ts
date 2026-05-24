@@ -9,7 +9,7 @@ import {
 	type StatuslineItemId,
 } from "../../../core/statusline.js";
 import { theme } from "../theme/theme.js";
-import { keyText } from "./keybinding-hints.js";
+import { keyDisplayText, keyText } from "./keybinding-hints.js";
 
 /**
  * Sanitize text for display in a single-line status.
@@ -102,14 +102,15 @@ export function formatFooterHint(isStreaming: boolean, hasBackgroundTasks: boole
 export function renderShortcutOverlay(width: number): string[] {
 	const shortcuts = [
 		["?", "toggle this overlay"],
-		[keyText("app.interrupt"), "interrupt / cancel"],
-		[keyText("app.mode.cycle"), "cycle mode"],
-		[keyText("app.tools.expand"), "expand tool output"],
-		[keyText("app.thinking.cycle"), "cycle thinking level"],
-		[keyText("app.model.select"), "select model"],
-		[keyText("app.session.tree"), "session tree"],
-		[keyText("app.session.new"), "new session"],
-		[keyText("app.session.resume"), "resume session"],
+		[keyDisplayText("app.interrupt"), "interrupt / cancel"],
+		[keyDisplayText("app.mode.cycle"), "cycle mode"],
+		[keyDisplayText("app.transcript.view"), "view transcript"],
+		[keyDisplayText("app.tools.expand"), "expand output"],
+		[keyDisplayText("app.thinking.cycle"), "cycle thinking level"],
+		[keyDisplayText("app.model.select"), "select model"],
+		[keyDisplayText("app.session.tree"), "session tree"],
+		[keyDisplayText("app.session.new"), "new session"],
+		[keyDisplayText("app.session.resume"), "resume session"],
 		["!", "shell command prefix"],
 		["/compact", "compact context"],
 		["/usage", "show usage stats"],

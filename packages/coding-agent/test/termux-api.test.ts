@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	detectTermuxApi,
 	getTermuxApiCapabilities,
@@ -6,7 +7,18 @@ import {
 	listTermuxApiTools,
 	resetTermuxApiCache,
 	summarizeTermuxApiCapabilities,
+	termuxToast,
 } from "../src/core/termux-api.js";
+
+vi.mock("node:child_process", () => ({
+	spawnSync: vi.fn(),
+}));
+
+afterEach(() => {
+	vi.mocked(spawnSync).mockReset();
+	vi.unstubAllEnvs();
+	resetTermuxApiCache();
+});
 
 describe("termux-api capability detection", () => {
 	it("returns all-false when env is not Termux", () => {
@@ -44,6 +56,31 @@ describe("termux-api capability detection", () => {
 		// flip if the host happens to have those binaries on PATH.
 		expect(typeof a.available).toBe("boolean");
 		expect(typeof b.available).toBe("boolean");
+	});
+});
+
+describe("termuxToast", () => {
+	it("uses the short flag only for short toasts", () => {
+		vi.mocked(spawnSync).mockReturnValue({
+			status: 0,
+			signal: null,
+			output: [],
+			pid: 123,
+			stdout: "",
+			stderr: "",
+		});
+		vi.stubEnv("TERMUX_VERSION", "0.118.0");
+		vi.stubEnv("PREFIX", "/data/data/com.termux/files/usr");
+		vi.stubEnv("HOME", "/data/data/com.termux/files/home");
+
+		expect(termuxToast("short", { duration: "short" })).toBe(true);
+		expect(termuxToast("long", { duration: "long" })).toBe(true);
+
+		const toastCalls = vi
+			.mocked(spawnSync)
+			.mock.calls.filter(([command]) => command === "termux-toast")
+			.map(([, args]) => args);
+		expect(toastCalls).toEqual([["-s"], []]);
 	});
 });
 

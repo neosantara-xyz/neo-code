@@ -22,8 +22,12 @@ interface ToolActivityGroupOptions {
 	revealDelayMs?: number;
 }
 
-const MIN_HINT_DISPLAY_MS = 700;
-const DEFAULT_TOOL_REVEAL_DELAY_MS = 500;
+const MIN_HINT_DISPLAY_MS = 450;
+const DEFAULT_TOOL_REVEAL_DELAY_MS = 120;
+const SHIMMER_FRAME_MS = 50;
+const SHIMMER_SWEEP_MS = 2000;
+const SHIMMER_TRAIL_PADDING = 20;
+const SHIMMER_BAND_HALF_WIDTH = 3;
 
 const graphemeSegmenter =
 	typeof Intl !== "undefined" && "Segmenter" in Intl
@@ -48,7 +52,7 @@ export class ToolActivityGroupComponent extends Container {
 	private showImages = true;
 	private imageWidthCells = 60;
 	private shimmerTimer: NodeJS.Timeout | undefined;
-	private shimmerTick = 0;
+	private shimmerStartMs = Date.now();
 	private animationPaused = false;
 	private readonly maxCounts = new Map<ToolActivityKind, number>();
 	private displayedSummary: string | undefined;
@@ -252,18 +256,17 @@ export class ToolActivityGroupComponent extends Container {
 	private syncShimmerTimer(): void {
 		const shouldAnimate = this.hasRunningItems() && !this.animationPaused;
 		if (shouldAnimate && !this.shimmerTimer) {
+			this.shimmerStartMs = Date.now();
 			this.shimmerTimer = setInterval(() => {
-				this.shimmerTick += 1;
 				this.updateDisplay();
 				this.requestRender?.();
-			}, 180);
+			}, SHIMMER_FRAME_MS);
 			this.shimmerTimer.unref?.();
 			return;
 		}
 		if (!shouldAnimate && this.shimmerTimer) {
 			clearInterval(this.shimmerTimer);
 			this.shimmerTimer = undefined;
-			this.shimmerTick = 0;
 		}
 	}
 
@@ -357,16 +360,18 @@ export class ToolActivityGroupComponent extends Container {
 	private shimmerLine(line: string, baseColor: ThemeColor, shimmerColor: ThemeColor): string {
 		if (!line || line.trim() === "") return theme.fg(baseColor, line);
 		const width = visibleWidth(line);
-		const cycle = Math.max(1, width + 20);
-		const center = width + 10 - (this.shimmerTick % cycle);
-		const start = center - 1;
-		const end = center + 1;
+		const travelWidth = Math.max(1, width + SHIMMER_TRAIL_PADDING);
+		const elapsed = Math.max(0, Date.now() - this.shimmerStartMs);
+		const phase = (elapsed % SHIMMER_SWEEP_MS) / SHIMMER_SWEEP_MS;
+		const center = width + SHIMMER_TRAIL_PADDING / 2 - phase * travelWidth;
 		let rendered = "";
 		let column = 0;
 		for (const segment of splitGraphemes(line)) {
 			const segmentWidth = visibleWidth(segment);
-			const color = column <= end && column + segmentWidth > start ? shimmerColor : baseColor;
-			rendered += theme.fg(color, segment);
+			const segmentCenter = column + segmentWidth / 2;
+			const distance = Math.abs(segmentCenter - center);
+			const color = distance <= SHIMMER_BAND_HALF_WIDTH ? shimmerColor : baseColor;
+			rendered += distance <= 1 ? theme.bold(theme.fg(color, segment)) : theme.fg(color, segment);
 			column += segmentWidth;
 		}
 		return rendered;
@@ -434,11 +439,11 @@ export class ToolActivityGroupComponent extends Container {
 			const expandHint = this.animationPaused
 				? "    Review details in permission card"
 				: this.hasForegroundShellRunning()
-					? `    ${keyHint("app.tools.expand", "expand live output")} · ${keyHint("app.task.background", "background")}`
-					: `    ${keyHint("app.tools.expand", "expand live tool output")}`;
+					? `    ${keyHint("app.transcript.view", "view live output")} · ${keyHint("app.task.background", "background")}`
+					: `    ${keyHint("app.transcript.view", "view live tool output")}`;
 			coloredLines.push(expandHint);
 		} else if (!this.expanded && !hasRunningItems && snapshots.length > 1) {
-			coloredLines.push(`    ${keyHint("app.tools.expand", "expand output")}`);
+			coloredLines.push(`    ${keyHint("app.transcript.view", "view output")}`);
 		}
 		return coloredLines.join("\n");
 	}

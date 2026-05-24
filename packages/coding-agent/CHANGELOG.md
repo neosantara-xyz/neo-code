@@ -18,6 +18,9 @@
 ### Changed
 
 - Keep this package changelog in sync with `releases/NOTES.md` before each release.
+- Smoothed live tool activity shimmer and shortened incremental reveal timing for parallel read-only tool batches.
+- Matched Claude-style working loader behavior by picking one random default label per turn and hiding spinner tips after tool/custom activity takes over.
+- Aligned read-only tool activity groups with Codex-style `Exploring` / `Explored` transcript hints while keeping `Ctrl+O` as an expand alias.
 
 ## [0.76.6] - 2026-05-21
 

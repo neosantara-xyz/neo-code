@@ -201,6 +201,11 @@ import {
 	type ThemeColor,
 	theme,
 } from "./theme/theme.js";
+import {
+	formatDefaultWorkingMessage,
+	pickDefaultWorkingMessageIndex,
+	shouldAttachSpinnerTipForMode,
+} from "./working-loader-state.js";
 
 const CLAUDE_STYLE_SPINNER_FRAMES = ["·", "✢", "✳", "✶", "✻", "✽", "✽", "✻", "✶", "✳", "✢", "·"];
 type WorkingLoaderMode = "responding" | "tool-input" | "tool-use";
@@ -555,8 +560,8 @@ export class InteractiveMode {
 	private workingVisible = true;
 	private workingIndicatorOptions: LoaderIndicatorOptions | undefined = undefined;
 	private readonly defaultWorkingMessages = ["ngulik", "ngetik", "ngritik", "ngoprek"];
-	private defaultWorkingMessageIndex = 0;
-	private defaultWorkingMessageTimer: ReturnType<typeof setInterval> | undefined = undefined;
+	private defaultWorkingMessageIndex = pickDefaultWorkingMessageIndex(this.defaultWorkingMessages.length);
+	private currentWorkingLoaderMode: WorkingLoaderMode = "responding";
 	private readonly defaultHiddenThinkingLabel = "Thinking...";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
 
@@ -569,6 +574,7 @@ export class InteractiveMode {
 	private currentTip: Tip | undefined = undefined;
 	private currentTipText: TruncatedText | undefined = undefined;
 	private tipPickedThisTurn = false;
+	private spinnerTipDismissedThisTurn = false;
 
 	// Away summary state
 	private terminalBlurredAt: number | undefined = undefined;
@@ -2108,32 +2114,7 @@ export class InteractiveMode {
 	}
 
 	private getDefaultWorkingMessageText(): string {
-		const label = this.defaultWorkingMessages[this.defaultWorkingMessageIndex % this.defaultWorkingMessages.length];
-		return `${label}...`;
-	}
-
-	private rotateDefaultWorkingMessage(): void {
-		if (!this.loadingAnimation || this.workingMessage !== undefined) return;
-		this.defaultWorkingMessageIndex = (this.defaultWorkingMessageIndex + 1) % this.defaultWorkingMessages.length;
-		this.loadingAnimation.setMessage(
-			`${this.getDefaultWorkingMessageText()} (${keyText("app.interrupt")} to interrupt)`,
-			this.getWorkingIndicatorOptions(),
-		);
-		this.updateWorkingStalledState();
-	}
-
-	private startDefaultWorkingMessageRotation(): void {
-		this.stopDefaultWorkingMessageRotation();
-		if (!this.loadingAnimation || this.workingMessage !== undefined) return;
-		this.defaultWorkingMessageTimer = setInterval(() => {
-			this.rotateDefaultWorkingMessage();
-		}, 2200);
-	}
-
-	private stopDefaultWorkingMessageRotation(): void {
-		if (!this.defaultWorkingMessageTimer) return;
-		clearInterval(this.defaultWorkingMessageTimer);
-		this.defaultWorkingMessageTimer = undefined;
+		return formatDefaultWorkingMessage(this.defaultWorkingMessages, this.defaultWorkingMessageIndex);
 	}
 
 	private getDefaultWorkingIndicatorOptions(mode: WorkingLoaderMode = "responding"): LoaderIndicatorOptions {
@@ -2170,6 +2151,7 @@ export class InteractiveMode {
 	}
 
 	private createWorkingLoader(): Loader {
+		this.currentWorkingLoaderMode = "responding";
 		return new Loader(
 			this.ui,
 			(spinner) => theme.fg("accent", spinner),
@@ -2191,7 +2173,7 @@ export class InteractiveMode {
 				? contextUsage.percent
 				: undefined;
 		return {
-			settings: this.settingsManager.getGlobalSettings(),
+			settings: this.settingsManager.getSettings(),
 			platform: process.platform,
 			isTermux: isTermuxEnvironment(),
 			termuxApiAvailable: getTermuxApiCapabilities().available,
@@ -2220,6 +2202,13 @@ export class InteractiveMode {
 			return;
 		}
 		this.tipPickedThisTurn = true;
+		if (
+			!shouldAttachSpinnerTipForMode(this.currentWorkingLoaderMode) ||
+			this.spinnerTipDismissedThisTurn ||
+			this.workingMessage !== undefined
+		) {
+			return;
+		}
 		if (!this.workingVisible || !this.loadingAnimation) return;
 		if (!this.settingsManager.getSpinnerTipsEnabled()) {
 			this.currentTip = undefined;
@@ -2254,6 +2243,13 @@ export class InteractiveMode {
 	 * tip was picked this turn or when the line is already attached.
 	 */
 	private attachExistingTipLine(): void {
+		if (
+			!shouldAttachSpinnerTipForMode(this.currentWorkingLoaderMode) ||
+			this.spinnerTipDismissedThisTurn ||
+			this.workingMessage !== undefined
+		) {
+			return;
+		}
 		if (!this.currentTip || !this.workingVisible || !this.loadingAnimation) return;
 		if (this.currentTipText && this.statusContainer.children.includes(this.currentTipText)) {
 			return;
@@ -2271,9 +2267,20 @@ export class InteractiveMode {
 		return new TruncatedText(`${prefix}${body}`, 1, 0);
 	}
 
+	private detachCurrentTipLine(options: { dismissForTurn?: boolean } = {}): void {
+		if (options.dismissForTurn) {
+			this.spinnerTipDismissedThisTurn = true;
+		}
+		if (this.currentTipText && this.statusContainer.children.includes(this.currentTipText)) {
+			this.statusContainer.removeChild(this.currentTipText);
+		}
+		this.currentTipText = undefined;
+	}
+
 	/** Reset per-turn tip state. Called at `agent_end` and on hard resets. */
 	private clearSpinnerTipState(): void {
 		this.tipPickedThisTurn = false;
+		this.spinnerTipDismissedThisTurn = false;
 		this.currentTip = undefined;
 		this.currentTipText = undefined;
 	}
@@ -2296,6 +2303,8 @@ export class InteractiveMode {
 
 	private setToolInputWorkingMessage(toolName: string, args: any): void {
 		if (this.workingMessage !== undefined || !this.loadingAnimation) return;
+		this.currentWorkingLoaderMode = "tool-input";
+		this.detachCurrentTipLine({ dismissForTurn: true });
 		this.loadingAnimation.setMessage(
 			`${formatToolInputLoadingMessage(toolName, args)} (${keyText("app.interrupt")} to interrupt)`,
 			this.getWorkingIndicatorOptions("tool-input"),
@@ -2305,6 +2314,8 @@ export class InteractiveMode {
 
 	private setToolUseWorkingMessage(toolName: string, args: any): void {
 		if (this.workingMessage !== undefined || !this.loadingAnimation) return;
+		this.currentWorkingLoaderMode = "tool-use";
+		this.detachCurrentTipLine({ dismissForTurn: true });
 		this.loadingAnimation.setMessage(
 			`${formatToolLoadingMessage(toolName, args)} (${keyText("app.interrupt")} to interrupt)`,
 			this.getWorkingIndicatorOptions("tool-use"),
@@ -2314,16 +2325,15 @@ export class InteractiveMode {
 
 	private restoreDefaultWorkingMessage(): void {
 		if (this.workingMessage !== undefined || !this.loadingAnimation) return;
+		this.currentWorkingLoaderMode = "responding";
 		this.loadingAnimation.setMessage(
 			`${this.getDefaultWorkingMessageText()} (${keyText("app.interrupt")} to interrupt)`,
 			this.getWorkingIndicatorOptions(),
 		);
-		this.startDefaultWorkingMessageRotation();
 		this.updateWorkingStalledState();
 	}
 
 	private stopWorkingLoader(): void {
-		this.stopDefaultWorkingMessageRotation();
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
 			this.loadingAnimation = undefined;
@@ -2343,7 +2353,6 @@ export class InteractiveMode {
 			this.loadingAnimation = this.createWorkingLoader();
 			this.statusContainer.addChild(this.loadingAnimation);
 			this.attachExistingTipLine();
-			this.startDefaultWorkingMessageRotation();
 		}
 		this.ui.requestRender();
 	}
@@ -2454,7 +2463,6 @@ export class InteractiveMode {
 				`${this.getDefaultWorkingMessageText()} (${keyText("app.interrupt")} to interrupt)`,
 				this.getWorkingIndicatorOptions(),
 			);
-			this.startDefaultWorkingMessageRotation();
 		}
 		this.setHiddenThinkingLabel();
 	}
@@ -2603,10 +2611,8 @@ export class InteractiveMode {
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
 			setWorkingMessage: (message) => {
 				this.workingMessage = message;
-				if (message === undefined) {
-					this.startDefaultWorkingMessageRotation();
-				} else {
-					this.stopDefaultWorkingMessageRotation();
+				if (message !== undefined) {
+					this.detachCurrentTipLine({ dismissForTurn: true });
 				}
 				if (this.loadingAnimation) {
 					this.loadingAnimation.setMessage(
@@ -3071,6 +3077,7 @@ export class InteractiveMode {
 		this.ui.onFocusLost = () => this.handleTerminalBlur();
 		this.ui.onFocusGained = () => this.handleTerminalFocus();
 		this.defaultEditor.onAction("app.model.select", () => this.showModelSelector());
+		this.defaultEditor.onAction("app.transcript.view", () => this.toggleToolOutputExpansion());
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
 		this.defaultEditor.onAction("app.task.background", () => this.handleBackgroundCurrentTask());
 		this.defaultEditor.onAction("app.tasks.open", () => this.handleTasksCommand("/tasks"));
@@ -3711,6 +3718,7 @@ export class InteractiveMode {
 				}
 				this.stopWorkingLoader();
 				if (this.workingVisible) {
+					this.defaultWorkingMessageIndex = pickDefaultWorkingMessageIndex(this.defaultWorkingMessages.length);
 					this.loadingAnimation = this.createWorkingLoader();
 					this.statusContainer.addChild(this.loadingAnimation);
 					this.pickAndAttachTipLine();
@@ -7979,6 +7987,7 @@ ${theme.fg("dim", "Tip: enable opt-in completion notifications via /settings (no
 		const cycleThinkingLevel = this.getAppKeyDisplay("app.thinking.cycle");
 		const cycleModelForward = this.getAppKeyDisplay("app.model.cycleForward");
 		const selectModel = this.getAppKeyDisplay("app.model.select");
+		const viewTranscript = this.getAppKeyDisplay("app.transcript.view");
 		const expandTools = this.getAppKeyDisplay("app.tools.expand");
 		const toggleThinking = this.getAppKeyDisplay("app.thinking.toggle");
 		const externalEditor = this.getAppKeyDisplay("app.editor.external");
@@ -8024,6 +8033,7 @@ ${theme.fg("dim", "Tip: enable opt-in completion notifications via /settings (no
 | \`${cycleThinkingLevel}\` | Cycle thinking level |
 | \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Cycle models |
 | \`${selectModel}\` | Open model selector |
+| \`${viewTranscript}\` | View transcript / expand tool output |
 | \`${expandTools}\` | Toggle tool output expansion |
 | \`${toggleThinking}\` | Toggle thinking block visibility |
 | \`${externalEditor}\` | Edit message in external editor |

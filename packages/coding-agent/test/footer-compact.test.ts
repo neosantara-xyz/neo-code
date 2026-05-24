@@ -1,11 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { setKeybindings } from "@neosantara/tui";
+import { beforeAll, describe, expect, it } from "vitest";
+import { KeybindingsManager } from "../src/core/keybindings.js";
 import {
 	COMPACT_FOOTER_WIDTH,
 	formatContextFooterSegment,
 	formatFooterHint,
+	renderShortcutOverlay,
 } from "../src/modes/interactive/components/footer.js";
+import { initTheme } from "../src/modes/interactive/theme/theme.js";
 
 describe("compact footer formatters", () => {
+	beforeAll(() => {
+		initTheme("dark");
+		setKeybindings(new KeybindingsManager());
+	});
+
 	it("exports a sensible narrow-terminal threshold", () => {
 		expect(COMPACT_FOOTER_WIDTH).toBeGreaterThan(40);
 		expect(COMPACT_FOOTER_WIDTH).toBeLessThan(120);
@@ -50,5 +59,11 @@ describe("compact footer formatters", () => {
 	it("uses a stop hint while streaming in compact mode", () => {
 		const narrow = formatFooterHint(true, false, true);
 		expect(narrow).toContain("stop");
+	});
+
+	it("promotes the Codex-style transcript shortcut in the shortcut overlay", () => {
+		const rendered = renderShortcutOverlay(100).join("\n");
+		expect(rendered).toContain("Ctrl+T");
+		expect(rendered).toContain("view transcript");
 	});
 });

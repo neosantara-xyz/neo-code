@@ -387,3 +387,23 @@
 - mode: patch
 - notes: feat(coding-agent): add /fork slash, high-context tip override, and Codex-style fork-to-fresh-context plan handoff
 
+## v0.76.52 (2026-05-24)
+- mode: patch
+- notes: fix(coding-agent): correct local opener and Termux notification settings behavior
+
+## v0.76.53 (2026-05-24)
+- mode: patch
+- notes: fix(coding-agent): honor project settings for spinner tip selection
+
+## v0.76.54 (2026-05-24)
+- mode: patch
+- notes: fix(activity): smooth loader glimmer and live tool activity buildup
+
+## v0.76.55 (2026-05-24)
+- mode: patch
+- notes: fix(loader): keep spinner tips scoped and stabilize loading labels
+
+## v0.76.56 (2026-05-24)
+- mode: patch
+- notes: fix(activity): align tool transcript hints with Codex flow
+

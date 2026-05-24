@@ -1130,8 +1130,16 @@ export function formatToolActivityGroup(
 	if (visibleItems.length === 0) return "✦ Working";
 	if (visibleItems.length === 1) return formatSingleToolActivityRows(visibleItems[0]!).join("\n");
 	const completed = !hasIncompleteItems(visibleItems);
-	const title = completed ? completedToolGroupTitle(visibleItems) : toolGroupTitle(visibleItems);
-	const header = `✦ ${title}`;
+	const intent = toolActivityGroupIntent(visibleItems);
+	const title =
+		intent === "inspect"
+			? completed
+				? "Explored"
+				: "Exploring"
+			: completed
+				? completedToolGroupTitle(visibleItems)
+				: toolGroupTitle(visibleItems);
+	const header = `${intent === "inspect" ? "●" : "✦"} ${title}`;
 	const rows = completed
 		? formatToolActivityTree(visibleItems, options, true)
 		: formatToolActivityTree(visibleItems, options);

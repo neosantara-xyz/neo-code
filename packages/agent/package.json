@@ -1,6 +1,6 @@
 {
 	"name": "@neosantara/agent-core",
-	"version": "0.76.51",
+	"version": "0.76.56",
 	"description": "Neo Code agent runtime primitives",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -13,14 +13,14 @@
 		"clean": "shx rm -rf dist",
 		"build": "tsgo -p tsconfig.build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
-		"test": "vitest --run --reporter=verbose --testTimeout=20000 --pool=threads --poolOptions.threads.singleThread=true",
+		"test": "vitest --run --testTimeout=20000",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
 		"ignore": "^7.0.5",
 		"typebox": "^1.1.24",
 		"yaml": "^2.8.2",
-		"@neosantara/ai": "^0.76.51"
+		"@neosantara/ai": "^0.76.56"
 	},
 	"keywords": [
 		"ai",

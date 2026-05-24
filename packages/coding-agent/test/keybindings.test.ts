@@ -16,4 +16,14 @@ describe("coding agent keybindings", () => {
 		expect(keybindings.getKeys("app.thinking.cycle")).toEqual(["alt+t"]);
 		expect(keybindings.matches("\x1bt", "app.thinking.cycle")).toBe(true);
 	});
+
+	it("uses Ctrl+T for Codex-style transcript viewing while keeping Ctrl+O as expand alias", () => {
+		const keybindings = new KeybindingsManager();
+
+		expect(keybindings.getKeys("app.transcript.view")).toEqual(["ctrl+t"]);
+		expect(keybindings.matches("\x14", "app.transcript.view")).toBe(true);
+		expect(keybindings.getKeys("app.tools.expand")).toEqual(["ctrl+o"]);
+		expect(keybindings.matches("\x0f", "app.tools.expand")).toBe(true);
+		expect(keybindings.matches("\x14", "app.thinking.toggle")).toBe(false);
+	});
 });

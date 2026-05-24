@@ -29,6 +29,7 @@ const OVERFLOW_PATTERNS = [
 	/context[_ ]length[_ ]exceeded/i,
 	/too many tokens/i,
 	/token limit exceeded/i,
+	/input too large \(\d+ tokens\) for model context window \(\d+ tokens\)/i,
 	/^4(?:00|13)\s*(?:status code)?\s*\(no body\)/i,
 ] as const;
 
