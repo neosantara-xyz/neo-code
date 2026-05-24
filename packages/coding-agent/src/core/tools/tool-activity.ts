@@ -25,6 +25,22 @@ export type ToolActivityKindCounts = Partial<Record<ToolActivityKind, number>>;
 
 export interface ToolActivityGroupFormatOptions {
 	minimumCounts?: ToolActivityKindCounts;
+	/**
+	 * Layout density. `full` shows kind branches with target detail rows.
+	 * `compact` drops target detail rows (one line per kind).
+	 * `tight` collapses everything to a single short summary line.
+	 */
+	layout?: "full" | "compact" | "tight";
+	/**
+	 * Optional theme-driven kind icons. Falls back to plain branch connector
+	 * (`├─`/`└─`) when omitted, which keeps the existing ASCII-friendly look.
+	 */
+	icons?: Partial<Record<ToolActivityKind, string>>;
+	/**
+	 * When true, single-tool runs combine the action and short result onto the
+	 * same line instead of two rows. Defaults to false to keep stable layout.
+	 */
+	inlineSingleTool?: boolean;
 }
 
 type TextBlock = {
@@ -989,33 +1005,6 @@ function singleToolDetailLine(item: ToolActivityGroupItem): string | undefined {
 	return command ? `  │ ${command}` : undefined;
 }
 
-function formatSingleToolActivityRows(item: ToolActivityGroupItem): string[] {
-	const activity = summarizeToolCall(item.toolName, item.args);
-	const pending = item.isPartial || !item.result;
-
-	// Agent tools use claude-code tree style:
-	// ✦ Working
-	//   └─ @name: activity… · N tool uses
-	if (activity.kind === "agent") {
-		const details = item.result?.details as { toolCalls?: number; subagentType?: string } | undefined;
-		const toolCalls = details?.toolCalls ?? 0;
-		const statsText = toolCalls > 0 ? ` · ${toolCalls} tool ${toolCalls === 1 ? "use" : "uses"}` : "";
-		if (pending) {
-			const desc = details
-				? `${details.subagentType || "agent"} using ${item.result?.content?.[0]?.text || "tools"}`
-				: "working…";
-			return [`  └─ ${activity.compact} · ${desc}${statsText}`];
-		}
-		const resultSummary = formatCompletedSingleToolResult(item);
-		return [`  └─ ${activity.compact} · ${resultSummary}${statsText}`];
-	}
-
-	const action = singleToolActionLabel(item);
-	const result = pending ? formatPendingSingleToolResult(item) : formatCompletedSingleToolResult(item);
-	const detail = singleToolDetailLine(item);
-	return detail ? [`● ${action}`, detail, `  └ ${result}`] : [`● ${action}`, `  └ ${result}`];
-}
-
 function shouldShowTargetDetails(
 	kind: ToolActivityKind,
 	items: ToolActivityGroupItem[],
@@ -1042,13 +1031,6 @@ function targetDetailLabels(items: ToolActivityGroupItem[], maxItems = 3): strin
 	return visible;
 }
 
-function appendTargetDetailRows(rows: string[], targets: string[], basePrefix: string): void {
-	for (let index = 0; index < targets.length; index++) {
-		const connector = index === targets.length - 1 ? "└─" : "├─";
-		rows.push(`${basePrefix}${connector} ${targets[index]}`);
-	}
-}
-
 function getUniqueLabelsCount(items: ToolActivityGroupItem[]): number {
 	const seen = new Set<string>();
 	for (const item of items) {
@@ -1056,27 +1038,6 @@ function getUniqueLabelsCount(items: ToolActivityGroupItem[]): number {
 		if (label) seen.add(label);
 	}
 	return seen.size;
-}
-
-function appendPhaseRows(
-	rows: string[],
-	kind: ToolActivityKind,
-	kindItems: ToolActivityGroupItem[],
-	options: ToolActivityGroupFormatOptions,
-	showTargets: boolean,
-	connector: "├─" | "└─",
-): void {
-	const targets = shouldShowTargetDetails(kind, kindItems, true) ? targetDetailLabels(kindItems) : [];
-	const uniqueCount = getUniqueLabelsCount(kindItems);
-	const count = targets.length > 0 ? uniqueCount : kindItems.length;
-	const summary =
-		targets.length > 0
-			? (formatKindCount(kind, Math.max(count, options.minimumCounts?.[kind] ?? 0), hasIncompleteItems(kindItems)) ??
-				`${kindVerb(kind, hasIncompleteItems(kindItems))} ${count}`)
-			: formatKindTreeLabel(kind, kindItems, options, showTargets);
-	rows.push(`  ${connector} ${summary}`);
-	const childPrefix = connector === "└─" ? "     " : "  │  ";
-	appendTargetDetailRows(rows, targets, childPrefix);
 }
 
 function completedToolGroupTitle(items: ToolActivityGroupItem[]): string {
@@ -1103,42 +1064,287 @@ function completedToolGroupTitle(items: ToolActivityGroupItem[]): string {
 	}
 }
 
-function formatToolActivityTree(
+// ============================================================================
+// Tree UI v2: structured rows
+//
+// The renderer used to emit a single string and the UI component re-derived
+// row state by parsing prefix characters. That made coloring fragile every
+// time the formatter changed (a new connector or glyph would silently fall
+// through to the muted branch). Structured rows expose a typed shape so the
+// component can color/animate decisively without string sniffing.
+// ============================================================================
+
+/**
+ * Default icon set keyed by tool-activity kind. Single-cell unicode glyphs
+ * chosen for visual scan-ability without breaking column alignment in narrow
+ * terminals. Opt-in: callers must pass these explicitly (or a subset) via
+ * `ToolActivityGroupFormatOptions.icons` to enable them — the default tree
+ * still renders without icons to keep stable layout for legacy consumers.
+ */
+export const DEFAULT_TOOL_ACTIVITY_ICONS: Required<NonNullable<ToolActivityGroupFormatOptions["icons"]>> = {
+	search: "?",
+	read: "≣",
+	list: "▤",
+	command: "❯",
+	write: "↗",
+	edit: "↻",
+	agent: "@",
+	other: "·",
+};
+
+/**
+ * Visual classification of a row in the tool-activity tree. Each kind maps to
+ * a deterministic theming/animation rule in the UI component.
+ */
+export type ToolActivityRowKind =
+	| "header" // glyph + title (group only)
+	| "branch" // tree row with kind summary, e.g. "├─ read 4 files"
+	| "detail" // child row under a branch (file target)
+	| "single-action" // first row of a single-tool render, e.g. "● Read foo.ts"
+	| "single-detail" // command row for single-tool bash, e.g. "  │ npm test"
+	| "single-result" // result row for single-tool, e.g. "  └ 412 lines"
+	| "current" // ⠋ active target hint inside a tree
+	| "hint"; // bottom hint row, e.g. "view live tool output"
+
+export type ToolActivityRowState = "running" | "done" | "error" | "neutral";
+
+export interface ToolActivityRow {
+	kind: ToolActivityRowKind;
+	state: ToolActivityRowState;
+	/** Final, indented text for the row. Already includes any tree connectors. */
+	text: string;
+}
+
+export interface ToolActivityGroupHeader {
+	/**
+	 * Three-state glyph: `◐` running/mixed, `●` done, `✗` error.
+	 * Used by the UI to decide between shimmer (running) and solid coloring (done).
+	 */
+	glyph: "◐" | "●" | "✗";
+	state: ToolActivityRowState;
+	title: string;
+	/** Composed header line, e.g. "◐ Exploring". */
+	text: string;
+}
+
+export interface ToolActivityGroupRender {
+	/** Null when rendering a single-tool variant (the action row carries the title instead). */
+	header: ToolActivityGroupHeader | null;
+	rows: ToolActivityRow[];
+	hasRunningItems: boolean;
+	hasError: boolean;
+	isSingleTool: boolean;
+	intent: ToolActivityGroupIntent | undefined;
+	/** Stable signature for caching across shimmer ticks (snapshot identity + layout). */
+	signature: string;
+}
+
+function deriveGroupState(
+	hasRunning: boolean,
+	hasError: boolean,
+	allErrored: boolean,
+): { glyph: "◐" | "●" | "✗"; state: ToolActivityRowState } {
+	if (hasRunning) return { glyph: "◐", state: "running" };
+	if (allErrored) return { glyph: "✗", state: "error" };
+	if (hasError) return { glyph: "●", state: "done" };
+	return { glyph: "●", state: "done" };
+}
+
+function classifyBranchState(kindItems: ToolActivityGroupItem[]): ToolActivityRowState {
+	if (kindItems.some((item) => item.isPartial || !item.result)) return "running";
+	if (kindItems.every((item) => item.isError)) return "error";
+	if (kindItems.some((item) => item.isError)) return "done";
+	return "done";
+}
+
+function singleToolRowState(item: ToolActivityGroupItem): ToolActivityRowState {
+	if (item.isError) return "error";
+	if (item.isPartial || !item.result) return "running";
+	return "done";
+}
+
+function buildSignature(items: ToolActivityGroupItem[], options: ToolActivityGroupFormatOptions): string {
+	const parts = items.map((item) => {
+		const state = singleToolRowState(item);
+		const argHash = item.toolName === "bash" ? (typeof item.args?.command === "string" ? item.args.command : "") : "";
+		return `${item.id}|${item.toolName}|${state}|${argHash.length}`;
+	});
+	const counts = options.minimumCounts
+		? Object.entries(options.minimumCounts)
+				.map(([k, v]) => `${k}=${v ?? 0}`)
+				.sort()
+				.join(",")
+		: "";
+	return `${parts.join(";")}#${counts}#${options.layout ?? "full"}#${options.inlineSingleTool ? "1" : "0"}`;
+}
+
+function appendStructuredPhaseRows(
+	rows: ToolActivityRow[],
+	kind: ToolActivityKind,
+	kindItems: ToolActivityGroupItem[],
+	options: ToolActivityGroupFormatOptions,
+	showTargets: boolean,
+	connector: "├─" | "└─",
+	branchState: ToolActivityRowState,
+): void {
+	const tightLayout = options.layout === "tight";
+	const compactLayout = options.layout === "compact" || tightLayout;
+	const includeTargets = !compactLayout && shouldShowTargetDetails(kind, kindItems, true);
+	const targets = includeTargets ? targetDetailLabels(kindItems) : [];
+	const uniqueCount = getUniqueLabelsCount(kindItems);
+	const count = targets.length > 0 ? uniqueCount : kindItems.length;
+	const summary =
+		targets.length > 0
+			? (formatKindCount(kind, Math.max(count, options.minimumCounts?.[kind] ?? 0), hasIncompleteItems(kindItems)) ??
+				`${kindVerb(kind, hasIncompleteItems(kindItems))} ${count}`)
+			: formatKindTreeLabel(kind, kindItems, options, showTargets && !compactLayout);
+	const icon = options.icons?.[kind];
+	const decoratedSummary = icon ? `${icon} ${summary}` : summary;
+	rows.push({ kind: "branch", state: branchState, text: `  ${connector} ${decoratedSummary}` });
+	if (targets.length > 0) {
+		const childPrefix = connector === "└─" ? "     " : "  │  ";
+		for (let index = 0; index < targets.length; index++) {
+			const childConnector = index === targets.length - 1 ? "└─" : "├─";
+			rows.push({
+				kind: "detail",
+				state: branchState,
+				text: `${childPrefix}${childConnector} ${targets[index]}`,
+			});
+		}
+	}
+}
+
+function buildStructuredTree(
 	items: ToolActivityGroupItem[],
-	options: ToolActivityGroupFormatOptions = {},
-	forcePhaseLayout = false,
-): string[] {
+	options: ToolActivityGroupFormatOptions,
+	forcePhaseLayout: boolean,
+): ToolActivityRow[] {
 	const groups = orderedKindGroups(items);
 	if (groups.length === 0) return [];
 	const showTargets = groups.length === 1;
 	const hasIncomplete = hasIncompleteItems(items);
 	const usePhaseLayout = forcePhaseLayout || hasIncomplete || groups.length > 1;
-
-	const rows: string[] = [];
+	const rows: ToolActivityRow[] = [];
 	for (let index = 0; index < groups.length; index++) {
 		const [kind, kindItems] = groups[index]!;
 		const connector = index < groups.length - 1 ? "├─" : "└─";
+		const branchState = classifyBranchState(kindItems);
 		if (usePhaseLayout) {
-			appendPhaseRows(rows, kind, kindItems, options, showTargets, connector);
+			appendStructuredPhaseRows(rows, kind, kindItems, options, showTargets, connector, branchState);
 		} else {
-			rows.push(`  ${connector} ${formatKindTreeLabel(kind, kindItems, options, showTargets)}`);
-			const targets = shouldShowTargetDetails(kind, kindItems, false) ? targetDetailLabels(kindItems) : [];
-			appendTargetDetailRows(rows, targets, "  │  ");
+			const summary = formatKindTreeLabel(kind, kindItems, options, showTargets && options.layout !== "compact");
+			const icon = options.icons?.[kind];
+			rows.push({
+				kind: "branch",
+				state: branchState,
+				text: `  ${connector} ${icon ? `${icon} ` : ""}${summary}`,
+			});
+			if (options.layout !== "compact" && options.layout !== "tight") {
+				const targets = shouldShowTargetDetails(kind, kindItems, false) ? targetDetailLabels(kindItems) : [];
+				for (let i = 0; i < targets.length; i++) {
+					const childConnector = i === targets.length - 1 ? "└─" : "├─";
+					rows.push({ kind: "detail", state: branchState, text: `  │  ${childConnector} ${targets[i]}` });
+				}
+			}
 		}
 	}
-
 	return rows;
 }
 
-export function formatToolActivityGroup(
+function buildSingleToolStructuredRows(
+	item: ToolActivityGroupItem,
+	options: ToolActivityGroupFormatOptions,
+): ToolActivityRow[] {
+	const activity = summarizeToolCall(item.toolName, item.args);
+	const state = singleToolRowState(item);
+	const pending = state === "running";
+
+	if (activity.kind === "agent") {
+		const details = item.result?.details as { toolCalls?: number; subagentType?: string } | undefined;
+		const toolCalls = details?.toolCalls ?? 0;
+		const statsText = toolCalls > 0 ? ` · ${toolCalls} tool ${toolCalls === 1 ? "use" : "uses"}` : "";
+		if (pending) {
+			const desc = details
+				? `${details.subagentType || "agent"} using ${item.result?.content?.[0]?.text || "tools"}`
+				: "working…";
+			return [{ kind: "single-result", state, text: `  └─ ${activity.compact} · ${desc}${statsText}` }];
+		}
+		const resultSummary = formatCompletedSingleToolResult(item);
+		return [{ kind: "single-result", state, text: `  └─ ${activity.compact} · ${resultSummary}${statsText}` }];
+	}
+
+	const glyph = state === "running" ? "◐" : state === "error" ? "✗" : "●";
+	const action = singleToolActionLabel(item);
+	const result = pending ? formatPendingSingleToolResult(item) : formatCompletedSingleToolResult(item);
+	const commandRow = singleToolDetailLine(item);
+	const tightLayout = options.layout === "tight";
+	const inlineSingle = options.inlineSingleTool ?? false;
+	const inlineEligible =
+		inlineSingle && !commandRow && state === "done" && result.length > 0 && result.length + action.length <= 72;
+	if (inlineEligible || tightLayout) {
+		return [{ kind: "single-action", state, text: `${glyph} ${action} · ${result}` }];
+	}
+
+	const rows: ToolActivityRow[] = [{ kind: "single-action", state, text: `${glyph} ${action}` }];
+	if (commandRow) rows.push({ kind: "single-detail", state, text: commandRow });
+	rows.push({ kind: "single-result", state, text: `  └ ${result}` });
+	return rows;
+}
+
+function tightGroupSummary(items: ToolActivityGroupItem[]): string {
+	const grouped = orderedKindGroups(items);
+	const parts: string[] = [];
+	for (const [kind, kindItems] of grouped) {
+		const verb = kindVerb(kind, hasIncompleteItems(kindItems));
+		parts.push(`${verb} ${kindItems.length}`);
+	}
+	return parts.join(" · ");
+}
+
+export function buildToolActivityGroupRender(
 	items: ToolActivityGroupItem[],
 	options: ToolActivityGroupFormatOptions = {},
-): string {
+): ToolActivityGroupRender {
 	const visibleItems = items.length > 0 ? items : [];
-	if (visibleItems.length === 0) return "✦ Working";
-	if (visibleItems.length === 1) return formatSingleToolActivityRows(visibleItems[0]!).join("\n");
-	const completed = !hasIncompleteItems(visibleItems);
 	const intent = toolActivityGroupIntent(visibleItems);
+	if (visibleItems.length === 0) {
+		const header: ToolActivityGroupHeader = {
+			glyph: "◐",
+			state: "running",
+			title: "Working",
+			text: "◐ Working",
+		};
+		return {
+			header,
+			rows: [],
+			hasRunningItems: true,
+			hasError: false,
+			isSingleTool: false,
+			intent,
+			signature: buildSignature(visibleItems, options),
+		};
+	}
+
+	if (visibleItems.length === 1) {
+		const rows = buildSingleToolStructuredRows(visibleItems[0]!, options);
+		const item = visibleItems[0]!;
+		const state = singleToolRowState(item);
+		return {
+			header: null,
+			rows,
+			hasRunningItems: state === "running",
+			hasError: state === "error",
+			isSingleTool: true,
+			intent,
+			signature: buildSignature(visibleItems, options),
+		};
+	}
+
+	const completed = !hasIncompleteItems(visibleItems);
+	const hasError = visibleItems.some((item) => item.isError === true);
+	const allErrored = visibleItems.every((item) => item.isError === true);
+	const { glyph, state } = deriveGroupState(!completed, hasError, allErrored);
+
 	const title =
 		intent === "inspect"
 			? completed
@@ -1147,11 +1353,52 @@ export function formatToolActivityGroup(
 			: completed
 				? completedToolGroupTitle(visibleItems)
 				: toolGroupTitle(visibleItems);
-	const header = `${intent === "inspect" ? "●" : "✦"} ${title}`;
-	const rows = completed
-		? formatToolActivityTree(visibleItems, options, true)
-		: formatToolActivityTree(visibleItems, options);
-	return [header, ...rows].join("\n");
+	const header: ToolActivityGroupHeader = {
+		glyph,
+		state,
+		title,
+		text: `${glyph} ${title}`,
+	};
+
+	if (options.layout === "tight") {
+		return {
+			header,
+			rows: [
+				{
+					kind: "branch",
+					state,
+					text: `  └─ ${tightGroupSummary(visibleItems)}`,
+				},
+			],
+			hasRunningItems: !completed,
+			hasError,
+			isSingleTool: false,
+			intent,
+			signature: buildSignature(visibleItems, options),
+		};
+	}
+
+	const rows = buildStructuredTree(visibleItems, options, completed);
+	return {
+		header,
+		rows,
+		hasRunningItems: !completed,
+		hasError,
+		isSingleTool: false,
+		intent,
+		signature: buildSignature(visibleItems, options),
+	};
+}
+
+export function formatToolActivityGroup(
+	items: ToolActivityGroupItem[],
+	options: ToolActivityGroupFormatOptions = {},
+): string {
+	const rendered = buildToolActivityGroupRender(items, options);
+	const lines: string[] = [];
+	if (rendered.header) lines.push(rendered.header.text);
+	for (const row of rendered.rows) lines.push(row.text);
+	return lines.join("\n");
 }
 
 export function formatToolActivityGroupLoading(items: ToolActivityGroupItem[]): string {
