@@ -4,8 +4,10 @@ import { Container } from "@neosantara/tui";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { type BashOperations, createBashToolDefinition } from "../src/core/tools/bash.js";
 import {
+	buildToolActivityGroupRender,
 	canMergeToolIntoActivityGroup,
 	classifyBashCommand,
+	DEFAULT_TOOL_ACTIVITY_ICONS,
 	formatToolActivityGroup,
 	formatToolActivityLine,
 	formatToolInputLoadingMessage,
@@ -112,7 +114,7 @@ describe("tool activity summaries", () => {
 			},
 		]);
 
-		expect(text).toContain("● Search /todo/ in src");
+		expect(text).toContain("◐ Search /todo/ in src");
 		expect(text).toContain("└ searching…");
 		expect(text).not.toContain("⏺");
 	});
@@ -178,7 +180,7 @@ describe("tool activity summaries", () => {
 		group.addTool("read", "read-3", { path: "src/three.ts" }, createStubToolExecutionComponent());
 
 		let rendered = stripAnsi(renderRaw(group));
-		expect(rendered).toContain("● Read src/one.ts");
+		expect(rendered).toContain("◐ Read src/one.ts");
 		expect(rendered).not.toContain("two.ts");
 		expect(rendered).not.toContain("three.ts");
 
@@ -410,7 +412,7 @@ describe("tool activity grouping", () => {
 			},
 		]);
 
-		expect(text).toContain("● Exploring");
+		expect(text).toContain("◐ Exploring");
 		expect(text).toContain("├─ searching 1 pattern");
 		expect(text).toContain("└─ reading 1 file");
 	});
@@ -579,7 +581,7 @@ describe("tool activity grouping", () => {
 			},
 		]);
 
-		expect(text).toContain("● Exploring");
+		expect(text).toContain("◐ Exploring");
 		expect(text).toContain("listed 1 directory");
 		expect(text).toContain("reading 1 file");
 	});
@@ -633,5 +635,276 @@ describe("tool activity grouping", () => {
 		expect(text).toContain("Run check in packages/coding-agent and inspect ~/.neo-code");
 		expect(text).not.toContain(cwd);
 		expect(text).not.toContain(home);
+	});
+});
+
+describe("tool activity tree v2 — structured rows and 3-state header", () => {
+	beforeAll(() => {
+		initTheme("dark");
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("uses ◐ glyph for any group with running items, regardless of intent", () => {
+		const text = formatToolActivityGroup([
+			{
+				id: "grep-1",
+				toolName: "grep",
+				args: { pattern: "todo", path: "src" },
+				isPartial: true,
+				executionStarted: true,
+			},
+			{
+				id: "read-1",
+				toolName: "read",
+				args: { path: "src/app.ts" },
+				isPartial: true,
+				executionStarted: true,
+			},
+		]);
+
+		expect(text).toContain("◐ Exploring");
+		expect(text).not.toContain("● Exploring");
+		expect(text).not.toContain("✦ Exploring");
+	});
+
+	it("uses ● glyph when every item completes successfully", () => {
+		const text = formatToolActivityGroup([
+			{
+				id: "ls-1",
+				toolName: "ls",
+				args: { path: "docs" },
+				result: { content: [{ type: "text", text: "intro.md" }] },
+				isError: false,
+				isPartial: false,
+			},
+			{
+				id: "read-1",
+				toolName: "read",
+				args: { path: "src/app.ts" },
+				result: { content: [{ type: "text", text: "line one" }] },
+				isError: false,
+				isPartial: false,
+			},
+		]);
+
+		expect(text).toContain("● Explored");
+		expect(text).not.toContain("◐ Explored");
+	});
+
+	it("uses ✗ glyph when every item errored out", () => {
+		const text = formatToolActivityGroup([
+			{
+				id: "read-1",
+				toolName: "read",
+				args: { path: "src/missing-1.ts" },
+				result: { content: [{ type: "text", text: "ENOENT" }], isError: true },
+				isError: true,
+				isPartial: false,
+			},
+			{
+				id: "read-2",
+				toolName: "read",
+				args: { path: "src/missing-2.ts" },
+				result: { content: [{ type: "text", text: "ENOENT" }], isError: true },
+				isError: true,
+				isPartial: false,
+			},
+		]);
+
+		expect(text.startsWith("✗ ")).toBe(true);
+	});
+
+	it("emits typed structured rows alongside the string facade", () => {
+		const render = buildToolActivityGroupRender([
+			{
+				id: "grep-1",
+				toolName: "grep",
+				args: { pattern: "todo", path: "src" },
+				isPartial: true,
+				executionStarted: true,
+			},
+			{
+				id: "read-1",
+				toolName: "read",
+				args: { path: "src/app.ts" },
+				isPartial: true,
+				executionStarted: true,
+			},
+		]);
+
+		expect(render.header?.glyph).toBe("◐");
+		expect(render.header?.state).toBe("running");
+		expect(render.hasRunningItems).toBe(true);
+		expect(render.isSingleTool).toBe(false);
+		const branchKinds = render.rows.filter((row) => row.kind === "branch").map((row) => row.state);
+		expect(branchKinds.every((state) => state === "running")).toBe(true);
+	});
+
+	it("collapses the tree to a single line at tight layout (<50 cols)", () => {
+		const render = buildToolActivityGroupRender(
+			[
+				{
+					id: "ls-1",
+					toolName: "ls",
+					args: { path: "docs" },
+					isPartial: true,
+					executionStarted: true,
+				},
+				{
+					id: "read-1",
+					toolName: "read",
+					args: { path: "src/app.ts" },
+					isPartial: true,
+					executionStarted: true,
+				},
+			],
+			{ layout: "tight" },
+		);
+
+		expect(render.header?.glyph).toBe("◐");
+		expect(render.rows).toHaveLength(1);
+		expect(render.rows[0]?.text).toContain("listing 1");
+		expect(render.rows[0]?.text).toContain("reading 1");
+	});
+
+	it("drops file detail rows at compact layout (50-79 cols)", () => {
+		const renderFull = buildToolActivityGroupRender(
+			[
+				{
+					id: "read-1",
+					toolName: "read",
+					args: { path: "src/one.ts" },
+					result: { content: [{ type: "text", text: "ok" }] },
+					isError: false,
+					isPartial: false,
+				},
+				{
+					id: "read-2",
+					toolName: "read",
+					args: { path: "src/two.ts" },
+					result: { content: [{ type: "text", text: "ok" }] },
+					isError: false,
+					isPartial: false,
+				},
+			],
+			{ layout: "full" },
+		);
+		const renderCompact = buildToolActivityGroupRender(
+			[
+				{
+					id: "read-1",
+					toolName: "read",
+					args: { path: "src/one.ts" },
+					result: { content: [{ type: "text", text: "ok" }] },
+					isError: false,
+					isPartial: false,
+				},
+				{
+					id: "read-2",
+					toolName: "read",
+					args: { path: "src/two.ts" },
+					result: { content: [{ type: "text", text: "ok" }] },
+					isError: false,
+					isPartial: false,
+				},
+			],
+			{ layout: "compact" },
+		);
+
+		// Full layout exposes per-file detail rows; compact does not.
+		expect(renderFull.rows.some((row) => row.kind === "detail")).toBe(true);
+		expect(renderCompact.rows.some((row) => row.kind === "detail")).toBe(false);
+	});
+
+	it("inlines single-tool result onto the action row when room allows", () => {
+		const render = buildToolActivityGroupRender(
+			[
+				{
+					id: "read-1",
+					toolName: "read",
+					args: { path: "src/app.ts" },
+					result: { content: [{ type: "text", text: "line one" }] },
+					isError: false,
+					isPartial: false,
+				},
+			],
+			{ inlineSingleTool: true },
+		);
+
+		expect(render.isSingleTool).toBe(true);
+		expect(render.rows).toHaveLength(1);
+		expect(render.rows[0]?.kind).toBe("single-action");
+		expect(render.rows[0]?.text).toMatch(/^●.*·.*line/);
+	});
+
+	it("falls back to two-line single-tool layout when inline is disabled", () => {
+		const render = buildToolActivityGroupRender(
+			[
+				{
+					id: "read-1",
+					toolName: "read",
+					args: { path: "src/app.ts" },
+					result: { content: [{ type: "text", text: "line one" }] },
+					isError: false,
+					isPartial: false,
+				},
+			],
+			{ inlineSingleTool: false },
+		);
+
+		expect(render.rows.length).toBeGreaterThanOrEqual(2);
+		expect(render.rows[0]?.kind).toBe("single-action");
+		expect(render.rows[render.rows.length - 1]?.kind).toBe("single-result");
+	});
+
+	it("decorates branches with optional theme icons when supplied", () => {
+		const render = buildToolActivityGroupRender(
+			[
+				{
+					id: "ls-1",
+					toolName: "ls",
+					args: { path: "docs" },
+					result: { content: [{ type: "text", text: "intro.md" }] },
+					isError: false,
+					isPartial: false,
+				},
+				{
+					id: "read-1",
+					toolName: "read",
+					args: { path: "src/app.ts" },
+					result: { content: [{ type: "text", text: "ok" }] },
+					isError: false,
+					isPartial: false,
+				},
+			],
+			{ icons: DEFAULT_TOOL_ACTIVITY_ICONS },
+		);
+
+		const branchTexts = render.rows.filter((row) => row.kind === "branch").map((row) => row.text);
+		expect(branchTexts.some((text) => text.includes(DEFAULT_TOOL_ACTIVITY_ICONS.list))).toBe(true);
+		expect(branchTexts.some((text) => text.includes(DEFAULT_TOOL_ACTIVITY_ICONS.read))).toBe(true);
+	});
+
+	it("produces a stable signature so cached recolor can reuse the build", () => {
+		const args = [
+			{
+				id: "ls-1",
+				toolName: "ls",
+				args: { path: "docs" },
+				result: { content: [{ type: "text", text: "intro.md" }] },
+				isError: false,
+				isPartial: false,
+			},
+		] as const;
+
+		const a = buildToolActivityGroupRender(args as any);
+		const b = buildToolActivityGroupRender(args as any);
+		expect(a.signature).toBe(b.signature);
+
+		const c = buildToolActivityGroupRender(args as any, { layout: "compact" });
+		expect(c.signature).not.toBe(a.signature);
 	});
 });
