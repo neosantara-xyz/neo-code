@@ -86,6 +86,7 @@ import type {
 } from "../../core/extensions/index.js";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.js";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.js";
+import { getLspManager } from "../../core/lsp/manager.js";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.js";
 import { loginWithNeosantaraDeviceAuth } from "../../core/neosantara-device-auth.js";
 import { openLocal } from "../../core/open-file.js";
@@ -161,6 +162,13 @@ import { CountdownTimer } from "./components/countdown-timer.js";
 import { CustomEditor } from "./components/custom-editor.js";
 import { CustomMessageComponent } from "./components/custom-message.js";
 import { renderDiff } from "./components/diff.js";
+import {
+	type DoctorDiagnostic,
+	type DoctorLine,
+	DoctorScreenComponent,
+	type DoctorScreenData,
+	type DoctorSection,
+} from "./components/doctor-screen.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
@@ -171,6 +179,7 @@ import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
 import { NeosantaraAnnouncementComponent } from "./components/neosantara-announcement.js";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.js";
+import { RateLimitCardComponent } from "./components/rate-limit-card.js";
 import { ReviewSelectorComponent } from "./components/review-selector.js";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
@@ -181,7 +190,7 @@ import { ToolActivityGroupComponent } from "./components/tool-activity-group.js"
 import { ToolApprovalRequestComponent } from "./components/tool-approval-request.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
-import { type UsageModelRow, UsageScreenComponent } from "./components/usage-screen.js";
+import { UsageScreenComponent } from "./components/usage-screen.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
 import { getHomeDirectoryWarning, WelcomeScreenComponent } from "./components/welcome-screen.js";
@@ -645,6 +654,9 @@ export class InteractiveMode {
 	private retryLoader: Loader | undefined = undefined;
 	private retryCountdown: CountdownTimer | undefined = undefined;
 	private retryEscapeHandler?: () => void;
+
+	// Rate-limit card state (at most one active at a time)
+	private rateLimitCard: RateLimitCardComponent | undefined = undefined;
 
 	// Messages queued while compaction is running
 	private compactionQueuedMessages: CompactionQueuedMessage[] = [];
@@ -3201,6 +3213,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/lsp" || text.startsWith("/lsp ")) {
+				await this.handleLspCommand(text);
+				this.editor.setText("");
+				return;
+			}
 			if (text === "/termux-status") {
 				this.handleTermuxStatusCommand();
 				this.editor.setText("");
@@ -4060,6 +4077,35 @@ export class InteractiveMode {
 				if (!event.success) {
 					this.showError(`Retry failed after ${event.attempt} attempts: ${event.finalError || "Unknown error"}`);
 				}
+				this.ui.requestRender();
+				break;
+			}
+
+			case "rate_limit_action_required": {
+				// Dismiss any previously active card before showing a new one
+				if (this.rateLimitCard) {
+					this.rateLimitCard = undefined;
+				}
+
+				const card = new RateLimitCardComponent(
+					event,
+					// onCompact
+					() => {
+						this.rateLimitCard = undefined;
+						this.ui.setFocus(this.editor);
+						void this.session.compact();
+					},
+					// onDismiss
+					() => {
+						this.rateLimitCard = undefined;
+						this.ui.setFocus(this.editor);
+						this.ui.requestRender();
+					},
+				);
+				this.rateLimitCard = card;
+				this.chatContainer.addChild(new Spacer(1));
+				this.chatContainer.addChild(card);
+				this.ui.setFocus(card);
 				this.ui.requestRender();
 				break;
 			}
@@ -6457,7 +6503,7 @@ ${theme.fg("dim", "Hint:")} on Termux run \`pkg install termux-api\` and grant t
 			workspace: this.formatCompactDisplayPath(this.sessionManager.getCwd()),
 			account: authLabel,
 			currentModel: currentModelLabel,
-			billingMode: "Account Billing · Neosantara PAYG · IDR",
+			billingMode: "Neosantara PAYG · IDR",
 			balance: formatOptionalIdrCurrency(accountUsage?.balanceIdr),
 			periodSpend: formatOptionalIdrCurrency(accountUsage?.monthlySpendIdr),
 			sessionTokens: `${cumulative.total.toLocaleString()} tokens`,
@@ -6465,7 +6511,6 @@ ${theme.fg("dim", "Hint:")} on Termux run \`pkg install termux-api\` and grant t
 			sessionDuration: this.formatSessionDuration(),
 			backendStatus,
 			updatedAt: accountUsage?.updatedAt,
-			models: this.buildUsageModelRows(accountUsage, backendUsage.status),
 		};
 
 		let overlay: OverlayHandle | undefined;
@@ -6487,89 +6532,6 @@ ${theme.fg("dim", "Hint:")} on Termux run \`pkg install termux-api\` and grant t
 		if (!modelSupportsThinking) return "";
 		const level = this.session.thinkingLevel || "off";
 		return level === "off" ? "" : ` (${level[0].toUpperCase()}${level.slice(1)})`;
-	}
-
-	private buildUsageModelRows(
-		accountUsage: NeosantaraUsageSnapshot | null,
-		backendStatus: NeosantaraUsageResult["status"],
-	): UsageModelRow[] {
-		const quotaById = new Map(accountUsage?.modelQuotas.map((quota) => [quota.modelId, quota]) ?? []);
-		const models = this.session.modelRegistry
-			.getAll()
-			.filter((model) => model.provider === "neosantara")
-			.sort((a, b) => {
-				const activeA = this.session.model?.id === a.id ? 0 : 1;
-				const activeB = this.session.model?.id === b.id ? 0 : 1;
-				if (activeA !== activeB) return activeA - activeB;
-				const availableA = this.session.modelRegistry.hasConfiguredAuth(a) ? 0 : 1;
-				const availableB = this.session.modelRegistry.hasConfiguredAuth(b) ? 0 : 1;
-				if (availableA !== availableB) return availableA - availableB;
-				return (a.name || a.id).localeCompare(b.name || b.id);
-			});
-
-		return models.map((model) => {
-			const quota = quotaById.get(model.id) ?? quotaById.get(model.name);
-			const hasAuth = this.session.modelRegistry.hasConfiguredAuth(model);
-			const active = this.session.model?.provider === model.provider && this.session.model.id === model.id;
-			const providerName = this.session.modelRegistry.getProviderDisplayName(model.provider);
-			const costDetail = this.formatUsageModelCost(model.cost.input, model.cost.output);
-
-			if (quota) {
-				const available = quota.available ?? (quota.percentAvailable === undefined || quota.percentAvailable > 0);
-				return {
-					id: model.id,
-					displayName: quota.displayName ?? model.name ?? model.id,
-					providerName,
-					active,
-					percentAvailable: quota.percentAvailable ?? (available ? 100 : 0),
-					status: quota.status ?? (available ? "Quota available" : "Quota unavailable"),
-					statusKind: available ? "success" : "warning",
-					detail: quota.resetAt ? `reset ${quota.resetAt}` : costDetail,
-				} satisfies UsageModelRow;
-			}
-
-			if (backendStatus === "login required" || !hasAuth) {
-				return {
-					id: model.id,
-					displayName: model.name ?? model.id,
-					providerName,
-					active,
-					percentAvailable: 0,
-					status: "Login required",
-					statusKind: "warning",
-					detail: costDetail,
-				} satisfies UsageModelRow;
-			}
-
-			if (backendStatus === "unavailable") {
-				return {
-					id: model.id,
-					displayName: model.name ?? model.id,
-					providerName,
-					active,
-					percentAvailable: null,
-					status: "Quota endpoint unavailable",
-					statusKind: "muted",
-					detail: costDetail,
-				} satisfies UsageModelRow;
-			}
-
-			return {
-				id: model.id,
-				displayName: model.name ?? model.id,
-				providerName,
-				active,
-				percentAvailable: 100,
-				status: "PAYG access available",
-				statusKind: "success",
-				detail: costDetail,
-			} satisfies UsageModelRow;
-		});
-	}
-
-	private formatUsageModelCost(inputCost: number, outputCost: number): string {
-		if (inputCost <= 0 && outputCost <= 0) return "price unavailable";
-		return `${formatIdrCurrency(inputCost)}/1M in · ${formatIdrCurrency(outputCost)}/1M out`;
 	}
 
 	private formatContextUsageBar(percent: number | null | undefined): string {
@@ -7088,6 +7050,106 @@ ${theme.fg("success", "✓ Restored latest backup")}
 		this.addPlainInfoBlock(info);
 	}
 
+	private async handleLspCommand(text: string): Promise<void> {
+		const args = text.slice("/lsp".length).trim().split(/\s+/).filter(Boolean);
+		const action = args[0]?.toLowerCase() ?? "status";
+		const cwd = this.sessionManager.getCwd();
+		const manager = getLspManager(cwd);
+
+		if (action === "status" || action === "list") {
+			const status = manager.getStatus();
+			let info = `${theme.bold("LSP servers")}
+
+`;
+			info += `${theme.fg("dim", "Workspace:")} ${status.workspaceRoot}
+
+`;
+			for (const entry of status.servers) {
+				const marker = entry.installed
+					? entry.started
+						? theme.fg("success", "●")
+						: theme.fg("success", "○")
+					: theme.fg("dim", "○");
+				const label = entry.installed ? (entry.started ? "running" : "installed") : "not installed";
+				const path = entry.resolvedPath ? ` ${theme.fg("dim", `(${entry.resolvedPath})`)}` : "";
+				info += `${marker} ${entry.config.id} ${theme.fg("dim", `[${entry.config.languages.join(", ")}]`)} — ${label}${path}\n`;
+			}
+			info += `\n${theme.bold("Commands")}\n`;
+			info += `├─ /lsp status            list installed/running servers\n`;
+			info += `├─ /lsp init              eagerly start an installed server\n`;
+			info += `├─ /lsp logs <server>     show recent server logs\n`;
+			info += `├─ /lsp restart <server>  restart a running server\n`;
+			info += `└─ /lsp stop              stop all running servers\n\n`;
+			info += `${theme.fg("dim", "Tip: install the server you need, then run /lsp init <id> or just call the lsp tool. Examples: typescript-language-server, pyright, rust-analyzer, gopls, clangd, jdtls, solargraph.")}`;
+			this.addPlainInfoBlock(info);
+			return;
+		}
+
+		if (action === "init" || action === "start") {
+			const target = args[1]?.toLowerCase();
+			const installed = manager.listServerAvailability().filter((entry) => entry.installed);
+			if (installed.length === 0) {
+				this.showWarning("No LSP binaries detected on PATH. Install one and rerun /lsp init.");
+				return;
+			}
+			const targets = target ? installed.filter((entry) => entry.config.id === target) : installed;
+			if (targets.length === 0) {
+				this.showWarning(`LSP server "${target}" is not installed. Run /lsp status to see available servers.`);
+				return;
+			}
+			const results: string[] = [];
+			for (const entry of targets) {
+				const client = await manager.getClient(entry.config.id);
+				results.push(
+					`${client ? theme.fg("success", "✓") : theme.fg("error", "✗")} ${entry.config.id} ${client ? "started" : "failed to start (see /lsp logs)"}`,
+				);
+			}
+			this.addPlainInfoBlock(`${theme.bold("LSP init")}\n\n${results.join("\n")}`);
+			return;
+		}
+
+		if (action === "logs" || action === "log") {
+			const target = args[1]?.toLowerCase();
+			if (!target) {
+				this.showWarning("Usage: /lsp logs <server-id> (e.g., /lsp logs typescript-language-server)");
+				return;
+			}
+			const logs = manager.getLogs(target);
+			if (logs.length === 0) {
+				this.addPlainInfoBlock(
+					`${theme.bold(`LSP logs · ${target}`)}\n\n${theme.fg("dim", "No log entries yet.")}`,
+				);
+				return;
+			}
+			const tail = logs.slice(-50).join("\n");
+			this.addPlainInfoBlock(`${theme.bold(`LSP logs · ${target}`)}\n\n${tail}`);
+			return;
+		}
+
+		if (action === "restart") {
+			const target = args[1]?.toLowerCase();
+			if (!target) {
+				this.showWarning("Usage: /lsp restart <server-id>");
+				return;
+			}
+			const ok = await manager.restart(target);
+			this.addPlainInfoBlock(
+				`${theme.bold("LSP restart")}\n\n${ok ? theme.fg("success", `✓ ${target} restarted`) : theme.fg("error", `✗ ${target} failed to restart (see /lsp logs ${target})`)}`,
+			);
+			return;
+		}
+
+		if (action === "stop" || action === "shutdown") {
+			await manager.shutdown();
+			this.addPlainInfoBlock(
+				`${theme.bold("LSP shutdown")}\n\n${theme.fg("success", "✓ Stopped all LSP servers.")}`,
+			);
+			return;
+		}
+
+		this.showWarning(`Unknown /lsp subcommand "${action}". Try /lsp status.`);
+	}
+
 	private handleTermuxStatusCommand(): void {
 		const snapshot = getTermuxStatusSnapshot();
 		const keyboardStatus = getTermuxTouchKeyboardStatus();
@@ -7177,8 +7239,8 @@ ${theme.fg("dim", "Tip: enable opt-in completion notifications via /settings (no
 			...this.session.resourceLoader.getPrompts().diagnostics,
 			...this.session.resourceLoader.getThemes().diagnostics,
 		];
-		const errors = resourceDiagnostics.filter((diagnostic) => diagnostic.type === "error");
-		const warnings = resourceDiagnostics.filter(
+		const resourceErrors = resourceDiagnostics.filter((diagnostic) => diagnostic.type === "error");
+		const resourceWarnings = resourceDiagnostics.filter(
 			(diagnostic) => diagnostic.type === "warning" || diagnostic.type === "collision",
 		);
 		const git = this.getCommandCheck("git");
@@ -7186,42 +7248,174 @@ ${theme.fg("dim", "Tip: enable opt-in completion notifications via /settings (no
 		const fdPath = getToolPath("fd");
 		const memory = process.memoryUsage();
 		const termuxKeyboard = getTermuxTouchKeyboardStatus();
-
-		let info = `${theme.bold("Neo Code Doctor")}\n\n`;
-		info += `${theme.bold("Runtime")}\n`;
-		info += `${this.formatDoctorLine("Node:", "ok", process.version)}\n`;
-		info += `${this.formatDoctorLine("Platform:", "ok", `${process.platform}/${process.arch}`)}\n`;
-		info += `${this.formatDoctorLine("Workspace:", fs.existsSync(this.sessionManager.getCwd()) ? "ok" : "fail", this.sessionManager.getCwd())}\n`;
-		info += `${this.formatDoctorLine("Agent dir:", fs.existsSync(getAgentDir()) ? "ok" : "warn", getAgentDir())}\n`;
-		info += `${this.formatDoctorLine("Session file:", stats.sessionFile ? "ok" : "warn", stats.sessionFile ?? "in-memory session")}\n\n`;
-		info += `${theme.bold("Provider")}\n`;
-		info += `${this.formatDoctorLine("Model:", model ? "ok" : "fail", model ? `${model.provider}/${model.name || model.id}` : "not selected")}\n`;
-		info += `${this.formatDoctorLine("Auth:", authStatus?.configured ? "ok" : "warn", authStatus?.configured ? authStatus.source || "configured" : "not configured")}\n\n`;
-		info += `${theme.bold("Local tools")}\n`;
-		info += `${this.formatDoctorLine("git:", git.ok ? "ok" : "warn", git.value)}\n`;
-		info += `${this.formatDoctorLine("rg:", rgPath ? "ok" : "warn", rgPath ?? "not found; grep/search tool may be slower or unavailable")}\n`;
-		info += `${this.formatDoctorLine("fd:", fdPath ? "ok" : "warn", fdPath ?? "not found; file autocomplete may be degraded")}\n\n`;
-		info += `${theme.bold("Termux")}\n`;
-		info += `${this.formatDoctorLine("Environment:", termuxKeyboard.isTermux ? "ok" : "warn", termuxKeyboard.isTermux ? "detected" : "not detected")}\n`;
-		info += `${this.formatDoctorLine("Touch keys:", termuxKeyboard.usesNeoLayout ? "ok" : termuxKeyboard.hasExtraKeys ? "warn" : "warn", termuxKeyboard.usesNeoLayout ? "Neo layout active" : termuxKeyboard.hasExtraKeys ? "custom layout present; /termux-keys apply can install Neo layout" : "not configured; use /termux-keys apply on Termux")}\n`;
 		const termuxApiCaps = getTermuxApiCapabilities();
-		info += `${this.formatDoctorLine("Termux:API tools:", termuxApiCaps.available ? "ok" : "warn", `${summarizeTermuxApiCapabilities(termuxApiCaps)} — see /termux-status`)}\n\n`;
-		info += `${theme.bold("Resources")}\n`;
-		info += `${this.formatDoctorLine("Diagnostics:", errors.length > 0 ? "fail" : warnings.length > 0 ? "warn" : "ok", `${errors.length} errors, ${warnings.length} warnings`)}\n`;
-		for (const diagnostic of [...errors, ...warnings].slice(0, 5)) {
-			info += `  - ${diagnostic.message}${"path" in diagnostic && diagnostic.path ? ` (${diagnostic.path})` : ""}\n`;
-		}
-		if (errors.length + warnings.length > 5) {
-			info += `  - ${errors.length + warnings.length - 5} more diagnostics hidden\n`;
-		}
-		info += `\n${theme.bold("Session")}\n`;
-		info += `${this.formatDoctorLine("Context:", stats.contextUsage?.percent && stats.contextUsage.percent >= 90 ? "warn" : "ok", formatPercent(stats.contextUsage?.percent))}\n`;
-		info += `${this.formatDoctorLine("Memory RSS:", memory.rss > 1024 * 1024 * 1024 ? "warn" : "ok", formatBytes(memory.rss))}\n`;
-		info += `\n${theme.fg("dim", "Tip:")} Use /status for account/model summary and /context for context details.`;
+		const lspStatus = getLspManager(this.sessionManager.getCwd()).getStatus();
+		const installedLsps = lspStatus.servers.filter((entry) => entry.installed);
+		const runningLsps = lspStatus.servers.filter((entry) => entry.started);
+		const lspStatusLines: DoctorLine[] = [
+			{
+				label: "Servers",
+				status: installedLsps.length > 0 ? "ok" : "warn",
+				detail:
+					installedLsps.length > 0
+						? `${installedLsps.length} installed: ${installedLsps.map((entry) => entry.config.id).join(", ")}`
+						: "no LSP binaries on PATH; lsp tool will return install hints",
+			},
+			{
+				label: "Running",
+				status: "ok",
+				detail:
+					runningLsps.length > 0
+						? runningLsps.map((entry) => entry.config.id).join(", ")
+						: "none active (lazy-spawn on first lsp tool call)",
+			},
+		];
 
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(info, 1, 0));
-		this.ui.requestRender();
+		const sections: DoctorSection[] = [
+			{
+				title: "Runtime",
+				lines: [
+					{ label: "Node", status: "ok", detail: process.version },
+					{ label: "Platform", status: "ok", detail: `${process.platform}/${process.arch}` },
+					{
+						label: "Workspace",
+						status: fs.existsSync(this.sessionManager.getCwd()) ? "ok" : "fail",
+						detail: this.sessionManager.getCwd(),
+					},
+					{
+						label: "Agent dir",
+						status: fs.existsSync(getAgentDir()) ? "ok" : "warn",
+						detail: getAgentDir(),
+					},
+					{
+						label: "Session file",
+						status: stats.sessionFile ? "ok" : "warn",
+						detail: stats.sessionFile ?? "in-memory session",
+					},
+				],
+			},
+			{
+				title: "Provider",
+				lines: [
+					{
+						label: "Model",
+						status: model ? "ok" : "fail",
+						detail: model ? `${model.provider}/${model.name || model.id}` : "not selected",
+					},
+					{
+						label: "Auth",
+						status: authStatus?.configured ? "ok" : "warn",
+						detail: authStatus?.configured ? authStatus.source || "configured" : "not configured",
+					},
+				],
+			},
+			{
+				title: "Local tools",
+				lines: [
+					{ label: "git", status: git.ok ? "ok" : "warn", detail: git.value },
+					{
+						label: "rg",
+						status: rgPath ? "ok" : "warn",
+						detail: rgPath ?? "not found; grep/search tool may be slower or unavailable",
+					},
+					{
+						label: "fd",
+						status: fdPath ? "ok" : "warn",
+						detail: fdPath ?? "not found; file autocomplete may be degraded",
+					},
+				],
+			},
+			{
+				title: "Termux",
+				lines: [
+					{
+						label: "Environment",
+						status: termuxKeyboard.isTermux ? "ok" : "warn",
+						detail: termuxKeyboard.isTermux ? "detected" : "not detected",
+					},
+					{
+						label: "Touch keys",
+						status: termuxKeyboard.usesNeoLayout ? "ok" : "warn",
+						detail: termuxKeyboard.usesNeoLayout
+							? "Neo layout active"
+							: termuxKeyboard.hasExtraKeys
+								? "custom layout present; /termux-keys apply can install Neo layout"
+								: "not configured; use /termux-keys apply on Termux",
+					},
+					{
+						label: "Termux:API",
+						status: termuxApiCaps.available ? "ok" : "warn",
+						detail: `${summarizeTermuxApiCapabilities(termuxApiCaps)} — see /termux-status`,
+					},
+				],
+			},
+			{
+				title: "Resources",
+				lines: [
+					{
+						label: "Loader",
+						status: resourceErrors.length > 0 ? "fail" : resourceWarnings.length > 0 ? "warn" : "ok",
+						detail: `${resourceErrors.length} errors, ${resourceWarnings.length} warnings`,
+					},
+				],
+			},
+			{
+				title: "Code intelligence",
+				lines: lspStatusLines,
+			},
+			{
+				title: "Session",
+				lines: [
+					{
+						label: "Context",
+						status: stats.contextUsage?.percent && stats.contextUsage.percent >= 90 ? "warn" : "ok",
+						detail: formatPercent(stats.contextUsage?.percent),
+					},
+					{
+						label: "Memory RSS",
+						status: memory.rss > 1024 * 1024 * 1024 ? "warn" : "ok",
+						detail: formatBytes(memory.rss),
+					},
+				],
+			},
+		];
+
+		let totalErrors = 0;
+		let totalWarnings = 0;
+		for (const section of sections) {
+			for (const line of section.lines) {
+				if (line.status === "fail") totalErrors += 1;
+				else if (line.status === "warn") totalWarnings += 1;
+			}
+		}
+
+		const data: DoctorScreenData = {
+			version: this.version,
+			sections,
+			summary: { errors: totalErrors, warnings: totalWarnings },
+			resourceDiagnostics: [...resourceErrors, ...resourceWarnings].map(
+				(diagnostic): DoctorDiagnostic => ({
+					type: diagnostic.type === "error" ? "error" : diagnostic.type === "collision" ? "collision" : "warning",
+					message: diagnostic.message,
+					path: "path" in diagnostic ? diagnostic.path : undefined,
+				}),
+			),
+			tip: "Use /status for account/model summary and /context for context details.",
+		};
+
+		let overlay: OverlayHandle | undefined;
+		const component = new DoctorScreenComponent(
+			data,
+			() => this.ui.terminal.rows,
+			() => overlay?.hide(),
+		);
+		overlay = this.ui.showOverlay(component, {
+			anchor: "top-center",
+			row: 0,
+			width: Math.min(80, Math.max(50, this.ui.terminal.columns - 2)),
+			maxHeight: "95%",
+			margin: { top: 0, left: 1, right: 1, bottom: 1 },
+		});
 	}
 
 	private addPlainInfoBlock(info: string): void {

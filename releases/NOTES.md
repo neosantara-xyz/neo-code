@@ -407,3 +407,27 @@
 - mode: patch
 - notes: fix(activity): align tool transcript hints with Codex flow
 
+## v0.76.57 (2026-05-24)
+- mode: patch
+- notes: fix(coding-agent): deduplicate file counts in tool activity tree
+
+## v0.76.58 (2026-05-24)
+- mode: patch
+- notes: feat(coding-agent): specify parallel and sequential tools in system prompt
+
+## v0.76.59 (2026-05-24)
+- mode: patch
+- notes: feat(coding-agent): append Termux environment and capabilities to system prompt
+
+## v0.76.60 (2026-05-24)
+- mode: patch
+- notes: feat(tui): add rate limit card with interactive billing and compact actions
+
+## v0.76.61 (2026-05-24)
+- mode: patch
+- notes: feat(doctor): scrollable overlay with aggregate error/warning summary across all sections
+
+## v0.76.62 (2026-05-24)
+- mode: patch
+- notes: feat(lsp): real Language Server Protocol integration with /lsp command, lazy-spawn manager, and graceful fallback when no server is installed
+

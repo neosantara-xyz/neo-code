@@ -14,6 +14,8 @@
 - Added `/fork` slash command. Spawns a new persisted session that records the current one as its parent so the session tree picker can navigate back. Falls back to a hint when the current session is in-memory.
 - Added a high-context tip override that nudges toward `/compact` when the context window utilization crosses 70% (warning) and escalates to "urgent" wording above 90%. The override is rendered every turn until context drops, independent of the cooldown-based tip catalog.
 - Added a "Yes, fork to fresh context" option to the ExitPlanMode approval popup. When selected, Neo waits for the current turn to drain, forks the persisted session, and re-submits the approved plan as the opening user message in the new thread so the implementation runs against a clean context window.
+- Added real Language Server Protocol support through the new `/lsp` slash command (`status`, `init`, `logs`, `restart`, `stop`) and a rewritten `lsp` tool. Neo lazily spawns LSP servers detected on `PATH` (typescript-language-server, pyright-langserver, rust-analyzer, gopls, clangd, jdtls, solargraph) and reuses connections per workspace; when no matching server is installed the tool returns a clear install hint instead of fabricating results.
+- Added a "Code intelligence" section to `/doctor` summarizing installed and running LSP servers.
 
 ### Changed
 
@@ -21,6 +23,9 @@
 - Smoothed live tool activity shimmer and shortened incremental reveal timing for parallel read-only tool batches.
 - Matched Claude-style working loader behavior by picking one random default label per turn and hiding spinner tips after tool/custom activity takes over.
 - Aligned read-only tool activity groups with Codex-style `Exploring` / `Explored` transcript hints while keeping `Ctrl+O` as an expand alias.
+- Reworked `/doctor` into a scrollable overlay with an aggregate Summary line that counts errors and warnings across every section, not just resource loader diagnostics.
+- Simplified `/usage` overlay: removed the ASCII mascot header and the per-model quota rows so the screen reflects PAYG billing only (balance, period spend, current session).
+- Updated the default Termux touch-keyboard layout to follow community conventions: arrow keys on the right (inverted-T), modifiers (`TAB`, `CTRL`, `ALT`) on the left of row 2, and 7 keys per row.
 
 ## [0.76.6] - 2026-05-21
 

@@ -515,6 +515,51 @@ describe("tool activity grouping", () => {
 		expect(text).toContain("two.ts");
 	});
 
+	it("deduplicates files with duplicate basenames or duplicate reads and keeps count consistent", () => {
+		const text = formatToolActivityGroup([
+			{
+				id: "read-1",
+				toolName: "read",
+				args: { path: "src/package.json" },
+				result: { content: [{ type: "text", text: "{}" }] },
+				isError: false,
+				isPartial: false,
+			},
+			{
+				id: "read-2",
+				toolName: "read",
+				args: { path: "package.json" },
+				result: { content: [{ type: "text", text: "{}" }] },
+				isError: false,
+				isPartial: false,
+			},
+			{
+				id: "read-3",
+				toolName: "read",
+				args: { path: "README.md" },
+				result: { content: [{ type: "text", text: "# Readme" }] },
+				isError: false,
+				isPartial: false,
+			},
+			{
+				id: "read-4",
+				toolName: "read",
+				args: { path: "README.md" },
+				result: { content: [{ type: "text", text: "# Readme" }] },
+				isError: false,
+				isPartial: false,
+			},
+		]);
+
+		expect(text).toContain("● Explored");
+		expect(text).toContain("read 2 files");
+		expect(text).toContain("package.json");
+		expect(text).toContain("README.md");
+		const lines = text.split("\n");
+		const readChildLines = lines.filter((l) => l.includes("package.json") || l.includes("README.md"));
+		expect(readChildLines.length).toBe(2);
+	});
+
 	it("shows latest active target as a hint row for mixed tool trees", () => {
 		const text = formatToolActivityGroup([
 			{

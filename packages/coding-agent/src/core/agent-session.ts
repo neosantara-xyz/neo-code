@@ -121,6 +121,70 @@ export function isInputTokenRateLimitErrorMessage(
 	return /itpm|input.?tokens?|input token throughput|tokens per minute|tpm/i.test(err);
 }
 
+/** Convenience alias so other modules can reference the event shape directly. */
+export type RateLimitActionRequiredEvent = Extract<AgentSessionEvent, { type: "rate_limit_action_required" }>;
+
+/**
+ * Parse an error message from the Neosantara backend to determine whether it is
+ * a rate-limit or balance error and extract metadata for the card UI.
+ *
+ * Returns undefined when the error message does not match any known pattern.
+ */
+export function parseRateLimitInfo(errorMessage: string): Omit<RateLimitActionRequiredEvent, "type"> | undefined {
+	// Insufficient balance (402 / payment_required)
+	if (/insufficient.?balance|payment.?required/i.test(errorMessage)) {
+		// Try to parse "Rp X" figures from the message
+		const short = errorMessage.split(/\n/)[0]?.slice(0, 120) ?? errorMessage.slice(0, 120);
+		return {
+			limitType: "BALANCE",
+			message: short,
+			canCompact: false,
+		};
+	}
+
+	// RPM exceeded
+	if (/rpm_exceeded|requests.?per.?minute/i.test(errorMessage)) {
+		const retryAfter = parseRetryAfter(errorMessage);
+		return {
+			limitType: "RPM",
+			message: "Too many requests. Please wait or add your balance.",
+			retryAfterSeconds: retryAfter,
+			canCompact: false,
+		};
+	}
+
+	// ITPM exceeded
+	if (/itpm_exceeded|input.?token.?throughput|input tokens per minute/i.test(errorMessage)) {
+		const retryAfter = parseRetryAfter(errorMessage);
+		return {
+			limitType: "ITPM",
+			message: "Input token throughput limit exceeded.",
+			retryAfterSeconds: retryAfter,
+			canCompact: true,
+		};
+	}
+
+	// OTPM exceeded
+	if (/otpm_exceeded|output.?token.?throughput|output tokens per minute/i.test(errorMessage)) {
+		const retryAfter = parseRetryAfter(errorMessage);
+		return {
+			limitType: "OTPM",
+			message: "Output token throughput limit exceeded.",
+			retryAfterSeconds: retryAfter,
+			canCompact: true,
+		};
+	}
+
+	return undefined;
+}
+
+function parseRetryAfter(errorMessage: string): number | undefined {
+	// Match "retry_after: N" or "Resets in Ns" style fragments
+	const m = errorMessage.match(/retry.?after[":=\s]+(\d+)/i) ?? errorMessage.match(/resets?\s+in\s+(\d+)/i);
+	if (m?.[1]) return parseInt(m[1], 10);
+	return undefined;
+}
+
 /**
  * Parse a skill block from message text.
  * Returns null if the text doesn't contain a skill block.
@@ -177,6 +241,17 @@ export type AgentSessionEvent =
 			type: "tool_approval_result";
 			request: ToolApprovalRequest;
 			decision: ToolApprovalDecision;
+	  }
+	| {
+			type: "rate_limit_action_required";
+			/** Which limiter was hit. */
+			limitType: "RPM" | "ITPM" | "OTPM" | "BALANCE";
+			/** Short human-readable message for the card header. */
+			message: string;
+			/** Seconds until the window resets, if available. */
+			retryAfterSeconds?: number;
+			/** True when ITPM or OTPM — compacting context may help. */
+			canCompact: boolean;
 	  };
 
 /** Listener function for agent session events */
@@ -674,6 +749,14 @@ export class AgentSession {
 		if (event.type === "agent_end" && this._lastAssistantMessage) {
 			const msg = this._lastAssistantMessage;
 			this._lastAssistantMessage = undefined;
+
+			// Emit rate-limit / balance card event for the UI, before retry logic runs
+			if (msg.stopReason === "error" && msg.errorMessage) {
+				const info = parseRateLimitInfo(msg.errorMessage);
+				if (info) {
+					this._emit({ type: "rate_limit_action_required", ...info });
+				}
+			}
 
 			if (this._isInputTokenRateLimitError(msg)) {
 				const didRecover = await this._handleInputTokenRateLimit(msg);

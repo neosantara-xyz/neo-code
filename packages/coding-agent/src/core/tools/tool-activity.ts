@@ -1049,6 +1049,15 @@ function appendTargetDetailRows(rows: string[], targets: string[], basePrefix: s
 	}
 }
 
+function getUniqueLabelsCount(items: ToolActivityGroupItem[]): number {
+	const seen = new Set<string>();
+	for (const item of items) {
+		const label = compactTargetForActivity(item);
+		if (label) seen.add(label);
+	}
+	return seen.size;
+}
+
 function appendPhaseRows(
 	rows: string[],
 	kind: ToolActivityKind,
@@ -1058,13 +1067,12 @@ function appendPhaseRows(
 	connector: "├─" | "└─",
 ): void {
 	const targets = shouldShowTargetDetails(kind, kindItems, true) ? targetDetailLabels(kindItems) : [];
+	const uniqueCount = getUniqueLabelsCount(kindItems);
+	const count = targets.length > 0 ? uniqueCount : kindItems.length;
 	const summary =
 		targets.length > 0
-			? (formatKindCount(
-					kind,
-					Math.max(kindItems.length, options.minimumCounts?.[kind] ?? 0),
-					hasIncompleteItems(kindItems),
-				) ?? `${kindVerb(kind, hasIncompleteItems(kindItems))} ${kindItems.length}`)
+			? (formatKindCount(kind, Math.max(count, options.minimumCounts?.[kind] ?? 0), hasIncompleteItems(kindItems)) ??
+				`${kindVerb(kind, hasIncompleteItems(kindItems))} ${count}`)
 			: formatKindTreeLabel(kind, kindItems, options, showTargets);
 	rows.push(`  ${connector} ${summary}`);
 	const childPrefix = connector === "└─" ? "     " : "  │  ";

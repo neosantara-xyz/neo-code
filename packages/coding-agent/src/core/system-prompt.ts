@@ -4,6 +4,8 @@
 
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.js";
 import { formatSkillsForPrompt, type Skill } from "./skills.js";
+import { getTermuxApiCapabilities } from "./termux-api.js";
+import { isTermuxEnvironment } from "./termux-touch-keyboard.js";
 
 export interface BuildSystemPromptOptions {
 	/** Custom system prompt (replaces default). */
@@ -51,7 +53,24 @@ function formatProjectContext(contextFiles: Array<{ path: string; content: strin
 }
 
 function formatEnvironmentSection(date: string, cwd: string): string {
-	return `# Environment\n${bullets([`Current date: ${date}`, `Current working directory: ${cwd}`])}`;
+	const envBullets = [`Current date: ${date}`, `Current working directory: ${cwd}`];
+	if (isTermuxEnvironment()) {
+		envBullets.push("OS/Environment: Termux on Android");
+		const caps = getTermuxApiCapabilities();
+		if (caps.available) {
+			const activeTools: string[] = [];
+			if (caps.notification) activeTools.push("termux-notification");
+			if (caps.vibrate) activeTools.push("termux-vibrate");
+			if (caps.toast) activeTools.push("termux-toast");
+			if (caps.share) activeTools.push("termux-share");
+			if (caps.clipboardGet) activeTools.push("termux-clipboard-get");
+			if (caps.clipboardSet) activeTools.push("termux-clipboard-set");
+			envBullets.push(`Termux:API: Available (active commands: ${activeTools.join(", ")})`);
+		} else {
+			envBullets.push("Termux:API: Not installed or not available");
+		}
+	}
+	return `# Environment\n${bullets(envBullets)}`;
 }
 
 function formatAvailableToolsSection(toolsList: string): string {
@@ -128,7 +147,7 @@ function formatUsingToolsSection(tools: Set<string>, promptGuidelines: string[])
 		hasExitPlan
 			? "In plan mode, inspect safely and call ExitPlanMode only when the final implementation plan is ready. Do not ask for plan approval in normal text."
 			: undefined,
-		"You can call multiple independent read-only tools in one response. Do not batch dependent operations. Treat mutating tools and shell commands as sequential unless there is a clear, safe reason otherwise.",
+		"Parallelize independent read-only inspection tools (read, grep, find, ls) in a single turn whenever possible. Do not batch dependent operations. Never execute shell commands (bash) or mutating tools (edit, write) in parallel; treat them as strictly sequential.",
 		"After tool calls, summarize what was found or changed in normal assistant text.",
 		"Show file paths clearly when working with files. When referencing specific code, prefer file_path:line_number where line numbers are known.",
 		...promptGuidelines,
@@ -176,7 +195,28 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	const skills = providedSkills ?? [];
 	const tools = selectedTools ?? ["read", "bash", "edit", "write"];
 	const toolSet = new Set(tools);
+	const termuxGuidelines = [];
+	if (isTermuxEnvironment()) {
+		const caps = getTermuxApiCapabilities();
+		if (caps.available) {
+			const commands: string[] = [];
+			if (caps.notification) commands.push("termux-notification (send notification)");
+			if (caps.toast) commands.push("termux-toast (show temporary toast message)");
+			if (caps.vibrate) commands.push("termux-vibrate (trigger device vibration)");
+			if (caps.share) commands.push("termux-share (share files via Android share sheet)");
+			if (caps.clipboardGet || caps.clipboardSet)
+				commands.push("termux-clipboard-get / termux-clipboard-set (read/write clipboard)");
+			termuxGuidelines.push(
+				`You are running in Termux on Android. You can execute Termux:API companion CLIs via bash when helpful to improve user experience, such as: ${commands.join(", ")}.`,
+			);
+		} else {
+			termuxGuidelines.push(
+				"You are running in Termux on Android. Termux:API companion CLIs are not available or not installed in this environment.",
+			);
+		}
+	}
 	const normalizedPromptGuidelines = (promptGuidelines ?? [])
+		.concat(termuxGuidelines)
 		.map((guideline) => guideline.trim())
 		.filter((guideline) => guideline.length > 0);
 

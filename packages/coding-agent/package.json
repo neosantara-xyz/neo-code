@@ -1,6 +1,6 @@
 {
 	"name": "@neosantara/code",
-	"version": "0.76.56",
+	"version": "0.76.62",
 	"description": "Neo Code coding agent CLI",
 	"type": "module",
 	"bin": {
@@ -35,6 +35,9 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
+		"@neosantara/agent-core": "^0.76.62",
+		"@neosantara/ai": "^0.76.62",
+		"@neosantara/tui": "^0.76.62",
 		"@silvia-odwyer/photon-node": "^0.3.4",
 		"chalk": "^5.5.0",
 		"diff": "^8.0.2",
@@ -47,10 +50,8 @@
 		"proper-lockfile": "^4.1.2",
 		"typebox": "^1.1.24",
 		"undici": "^7.19.1",
-		"yaml": "^2.8.2",
-		"@neosantara/ai": "^0.76.56",
-		"@neosantara/agent-core": "^0.76.56",
-		"@neosantara/tui": "^0.76.56"
+		"vscode-jsonrpc": "^8.2.1",
+		"yaml": "^2.8.2"
 	},
 	"overrides": {
 		"rimraf": "6.1.2"

@@ -27,6 +27,11 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "todo", description: "Show current todo plan" },
 	{ name: "termux-keys", description: "Show or apply Neo Code touch-keyboard keys for Termux" },
 	{ name: "termux-status", description: "Show Termux:API capability and tool availability" },
+	{
+		name: "lsp",
+		description: "Show, init, restart, or inspect logs for installed LSP servers",
+		argumentHint: "[status|init|logs|restart|stop]",
+	},
 	{ name: "mode", description: "Show or switch workflow mode" },
 	{ name: "permissions", description: "Show or change active tool permissions for the next turn" },
 	{ name: "tasks", description: "Show, inspect, or stop background shell tasks" },
