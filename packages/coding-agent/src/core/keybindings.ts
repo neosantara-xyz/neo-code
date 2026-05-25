@@ -90,7 +90,7 @@ export const KEYBINDINGS = {
 		description: "Cycle to previous model",
 	},
 	"app.model.select": { defaultKeys: "ctrl+l", description: "Open model selector" },
-	"app.transcript.view": { defaultKeys: "ctrl+shift+t", description: "View transcript or tool output" },
+	"app.transcript.view": { defaultKeys: "ctrl+t", description: "View transcript or tool output" },
 	"app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" },
 	"app.task.background": { defaultKeys: "ctrl+b", description: "Run current shell task in background" },
 	"app.tasks.open": { defaultKeys: [], description: "Show background tasks" },
@@ -187,7 +187,7 @@ export const KEYBINDINGS = {
 		description: "Tree filter: default view",
 	},
 	"app.tree.filter.noTools": {
-		defaultKeys: "ctrl+t",
+		defaultKeys: "ctrl+h",
 		description: "Tree filter: hide tool results",
 	},
 	"app.tree.filter.userOnly": {
