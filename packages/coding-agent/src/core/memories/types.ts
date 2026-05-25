@@ -60,3 +60,27 @@ export interface MemorySearchOptions {
 	/** Maximum results. */
 	limit?: number;
 }
+
+export interface ConsolidationState {
+	/** ISO timestamp of last consolidation run. */
+	lastConsolidatedAt: string | null;
+	/** Number of memories at last consolidation (used to detect new memories). */
+	memoryCountAtLastConsolidation: number;
+	/** Schema version for forward compatibility. */
+	version: number;
+}
+
+export interface ConsolidationResult {
+	/** Consolidated memory entries from the model. */
+	entries: Array<{
+		title: string;
+		content: string;
+		tags: string[];
+	}>;
+	/** Human-readable MEMORY.md summary content. */
+	memorySummary: string;
+	/** Whether consolidation was skipped or failed. */
+	skipped: boolean;
+	/** Reason if skipped. */
+	skipReason?: string;
+}

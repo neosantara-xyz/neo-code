@@ -14,7 +14,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { MemoryEntry, MemorySearchOptions } from "./types.js";
+import type { ConsolidationState, MemoryEntry, MemorySearchOptions } from "./types.js";
 
 const CONFIG_DIR_NAME = ".neo-code";
 const MEMORIES_DIR = "memories";
@@ -217,4 +217,42 @@ export function enforceMaxStored(maxStored: number): number {
 		deleteMemory(entry.id);
 	}
 	return toRemove.length;
+}
+
+// ─── Consolidation State ─────────────────────────────────────────────────────
+
+const CONSOLIDATION_STATE_FILE = "consolidation-state.json";
+const MEMORY_MD_FILE = "MEMORY.md";
+
+/**
+ * Load the consolidation state from disk.
+ */
+export function loadConsolidationState(): ConsolidationState {
+	const filePath = join(getMemoriesDir(), CONSOLIDATION_STATE_FILE);
+	if (!existsSync(filePath)) {
+		return { lastConsolidatedAt: null, memoryCountAtLastConsolidation: 0, version: 1 };
+	}
+	try {
+		const raw = readFileSync(filePath, "utf-8");
+		const state = JSON.parse(raw) as ConsolidationState;
+		return state;
+	} catch {
+		return { lastConsolidatedAt: null, memoryCountAtLastConsolidation: 0, version: 1 };
+	}
+}
+
+/**
+ * Save the consolidation state to disk.
+ */
+export function saveConsolidationState(state: ConsolidationState): void {
+	ensureDir(getMemoriesDir());
+	writeFileSync(join(getMemoriesDir(), CONSOLIDATION_STATE_FILE), JSON.stringify(state, null, 2), "utf-8");
+}
+
+/**
+ * Write the MEMORY.md summary file.
+ */
+export function writeMemoryMd(content: string): void {
+	ensureDir(getMemoriesDir());
+	writeFileSync(join(getMemoriesDir(), MEMORY_MD_FILE), content, "utf-8");
 }

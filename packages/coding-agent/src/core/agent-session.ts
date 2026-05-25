@@ -80,11 +80,19 @@ import {
 import { emitSessionShutdownEvent } from "./extensions/runner.js";
 import {
 	addMemory,
+	buildConsolidationPrompt,
 	buildExtractionPrompt,
+	deleteMemory,
 	enforceMaxStored,
+	loadConsolidationState,
+	loadMemoryIndex,
+	parseConsolidationResponse,
 	parseExtractionResponse,
 	redactSecrets,
+	saveConsolidationState,
+	shouldConsolidate,
 	shouldExtractMemories,
+	writeMemoryMd,
 } from "./memories/index.js";
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
@@ -2582,6 +2590,84 @@ export class AgentSession {
 	}
 
 	/**
+	 * Consolidate memories if enough new ones have accumulated.
+	 * Runs asynchronously at session start without blocking the user.
+	 */
+	private async _consolidateMemoriesIfNeeded(): Promise<void> {
+		try {
+			const memorySettings = this.settingsManager.getMemorySettings();
+			if (!memorySettings.enabled) return;
+
+			const state = loadConsolidationState();
+			const entries = loadMemoryIndex();
+			if (!shouldConsolidate(entries, state)) return;
+
+			// Get model and auth
+			const model = this.model;
+			if (!model) return;
+			const authResult = await this._modelRegistry.getApiKeyAndHeaders(model);
+			if (!authResult.ok || !authResult.apiKey) return;
+
+			const consolidationPrompt = buildConsolidationPrompt(entries);
+
+			// Call the model for consolidation
+			const result = await completeSimple(
+				model,
+				{
+					messages: [{ role: "user", content: consolidationPrompt, timestamp: Date.now() }],
+				},
+				{
+					apiKey: authResult.apiKey,
+					headers: authResult.headers,
+				},
+			);
+
+			// Parse the response
+			const textContent = result.content
+				.filter((c): c is TextContent => c.type === "text")
+				.map((c) => c.text)
+				.join("");
+
+			if (!textContent) return;
+
+			const consolidationResult = parseConsolidationResponse(textContent);
+			if (consolidationResult.skipped || consolidationResult.entries.length === 0) return;
+
+			// Delete all existing memories
+			for (const entry of entries) {
+				deleteMemory(entry.id);
+			}
+
+			// Store consolidated memories
+			for (const memory of consolidationResult.entries) {
+				addMemory({
+					id: uuidv7(),
+					createdAt: new Date().toISOString(),
+					workspace: entries[0]?.workspace ?? this._cwd,
+					title: memory.title,
+					content: memory.content,
+					tags: memory.tags,
+					usageCount: 0,
+					lastUsedAt: null,
+					sourceSessionId: null,
+				});
+			}
+
+			// Write MEMORY.md summary
+			writeMemoryMd(consolidationResult.memorySummary);
+
+			// Save consolidation state
+			saveConsolidationState({
+				lastConsolidatedAt: new Date().toISOString(),
+				memoryCountAtLastConsolidation: consolidationResult.entries.length,
+				version: 1,
+			});
+		} catch {
+			// Memory consolidation is best-effort - don't let failures affect session
+		}
+	}
+
+	/**
 	 * Toggle auto-compaction setting.
 	 */
 	setAutoCompactionEnabled(enabled: boolean): void {
@@ -2609,6 +2695,10 @@ export class AgentSession {
 
 		this._applyExtensionBindings(this._extensionRunner);
 		await this._extensionRunner.emit(this._sessionStartEvent);
+
+		// Consolidate memories in background (fire-and-forget, non-blocking)
+		void this._consolidateMemoriesIfNeeded();
+
 		await this.extendResourcesFromExtensions(this._sessionStartEvent.reason === "reload" ? "reload" : "startup");
 	}
 
