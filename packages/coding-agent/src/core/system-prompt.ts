@@ -3,6 +3,7 @@
  */
 
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.js";
+import { buildMemoryInjection } from "./memories/index.js";
 import { formatSkillsForPrompt, type Skill } from "./skills.js";
 import { getTermuxApiCapabilities } from "./termux-api.js";
 import { isTermuxEnvironment } from "./termux-touch-keyboard.js";
@@ -270,6 +271,12 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	if (toolSet.has("read") && skills.length > 0) {
 		prompt += formatSkillsForPrompt(skills);
+	}
+
+	// Inject relevant memories before environment section
+	const memorySection = buildMemoryInjection({ workspace: cwd, maxMemories: 10, maxChars: 4000 });
+	if (memorySection) {
+		prompt += `\n\n${memorySection}`;
 	}
 
 	prompt += `\n\n${formatEnvironmentSection(date, promptCwd)}`;
