@@ -50,6 +50,11 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 		argumentHint: "[local|gist]",
 	},
 	{ name: "hotkeys", description: "Show all keyboard shortcuts" },
+	{
+		name: "memory",
+		description: "View, search, or manage cross-session memories",
+		argumentHint: "[list|search <query>|delete <id>|clear|help]",
+	},
 	{ name: "login", description: "Configure provider authentication" },
 	{ name: "logout", description: "Remove provider authentication" },
 	{ name: "new", description: "Start a new session" },

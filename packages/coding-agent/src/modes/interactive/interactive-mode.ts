@@ -6887,15 +6887,126 @@ ${theme.fg("dim", "Hint:")} on Termux run \`pkg install termux-api\` and grant t
 
 	private async handleMemoryCommand(text: string): Promise<void> {
 		const args = text.slice("/memory".length).trim();
-		if (args === "init") {
-			await this.handleAgentsCommand("/agents init");
+		const subcommand = args.split(/\s+/)[0] ?? "";
+
+		if (subcommand === "" || subcommand === "list") {
+			this.handleMemoryList();
 			return;
 		}
-		if (args === "show") {
-			await this.handleAgentsCommand("/agents show");
+		if (subcommand === "search") {
+			const query = args.slice("search".length).trim();
+			this.handleMemorySearch(query);
 			return;
 		}
-		await this.handleAgentsCommand("/agents");
+		if (subcommand === "delete" || subcommand === "rm") {
+			const id = args.slice(subcommand.length).trim();
+			this.handleMemoryDelete(id);
+			return;
+		}
+		if (subcommand === "clear") {
+			this.handleMemoryClear();
+			return;
+		}
+		if (subcommand === "help") {
+			this.handleMemoryHelp();
+			return;
+		}
+		// Unknown subcommand — show help
+		this.handleMemoryHelp();
+	}
+
+	private handleMemoryList(): void {
+		const { loadMemoryIndex } =
+			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
+		const memories = loadMemoryIndex();
+		if (memories.length === 0) {
+			this.addPlainInfoBlock(`${theme.bold("Memories")}
+
+${theme.fg("muted", "No memories stored yet.")}
+${theme.fg("dim", "Memories are extracted automatically from completed sessions.")}`);
+			return;
+		}
+		let info = `${theme.bold("Memories")} ${theme.fg("dim", `(${memories.length} total)`)}\n`;
+		for (const mem of memories.slice(0, 20)) {
+			const date = mem.createdAt.slice(0, 10);
+			const tags = mem.tags.length > 0 ? theme.fg("dim", ` [${mem.tags.join(", ")}]`) : "";
+			const usage = mem.usageCount > 0 ? theme.fg("dim", ` ×${mem.usageCount}`) : "";
+			info += `\n${theme.fg("dim", date)} ${mem.title}${tags}${usage}`;
+			info += `\n  ${theme.fg("dim", mem.id.slice(0, 8))} ${theme.fg("muted", mem.content.slice(0, 80).replace(/\n/g, " "))}`;
+		}
+		if (memories.length > 20) {
+			info += `\n\n${theme.fg("dim", `… and ${memories.length - 20} more. Use /memory search <query> to filter.`)}`;
+		}
+		info += `\n\n${theme.fg("dim", "Commands: /memory list | search <query> | delete <id> | clear | help")}`;
+		this.addPlainInfoBlock(info);
+	}
+
+	private handleMemorySearch(query: string): void {
+		if (!query) {
+			this.showError("Usage: /memory search <query>");
+			return;
+		}
+		const { searchMemories } =
+			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
+		const results = searchMemories({ query, limit: 15 });
+		if (results.length === 0) {
+			this.addPlainInfoBlock(`${theme.bold("Memory Search")}
+
+${theme.fg("muted", `No memories matching "${query}".`)}`);
+			return;
+		}
+		let info = `${theme.bold("Memory Search")} ${theme.fg("dim", `"${query}" — ${results.length} result${results.length !== 1 ? "s" : ""}`)}\n`;
+		for (const mem of results) {
+			const date = mem.createdAt.slice(0, 10);
+			info += `\n${theme.fg("dim", date)} ${mem.title}`;
+			info += `\n  ${theme.fg("dim", mem.id.slice(0, 8))} ${theme.fg("muted", mem.content.slice(0, 100).replace(/\n/g, " "))}`;
+		}
+		this.addPlainInfoBlock(info);
+	}
+
+	private handleMemoryDelete(id: string): void {
+		if (!id) {
+			this.showError("Usage: /memory delete <id-prefix>");
+			return;
+		}
+		const { loadMemoryIndex, deleteMemory } =
+			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
+		const memories = loadMemoryIndex();
+		const match = memories.find((m) => m.id.startsWith(id));
+		if (!match) {
+			this.showError(`No memory found with ID prefix "${id}".`);
+			return;
+		}
+		deleteMemory(match.id);
+		this.addPlainInfoBlock(`${theme.fg("success", "✓")} Deleted memory: ${match.title}`);
+	}
+
+	private handleMemoryClear(): void {
+		const { loadMemoryIndex, deleteMemory } =
+			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
+		const memories = loadMemoryIndex();
+		if (memories.length === 0) {
+			this.addPlainInfoBlock(`${theme.fg("muted", "No memories to clear.")}`);
+			return;
+		}
+		for (const mem of memories) {
+			deleteMemory(mem.id);
+		}
+		this.addPlainInfoBlock(`${theme.fg("success", "✓")} Cleared ${memories.length} memories.`);
+	}
+
+	private handleMemoryHelp(): void {
+		this.addPlainInfoBlock(`${theme.bold("Memory Commands")}
+
+${theme.fg("dim", "/memory")}              List all stored memories
+${theme.fg("dim", "/memory list")}         Same as above
+${theme.fg("dim", "/memory search")} <q>   Search memories by keyword
+${theme.fg("dim", "/memory delete")} <id>  Delete a memory by ID prefix
+${theme.fg("dim", "/memory clear")}        Delete all memories
+${theme.fg("dim", "/memory help")}         Show this help
+
+Memories are automatically extracted from completed sessions and injected
+into future sessions that work in the same workspace.`);
 	}
 
 	private handleMcpCommand(): void {
