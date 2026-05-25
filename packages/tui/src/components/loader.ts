@@ -360,7 +360,7 @@ export class Loader extends Text {
 			this.shimmerDirection === "left-to-right"
 				? phase * travelWidth - SHIMMER_TRAIL_PADDING / 2
 				: messageWidth + SHIMMER_TRAIL_PADDING / 2 - phase * travelWidth;
-		const halfWidth = Math.max(1, Math.floor(this.shimmerWidth / 2));
+		const halfWidth = Math.max(0, Math.floor((this.shimmerWidth - 1) / 2));
 
 		let rendered = "";
 		let column = 0;

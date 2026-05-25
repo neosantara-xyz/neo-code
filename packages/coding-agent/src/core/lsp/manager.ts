@@ -112,12 +112,24 @@ class LspManager {
 	private registerCleanup(): void {
 		if (this.cleanupRegistered) return;
 		this.cleanupRegistered = true;
-		const handler = () => {
+		const asyncHandler = () => {
 			void this.shutdown();
 		};
-		process.once("exit", handler);
-		process.once("SIGINT", handler);
-		process.once("SIGTERM", handler);
+		// `process.exit` fires synchronously — async work cannot complete.
+		// Kill child processes synchronously via their ChildProcess handles.
+		const exitHandler = () => {
+			for (const client of this.clients.values()) {
+				try {
+					client.dispose();
+				} catch {
+					// best-effort on exit
+				}
+			}
+			this.clients.clear();
+		};
+		process.once("exit", exitHandler);
+		process.once("SIGINT", asyncHandler);
+		process.once("SIGTERM", asyncHandler);
 	}
 }
 

@@ -230,7 +230,12 @@ export function termuxToast(message: string, opts: TermuxToastOptions = {}): boo
 	const caps = getTermuxApiCapabilities();
 	if (!caps.toast) return false;
 	const args: string[] = [];
-	if (opts.duration === "short") args.push("-s");
+	if (opts.duration === "long") {
+		// omit -s to get the long (default CLI) duration
+	} else {
+		// default is "short" — pass -s explicitly
+		args.push("-s");
+	}
 	if (opts.position) args.push("-g", opts.position);
 	if (opts.background) args.push("-b", opts.background);
 	if (opts.color) args.push("-c", opts.color);

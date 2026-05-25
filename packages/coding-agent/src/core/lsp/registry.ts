@@ -107,7 +107,7 @@ export interface LspBinaryAvailability {
 }
 
 export function detectLspBinary(config: LspServerConfig, env: NodeJS.ProcessEnv = process.env): LspBinaryAvailability {
-	const result = spawnSync("sh", ["-c", `command -v ${config.command}`], {
+	const result = spawnSync("sh", ["-c", 'command -v "$1"', "--", config.command], {
 		encoding: "utf8",
 		stdio: "pipe",
 		timeout: 2000,

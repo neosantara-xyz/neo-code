@@ -71,18 +71,19 @@ export class DoctorScreenComponent implements Component, Focusable {
 
 	render(width: number): string[] {
 		const safeWidth = Math.max(40, width);
+		const renderWidth = Math.min(safeWidth, width);
 		const maxRows = Math.max(12, Math.min(this.getTerminalRows() - 1, 42));
-		const header = this.renderHeader(safeWidth);
-		const footer = this.renderFooter(safeWidth);
+		const header = this.renderHeader(renderWidth);
+		const footer = this.renderFooter(renderWidth);
 		const bodyHeight = Math.max(1, maxRows - header.length - footer.length);
-		const body = this.renderBody(safeWidth);
+		const body = this.renderBody(renderWidth);
 		const maxScroll = Math.max(0, body.length - bodyHeight);
 		this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, maxScroll));
 		const visibleBody = body.slice(this.scrollOffset, this.scrollOffset + bodyHeight);
 		while (visibleBody.length < bodyHeight) {
 			visibleBody.push("");
 		}
-		return [...header, ...visibleBody, ...footer].map((line) => truncateLine(line, safeWidth));
+		return [...header, ...visibleBody, ...footer].map((line) => truncateLine(line, width));
 	}
 
 	handleInput(data: string): void {

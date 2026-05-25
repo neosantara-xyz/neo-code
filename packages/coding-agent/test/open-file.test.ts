@@ -87,7 +87,7 @@ describe("openLocal", () => {
 		const result = openLocal("/tmp/session.html", { platform: "linux", env: NON_TERMUX_ENV });
 
 		expect(result.ok).toBe(true);
-		expect(spawnSync).toHaveBeenCalledWith("sh", ["-c", "command -v xdg-open"], expect.any(Object));
+		expect(spawnSync).toHaveBeenCalledWith("sh", ["-c", 'command -v "$1"', "--", "xdg-open"], expect.any(Object));
 		expect(spawn).toHaveBeenCalledWith(
 			"xdg-open",
 			["/tmp/session.html"],
