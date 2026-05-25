@@ -136,6 +136,7 @@ describe("tool activity summaries", () => {
 		expect(vi.getTimerCount()).toBe(0);
 		expect(stripAnsi(pausedRender)).toContain("Review details in permission card");
 		expect(stripAnsi(pausedRender)).not.toContain("expand live tool output");
+		expect(stripAnsi(pausedRender)).not.toContain("view live output");
 
 		vi.advanceTimersByTime(720);
 
@@ -183,12 +184,50 @@ describe("tool activity summaries", () => {
 
 		vi.advanceTimersByTime(80);
 		rendered = stripAnsi(renderRaw(group));
-		expect(requestRender).toHaveBeenCalledTimes(1);
+		expect(requestRender).toHaveBeenCalled();
 
+		requestRender.mockClear();
 		vi.advanceTimersByTime(80);
 		rendered = stripAnsi(renderRaw(group));
-		expect(requestRender).toHaveBeenCalledTimes(2);
+		expect(requestRender).toHaveBeenCalled();
 		expect(rendered).toContain("Read");
+
+		group.dispose();
+	});
+
+	it("uses a short default reveal delay for parallel activity buildup", () => {
+		vi.useFakeTimers();
+		const requestRender = vi.fn();
+		const group = new ToolActivityGroupComponent(false, {
+			gradualReveal: true,
+			requestRender,
+		});
+
+		group.addTool("read", "read-1", { path: "src/one.ts" }, createStubToolExecutionComponent());
+		group.addTool("read", "read-2", { path: "src/two.ts" }, createStubToolExecutionComponent());
+
+		expect(stripAnsi(renderRaw(group))).not.toContain("two.ts");
+
+		vi.advanceTimersByTime(120);
+
+		expect(requestRender).toHaveBeenCalled();
+		expect(stripAnsi(renderRaw(group))).toContain("Read");
+
+		group.dispose();
+	});
+
+	it("requests shimmer frames frequently while activity is running", () => {
+		vi.useFakeTimers();
+		const requestRender = vi.fn();
+		const group = new ToolActivityGroupComponent(false, {
+			requestRender,
+		});
+
+		group.addTool("read", "read-1", { path: "src/one.ts" }, createStubToolExecutionComponent());
+
+		vi.advanceTimersByTime(64);
+
+		expect(requestRender).toHaveBeenCalled();
 
 		group.dispose();
 	});
@@ -214,6 +253,8 @@ describe("tool activity summaries", () => {
 		expect(rendered).toContain("Read");
 		expect(rendered).toContain("one.ts");
 
+		requestRender.mockClear();
+		group.setAnimationPaused(true);
 		vi.advanceTimersByTime(80);
 		expect(requestRender).not.toHaveBeenCalled();
 
@@ -310,7 +351,7 @@ describe("tool activity grouping", () => {
 			},
 		]);
 
-		expect(text).toContain("✦ Searched files");
+		expect(text).toContain("● Explored");
 		expect(text).toContain("└─ searched 2 patterns · *.ts in src · /todo|fixme/ in src");
 	});
 
@@ -342,13 +383,36 @@ describe("tool activity grouping", () => {
 			},
 		]);
 
-		expect(text).toContain("✦ Inspected project");
+		expect(text).toContain("● Explored");
 		expect(text).toContain("listed 1 directory");
 		expect(text).toContain("searched 1 pattern");
 		expect(text).toContain("read 1 file");
 		expect(text).toContain("tool-activity.ts");
 		expect(text).not.toContain("intro.md");
 		expect(text).not.toContain("ExitPlanMode");
+	});
+
+	it("renders active read-only groups as Codex-style exploring cells", () => {
+		const text = formatToolActivityGroup([
+			{
+				id: "grep-1",
+				toolName: "grep",
+				args: { pattern: "todo", path: "src" },
+				isPartial: true,
+				executionStarted: true,
+			},
+			{
+				id: "read-1",
+				toolName: "read",
+				args: { path: "src/app.ts" },
+				isPartial: true,
+				executionStarted: true,
+			},
+		]);
+
+		expect(text).toContain("● Exploring");
+		expect(text).toContain("├─ searching 1 pattern");
+		expect(text).toContain("└─ reading 1 file");
 	});
 
 	it("keeps command activity in its own single-line group", () => {
@@ -419,7 +483,7 @@ describe("tool activity grouping", () => {
 			},
 		]);
 
-		expect(text).toContain("✦ Listed files");
+		expect(text).toContain("● Explored");
 		expect(text).toContain("└─ listed 2 directories · docs");
 		expect(text).not.toContain("+1 more");
 		expect(text.match(/docs/g)?.length).toBe(1);
@@ -445,10 +509,55 @@ describe("tool activity grouping", () => {
 			},
 		]);
 
-		expect(text).toContain("✦ Read files");
+		expect(text).toContain("● Explored");
 		expect(text).toContain("read 2 files");
 		expect(text).toContain("one.ts");
 		expect(text).toContain("two.ts");
+	});
+
+	it("deduplicates files with duplicate basenames or duplicate reads and keeps count consistent", () => {
+		const text = formatToolActivityGroup([
+			{
+				id: "read-1",
+				toolName: "read",
+				args: { path: "src/package.json" },
+				result: { content: [{ type: "text", text: "{}" }] },
+				isError: false,
+				isPartial: false,
+			},
+			{
+				id: "read-2",
+				toolName: "read",
+				args: { path: "package.json" },
+				result: { content: [{ type: "text", text: "{}" }] },
+				isError: false,
+				isPartial: false,
+			},
+			{
+				id: "read-3",
+				toolName: "read",
+				args: { path: "README.md" },
+				result: { content: [{ type: "text", text: "# Readme" }] },
+				isError: false,
+				isPartial: false,
+			},
+			{
+				id: "read-4",
+				toolName: "read",
+				args: { path: "README.md" },
+				result: { content: [{ type: "text", text: "# Readme" }] },
+				isError: false,
+				isPartial: false,
+			},
+		]);
+
+		expect(text).toContain("● Explored");
+		expect(text).toContain("read 2 files");
+		expect(text).toContain("package.json");
+		expect(text).toContain("README.md");
+		const lines = text.split("\n");
+		const readChildLines = lines.filter((l) => l.includes("package.json") || l.includes("README.md"));
+		expect(readChildLines.length).toBe(2);
 	});
 
 	it("shows latest active target as a hint row for mixed tool trees", () => {
@@ -470,7 +579,7 @@ describe("tool activity grouping", () => {
 			},
 		]);
 
-		expect(text).toContain("✦ Inspecting project");
+		expect(text).toContain("● Exploring");
 		expect(text).toContain("listed 1 directory");
 		expect(text).toContain("reading 1 file");
 	});
@@ -498,7 +607,7 @@ describe("tool activity grouping", () => {
 			},
 		]);
 
-		expect(text).toContain("✦ Inspected project");
+		expect(text).toContain("● Explored");
 		expect(text).toContain("listed 1 directory");
 		expect(text).toContain("read 1 file");
 		expect(text).not.toContain(cwd.replace(/\\/g, "/"));

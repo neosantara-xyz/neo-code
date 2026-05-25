@@ -15,6 +15,7 @@ function makeContext(partial: Partial<TipContext> = {}): TipContext {
 		settings: partial.settings ?? ({} as Settings),
 		platform: partial.platform ?? "linux",
 		isTermux: partial.isTermux ?? false,
+		termuxApiAvailable: partial.termuxApiAvailable ?? false,
 		isSshSession: partial.isSshSession ?? false,
 		numStartups: partial.numStartups ?? 1,
 		contextPercent: partial.contextPercent,

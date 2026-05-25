@@ -8,6 +8,7 @@ function makeContext(partial: Partial<TipContext> = {}): TipContext {
 		settings: partial.settings ?? ({} as Settings),
 		platform: partial.platform ?? "linux",
 		isTermux: partial.isTermux ?? false,
+		termuxApiAvailable: partial.termuxApiAvailable ?? false,
 		isSshSession: partial.isSshSession ?? false,
 		numStartups: partial.numStartups ?? 1,
 	};
@@ -56,6 +57,27 @@ describe("getRelevantTips - context filtering", () => {
 	it("hides /termux-keys outside Termux", () => {
 		const tips = getRelevantTips(makeContext({ isTermux: false, numStartups: 5 }));
 		expect(tips.map((t) => t.id)).not.toContain("termux-keys");
+	});
+
+	it("recommends installing termux-api when on Termux without it", () => {
+		const tips = getRelevantTips(makeContext({ isTermux: true, termuxApiAvailable: false, numStartups: 3 }));
+		const ids = tips.map((t) => t.id);
+		expect(ids).toContain("termux-api-install");
+		expect(ids).not.toContain("termux-status");
+	});
+
+	it("recommends /termux-status once termux-api is installed", () => {
+		const tips = getRelevantTips(makeContext({ isTermux: true, termuxApiAvailable: true, numStartups: 3 }));
+		const ids = tips.map((t) => t.id);
+		expect(ids).toContain("termux-status");
+		expect(ids).not.toContain("termux-api-install");
+	});
+
+	it("never surfaces termux-api tips outside Termux", () => {
+		const tips = getRelevantTips(makeContext({ isTermux: false, termuxApiAvailable: true, numStartups: 5 }));
+		const ids = tips.map((t) => t.id);
+		expect(ids).not.toContain("termux-api-install");
+		expect(ids).not.toContain("termux-status");
 	});
 
 	it("withholds advanced tips for first-time users (numStartups <= 1)", () => {

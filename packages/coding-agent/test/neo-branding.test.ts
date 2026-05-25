@@ -63,7 +63,7 @@ describe("Neo Code branding", () => {
 		const sourcePath = fileURLToPath(new URL("../src/modes/interactive/interactive-mode.ts", import.meta.url));
 		const source = readFileSync(sourcePath, "utf8");
 
-		expect(source).toContain("Account Billing");
+		expect(source).toContain("account billing");
 		expect(source).toContain("login required");
 		expect(source).toContain("/v1/cli/usage");
 		expect(source).not.toContain("TODO backend");

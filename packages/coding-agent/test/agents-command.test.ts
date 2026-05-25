@@ -22,6 +22,6 @@ describe("agents slash commands", () => {
 		expect(commandNames).not.toContain("scoped-models");
 		expect(commandNames).not.toContain("reload");
 		expect(commandNames).not.toContain("hooks");
-		expect(commandNames.length).toBeLessThanOrEqual(30);
+		expect(commandNames.length).toBeLessThanOrEqual(31);
 	});
 });

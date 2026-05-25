@@ -1,6 +1,6 @@
 {
 	"name": "@neosantara/ai",
-	"version": "0.76.51",
+	"version": "0.76.62",
 	"description": "Neosantara OpenAI-compatible AI provider package",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -37,7 +37,7 @@
 		"build": "tsgo -p tsconfig.build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"dev:tsc": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
-		"test": "vitest --run --reporter=verbose --testTimeout=20000 --pool=threads --poolOptions.threads.singleThread=true",
+		"test": "vitest --run --testTimeout=20000",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {

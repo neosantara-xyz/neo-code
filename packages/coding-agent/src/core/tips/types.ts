@@ -14,6 +14,12 @@ export interface TipContext {
 	platform: NodeJS.Platform;
 	/** True when running inside Termux on Android. */
 	isTermux: boolean;
+	/**
+	 * True when the Termux:API package is installed and at least one
+	 * `termux-*` companion binary is on PATH. Always `false` outside Termux.
+	 * Populated once at startup via {@link detectTermuxApi}.
+	 */
+	termuxApiAvailable: boolean;
 	/** True when the active terminal is reached over SSH/Mosh. */
 	isSshSession: boolean;
 	/** Number of interactive sessions started so far (1-based). */

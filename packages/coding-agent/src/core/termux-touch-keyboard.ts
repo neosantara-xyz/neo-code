@@ -4,7 +4,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 export const NEO_TERMUX_EXTRA_KEYS =
-	"[['ESC','TAB','CTRL','ALT','/','-'],['HOME','UP','END','PGUP','BKSP','DEL'],['LEFT','DOWN','RIGHT','PGDN','~','|']]";
+	"[['ESC','/','-','|',{key:'UP',popup:'PGUP'},'~','BKSP']," +
+	"['TAB','CTRL','ALT',{key:'LEFT',popup:'HOME'},{key:'DOWN',popup:'PGDN'},{key:'RIGHT',popup:'END'},'DEL']]";
 
 export interface TermuxTouchKeyboardStatus {
 	isTermux: boolean;

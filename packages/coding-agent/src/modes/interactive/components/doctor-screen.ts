@@ -3,19 +3,31 @@ import { APP_TITLE } from "../../../config.js";
 import { theme } from "../theme/theme.js";
 import { rawKeyHint } from "./keybinding-hints.js";
 
-export interface UsageScreenData {
+export type DoctorStatus = "ok" | "warn" | "fail";
+
+export interface DoctorLine {
+	label: string;
+	status: DoctorStatus;
+	detail: string;
+}
+
+export interface DoctorSection {
+	title: string;
+	lines: DoctorLine[];
+}
+
+export interface DoctorDiagnostic {
+	type: "error" | "warning" | "collision";
+	message: string;
+	path?: string;
+}
+
+export interface DoctorScreenData {
 	version: string;
-	workspace: string;
-	account: string;
-	currentModel: string;
-	billingMode: string;
-	balance: string;
-	periodSpend: string;
-	sessionTokens: string;
-	sessionCost: string;
-	sessionDuration: string;
-	backendStatus: string;
-	updatedAt?: string;
+	sections: DoctorSection[];
+	summary: { errors: number; warnings: number };
+	resourceDiagnostics: DoctorDiagnostic[];
+	tip?: string;
 }
 
 function padVisible(text: string, width: number): string {
@@ -26,12 +38,23 @@ function truncateLine(line: string, width: number): string {
 	return truncateToWidth(line, Math.max(1, width), "");
 }
 
-export class UsageScreenComponent implements Component, Focusable {
+function statusMarker(status: DoctorStatus): string {
+	switch (status) {
+		case "ok":
+			return theme.fg("success", "✓");
+		case "warn":
+			return theme.fg("warning", "!");
+		case "fail":
+			return theme.fg("error", "✗");
+	}
+}
+
+export class DoctorScreenComponent implements Component, Focusable {
 	private scrollOffset = 0;
 	private _focused = false;
 
 	constructor(
-		private readonly data: UsageScreenData,
+		private readonly data: DoctorScreenData,
 		private readonly getTerminalRows: () => number,
 		private readonly onClose: () => void,
 	) {}
@@ -101,36 +124,61 @@ export class UsageScreenComponent implements Component, Focusable {
 	}
 
 	private renderHeader(width: number): string[] {
-		const title = `${APP_TITLE} ${this.data.version}`;
-		const lines = [
-			`${theme.bold(title)}  ${theme.fg("dim", this.data.billingMode)}`,
-			`${theme.fg("dim", "Account")}    ${this.data.account}`,
-			`${theme.fg("dim", "Workspace")}  ${this.data.workspace}`,
-			`${theme.fg("dim", "Model")}      ${this.data.currentModel}`,
-		];
+		const title = `${APP_TITLE} Doctor`;
+		const summaryKind = this.summaryKind();
+		const summary = `${statusMarker(summaryKind)} ${theme.fg("dim", "Summary")} ${this.data.summary.errors} errors, ${this.data.summary.warnings} warnings`;
+		const lines = [`${theme.bold(title)}  ${theme.fg("dim", `v${this.data.version}`)}`, summary];
 		const divider = theme.fg("borderMuted", "─".repeat(Math.max(0, width)));
 		return [...lines.map((line) => truncateLine(line, width)), divider];
 	}
 
+	private summaryKind(): DoctorStatus {
+		if (this.data.summary.errors > 0) return "fail";
+		if (this.data.summary.warnings > 0) return "warn";
+		return "ok";
+	}
+
 	private renderBody(width: number): string[] {
 		const lines: string[] = [];
-		const labelWidth = 16;
-		const labelPad = (label: string): string => theme.fg("dim", label.padEnd(labelWidth));
+		const labelWidth = this.computeLabelWidth();
 
-		lines.push(theme.bold("Account billing"));
-		lines.push(`${labelPad("Balance")}${this.data.balance}`);
-		lines.push(`${labelPad("Period spend")}${this.data.periodSpend}`);
-		lines.push(`${labelPad("Backend")}${this.data.backendStatus}`);
-		if (this.data.updatedAt) {
-			lines.push(`${labelPad("Updated")}${this.data.updatedAt}`);
+		for (const section of this.data.sections) {
+			lines.push(theme.bold(section.title));
+			for (const line of section.lines) {
+				const label = theme.fg("dim", line.label.padEnd(labelWidth));
+				lines.push(`${statusMarker(line.status)} ${label} ${line.detail}`);
+			}
+			lines.push("");
 		}
-		lines.push("");
 
-		lines.push(theme.bold("Current session"));
-		lines.push(`${labelPad("Tokens")}${this.data.sessionTokens}`);
-		lines.push(`${labelPad("Cost")}${this.data.sessionCost}`);
-		lines.push(`${labelPad("Duration")}${this.data.sessionDuration}`);
+		if (this.data.resourceDiagnostics.length > 0) {
+			lines.push(theme.bold("Diagnostic details"));
+			for (const diagnostic of this.data.resourceDiagnostics.slice(0, 8)) {
+				const marker = diagnostic.type === "error" ? statusMarker("fail") : statusMarker("warn");
+				const path = diagnostic.path ? theme.fg("dim", ` (${diagnostic.path})`) : "";
+				lines.push(`${marker} ${diagnostic.message}${path}`);
+			}
+			if (this.data.resourceDiagnostics.length > 8) {
+				lines.push(theme.fg("dim", `  + ${this.data.resourceDiagnostics.length - 8} more diagnostics`));
+			}
+			lines.push("");
+		}
+
+		if (this.data.tip) {
+			lines.push(theme.fg("dim", `Tip: ${this.data.tip}`));
+		}
+
 		return lines.map((line) => truncateLine(line, width));
+	}
+
+	private computeLabelWidth(): number {
+		let max = 0;
+		for (const section of this.data.sections) {
+			for (const line of section.lines) {
+				if (line.label.length > max) max = line.label.length;
+			}
+		}
+		return Math.min(20, Math.max(8, max));
 	}
 
 	private renderFooter(width: number): string[] {
@@ -138,8 +186,8 @@ export class UsageScreenComponent implements Component, Focusable {
 			`${rawKeyHint("↑/↓", "Scroll")} · ${rawKeyHint("pgup/pgdown", "Page")} · ${rawKeyHint("ctrl+end", "Bottom")}`,
 			`${rawKeyHint("ctrl+home", "Top")} · ${rawKeyHint("esc", "Close")}`,
 		];
-		const model = theme.fg("muted", this.data.currentModel);
-		const bottom = `${hints[1]}${" ".repeat(Math.max(1, width - visibleWidth(hints[1]) - visibleWidth(model)))}${model}`;
+		const right = theme.fg("muted", "/status · /context · /usage");
+		const bottom = `${hints[1]}${" ".repeat(Math.max(1, width - visibleWidth(hints[1]) - visibleWidth(right)))}${right}`;
 		return [padVisible(truncateLine(hints[0], width), width), truncateLine(bottom, width)];
 	}
 }

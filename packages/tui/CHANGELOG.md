@@ -5,6 +5,7 @@
 ### Changed
 
 - Keep this package changelog in sync with `releases/NOTES.md` before each release.
+- Smoothed loader glimmer defaults with Claude-style response/request timing and a wider shimmer band.
 
 ## [0.76.6] - 2026-05-21
 

@@ -44,8 +44,36 @@ describe("Loader", () => {
 				loader.setMessage("abcde");
 				const line = loader.render(40).join("\n");
 
-				assert.match(line, /abcdE/);
+				assert.match(line, /abcDE/);
 				assert.ok(tui.renderRequests > 0);
+			} finally {
+				loader.stop();
+			}
+		});
+	});
+
+	it("uses the slower Claude-style response glimmer timing by default", () => {
+		const clock = { now: 0 };
+		withMockedDateNow(clock, () => {
+			const tui = new FakeTui();
+			const loader = new Loader(
+				tui as unknown as TUI,
+				(text) => `[${text}]`,
+				(text) => text,
+				"abcde",
+				{
+					frames: ["·"],
+					shimmer: true,
+					shimmerColorFn: (text) => text.toUpperCase(),
+				},
+			);
+
+			try {
+				clock.now = 2000;
+				loader.setMessage("abcde");
+				const line = loader.render(40).join("\n");
+
+				assert.match(line, /abcDE/);
 			} finally {
 				loader.stop();
 			}

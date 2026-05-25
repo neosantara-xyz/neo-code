@@ -88,6 +88,18 @@ const BUILTIN_TIPS: ReadonlyArray<Tip> = [
 		isRelevant: (ctx) => ctx.isTermux,
 	},
 	{
+		id: "termux-api-install",
+		content: "install termux-api for notifications: pkg install termux-api",
+		cooldownSessions: 8,
+		isRelevant: (ctx) => ctx.isTermux && !ctx.termuxApiAvailable,
+	},
+	{
+		id: "termux-status",
+		content: "/termux-status to inspect Termux:API capability",
+		cooldownSessions: 12,
+		isRelevant: (ctx) => ctx.isTermux && ctx.termuxApiAvailable,
+	},
+	{
 		id: "resume",
 		content: "neo --resume to pick up a previous session",
 		cooldownSessions: 12,

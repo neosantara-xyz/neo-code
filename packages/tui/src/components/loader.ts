@@ -47,8 +47,9 @@ export interface LoaderIndicatorOptions {
 const GLYPH_CHARS = ["·", "✢", "✳", "✶", "✻", "✽"];
 const DEFAULT_FRAMES = [...GLYPH_CHARS, ...[...GLYPH_CHARS].reverse()];
 const DEFAULT_INTERVAL_MS = 80;
-const DEFAULT_SHIMMER_INTERVAL_MS = 60;
-const DEFAULT_SHIMMER_WIDTH = 3;
+const DEFAULT_RESPONSE_SHIMMER_INTERVAL_MS = 200;
+const DEFAULT_REQUEST_SHIMMER_INTERVAL_MS = 50;
+const DEFAULT_SHIMMER_WIDTH = 5;
 const SHIMMER_TRAIL_PADDING = 20;
 const DEFAULT_STALLED_AFTER_MS = 3000;
 const DEFAULT_STALLED_FADE_MS = 2000;
@@ -73,7 +74,7 @@ export class Loader extends Text {
 	private renderIndicatorVerbatim = false;
 	private shimmer = false;
 	private shimmerDirection: LoaderShimmerDirection = "right-to-left";
-	private shimmerIntervalMs = DEFAULT_SHIMMER_INTERVAL_MS;
+	private shimmerIntervalMs = DEFAULT_RESPONSE_SHIMMER_INTERVAL_MS;
 	private shimmerWidth = DEFAULT_SHIMMER_WIDTH;
 	private shimmerColorFn: ((str: string) => string) | undefined;
 	private maxMessageWidth: number | undefined;
@@ -130,23 +131,26 @@ export class Loader extends Text {
 	}
 
 	setIndicator(indicator?: LoaderIndicatorOptions): void {
+		const mode = indicator?.mode ?? "responding";
 		this.renderIndicatorVerbatim = indicator?.frames !== undefined;
 		this.frames = indicator?.frames !== undefined ? [...indicator.frames] : [...DEFAULT_FRAMES];
 		this.intervalMs = indicator?.intervalMs && indicator.intervalMs > 0 ? indicator.intervalMs : DEFAULT_INTERVAL_MS;
 		this.shimmer = indicator?.shimmer ?? false;
 		this.shimmerDirection =
 			indicator?.shimmerDirection ??
-			(indicator?.mode === "requesting" || indicator?.mode === "tool-input" ? "left-to-right" : "right-to-left");
+			(mode === "requesting" || mode === "tool-input" ? "left-to-right" : "right-to-left");
 		this.shimmerIntervalMs =
 			indicator?.shimmerIntervalMs && indicator.shimmerIntervalMs > 0
 				? indicator.shimmerIntervalMs
-				: DEFAULT_SHIMMER_INTERVAL_MS;
+				: mode === "requesting" || mode === "tool-input"
+					? DEFAULT_REQUEST_SHIMMER_INTERVAL_MS
+					: DEFAULT_RESPONSE_SHIMMER_INTERVAL_MS;
 		this.shimmerWidth =
 			indicator?.shimmerWidth && indicator.shimmerWidth > 0 ? indicator.shimmerWidth : DEFAULT_SHIMMER_WIDTH;
 		this.shimmerColorFn = indicator?.shimmerColorFn;
 		this.maxMessageWidth =
 			indicator?.maxMessageWidth && indicator.maxMessageWidth > 0 ? indicator.maxMessageWidth : undefined;
-		this.mode = indicator?.mode ?? "responding";
+		this.mode = mode;
 		this.stalledDetection = indicator?.stalledDetection ?? false;
 		this.stalledAfterMs =
 			indicator?.stalledAfterMs && indicator.stalledAfterMs > 0

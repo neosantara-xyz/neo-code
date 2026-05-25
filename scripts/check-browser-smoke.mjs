@@ -14,6 +14,7 @@ try {
 		format: "esm",
 		logLevel: "silent",
 		outfile: outputPath,
+		external: ["node:fs"],
 	});
 	process.exit(0);
 } catch (error) {

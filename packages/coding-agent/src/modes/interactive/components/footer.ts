@@ -9,7 +9,7 @@ import {
 	type StatuslineItemId,
 } from "../../../core/statusline.js";
 import { theme } from "../theme/theme.js";
-import { keyText } from "./keybinding-hints.js";
+import { keyDisplayText, keyText } from "./keybinding-hints.js";
 
 /**
  * Sanitize text for display in a single-line status.
@@ -22,6 +22,13 @@ function sanitizeStatusText(text: string): string {
 		.replace(/ +/g, " ")
 		.trim();
 }
+
+/**
+ * Width below which the footer drops low-priority items and shortens
+ * verbose labels. Phone-landscape Termux sessions are typically 60-68
+ * cols, so 70 is a useful break. Exported for tests.
+ */
+export const COMPACT_FOOTER_WIDTH = 70;
 
 /**
  * Format token counts for compact terminal display.
@@ -54,16 +61,23 @@ export function formatContextFooterSegment(
 	contextWindow: number,
 	autoCompactEnabled: boolean,
 	tokens?: number | null,
+	compact = false,
 ): { text: string; severity: ContextFooterSeverity } {
 	const strategy = autoCompactEnabled ? "auto" : "manual";
 	const windowText = contextWindow > 0 ? formatTokens(contextWindow) : "?";
 	if (typeof percent !== "number" || !Number.isFinite(percent)) {
-		return { text: `ctx ?/${windowText} · ${strategy}`, severity: "warning" };
+		const text = compact ? `ctx ?/${windowText}` : `ctx ?/${windowText} · ${strategy}`;
+		return { text, severity: "warning" };
 	}
 
 	const normalized = Math.max(0, percent);
 	const severity: ContextFooterSeverity = normalized >= 90 ? "error" : normalized >= 70 ? "warning" : "ok";
 	const percentText = formatPercentCompact(normalized);
+	if (compact) {
+		// Narrow terminals: drop the strategy label and the absolute token
+		// count to keep the segment under ~14 visible cells.
+		return { text: `ctx ${percentText}/${windowText}`, severity };
+	}
 	if (typeof tokens !== "number" || !Number.isFinite(tokens)) {
 		return { text: `ctx ${percentText}/${windowText} · ${strategy}`, severity };
 	}
@@ -71,7 +85,11 @@ export function formatContextFooterSegment(
 	return { text: `ctx ${formatTokens(tokens)}/${windowText} (${percentText}) · ${strategy}`, severity };
 }
 
-export function formatFooterHint(isStreaming: boolean, hasBackgroundTasks: boolean): string {
+export function formatFooterHint(isStreaming: boolean, hasBackgroundTasks: boolean, compact = false): string {
+	if (compact) {
+		// Phone-landscape: a single hint is enough; "?" reveals the rest.
+		return isStreaming ? `${keyText("app.interrupt")} stop` : "?";
+	}
 	const parts = isStreaming
 		? [`${keyText("app.interrupt")} interrupt`]
 		: ["? shortcuts", `${keyText("app.mode.cycle")} mode`];
@@ -84,14 +102,15 @@ export function formatFooterHint(isStreaming: boolean, hasBackgroundTasks: boole
 export function renderShortcutOverlay(width: number): string[] {
 	const shortcuts = [
 		["?", "toggle this overlay"],
-		[keyText("app.interrupt"), "interrupt / cancel"],
-		[keyText("app.mode.cycle"), "cycle mode"],
-		[keyText("app.tools.expand"), "expand tool output"],
-		[keyText("app.thinking.cycle"), "cycle thinking level"],
-		[keyText("app.model.select"), "select model"],
-		[keyText("app.session.tree"), "session tree"],
-		[keyText("app.session.new"), "new session"],
-		[keyText("app.session.resume"), "resume session"],
+		[keyDisplayText("app.interrupt"), "interrupt / cancel"],
+		[keyDisplayText("app.mode.cycle"), "cycle mode"],
+		[keyDisplayText("app.transcript.view"), "view transcript"],
+		[keyDisplayText("app.tools.expand"), "expand output"],
+		[keyDisplayText("app.thinking.cycle"), "cycle thinking level"],
+		[keyDisplayText("app.model.select"), "select model"],
+		[keyDisplayText("app.session.tree"), "session tree"],
+		[keyDisplayText("app.session.new"), "new session"],
+		[keyDisplayText("app.session.resume"), "resume session"],
 		["!", "shell command prefix"],
 		["/compact", "compact context"],
 		["/usage", "show usage stats"],
@@ -180,6 +199,7 @@ export class FooterComponent implements Component {
 	render(width: number): string[] {
 		const state = this.session.state;
 		const statuslineItems = this.getStatuslineItems();
+		const compact = width > 0 && width < COMPACT_FOOTER_WIDTH;
 
 		// Calculate cumulative usage from ALL session entries (not just post-compaction messages)
 		let totalCost = 0;
@@ -205,14 +225,23 @@ export class FooterComponent implements Component {
 
 		// Add git branch if enabled and available
 		const branch = this.footerData.getGitBranch();
-		if (branch && this.isItemEnabled(statuslineItems, "branch")) {
+		if (branch && this.isItemEnabled(statuslineItems, "branch") && !compact) {
 			pwd = `${pwd} (${branch})`;
 		}
 
 		// Add session name if enabled and set
 		const sessionName = this.session.sessionManager.getSessionName();
-		if (sessionName && this.isItemEnabled(statuslineItems, "sessionName")) {
+		if (sessionName && this.isItemEnabled(statuslineItems, "sessionName") && !compact) {
 			pwd = `${pwd} • ${sessionName}`;
+		}
+
+		// On narrow terminals collapse the cwd to its last segment so the
+		// path line never pushes the model name off-screen.
+		if (compact) {
+			const lastSep = Math.max(pwd.lastIndexOf("/"), pwd.lastIndexOf("\\"));
+			if (lastSep > 0 && lastSep < pwd.length - 1) {
+				pwd = pwd.slice(lastSep + 1);
+			}
 		}
 
 		// Build stats line. The primary footer number is the *current request context*,
@@ -226,6 +255,7 @@ export class FooterComponent implements Component {
 			contextWindow,
 			this.autoCompactEnabled,
 			contextTokensValue,
+			compact,
 		);
 		const contextColor =
 			contextSegment.severity === "error" ? "error" : contextSegment.severity === "warning" ? "warning" : "dim";
@@ -243,17 +273,20 @@ export class FooterComponent implements Component {
 		const backgroundPill = hasBackgroundTasks
 			? theme.fg("warning", `bg ${runningBackgroundTasks} shell${runningBackgroundTasks === 1 ? "" : "s"}`)
 			: "";
-		const hintText = theme.fg("dim", formatFooterHint(this.session.isStreaming, hasBackgroundTasks));
+		const hintText = theme.fg("dim", formatFooterHint(this.session.isStreaming, hasBackgroundTasks, compact));
 
 		// Map each left-column statusline item id to its rendered string. Items
 		// that have no content for the current state (e.g. modePill in default
 		// mode) collapse to empty strings and are filtered below.
+		// On narrow terminals (Termux phone landscape, ~60 cols) we drop the
+		// billing label and mode label to keep the line under one row.
+		const compactModePill = compact && modePill ? theme.fg(modeColor, getAgentWorkModeSymbol(mode)) : modePill;
 		const leftRenderers: Record<StatuslineItemId, string> = {
-			modePill,
+			modePill: compactModePill,
 			backgroundPill,
 			context: theme.fg(contextColor, contextSegment.text),
-			billing: theme.fg("dim", billingText),
-			hint: hintText,
+			billing: compact ? "" : theme.fg("dim", billingText),
+			hint: compact ? "" : hintText,
 			modelName: "",
 			thinkingLevel: "",
 			providerName: "",
@@ -267,8 +300,8 @@ export class FooterComponent implements Component {
 
 		// Build right-side items (model + thinking + provider).
 		const showModelName = this.isItemEnabled(statuslineItems, "modelName");
-		const showThinking = this.isItemEnabled(statuslineItems, "thinkingLevel");
-		const showProvider = this.isItemEnabled(statuslineItems, "providerName");
+		const showThinking = this.isItemEnabled(statuslineItems, "thinkingLevel") && !compact;
+		const showProvider = this.isItemEnabled(statuslineItems, "providerName") && !compact;
 		const modelName = state.model?.id || "no-model";
 
 		let statsLeftWidth = visibleWidth(statsLeft);
