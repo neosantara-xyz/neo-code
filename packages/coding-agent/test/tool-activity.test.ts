@@ -14,6 +14,7 @@ import {
 	formatToolLoadingMessage,
 	isBenignBashExit,
 	isNoMatchBashExit,
+	parseDiffStats,
 	summarizeToolResult,
 } from "../src/core/tools/tool-activity.js";
 import { ToolActivityGroupComponent } from "../src/modes/interactive/components/tool-activity-group.js";
@@ -906,5 +907,85 @@ describe("tool activity tree v2 — structured rows and 3-state header", () => {
 
 		const c = buildToolActivityGroupRender(args as any, { layout: "compact" });
 		expect(c.signature).not.toBe(a.signature);
+	});
+
+	it("includes elapsed duration in completed bash result when progress.elapsedMs is available", () => {
+		const result = summarizeToolResult(
+			"bash",
+			{ command: "npm test" },
+			{
+				content: [{ type: "text", text: "all passed" }],
+				details: { exitCode: 0, progress: { elapsedMs: 2340, totalLines: 42 } },
+			},
+		);
+		expect(result.label).toBe("exit 0 · 2.3s · 42 lines");
+		expect(result.status).toBe("success");
+	});
+
+	it("shows +N -N diff stats in edit result when details.diff is present", () => {
+		const diff = `--- a/src/app.ts
++++ b/src/app.ts
+@@ -1,5 +1,7 @@
+ import { foo } from "bar";
++import { baz } from "qux";
++import { hello } from "world";
+ 
+-const old = true;
+ const current = false;
++const added = true;
+`;
+		const result = summarizeToolResult(
+			"edit",
+			{ file_path: "src/app.ts" },
+			{
+				content: [{ type: "text", text: "ok" }],
+				details: { editCount: 2, diff },
+			},
+		);
+		expect(result.label).toBe("2 edits applied (+3 -1)");
+		expect(result.status).toBe("success");
+	});
+
+	it("shows per-file line counts in target detail labels for completed reads", () => {
+		const text = formatToolActivityGroup([
+			{
+				id: "read-1",
+				toolName: "read",
+				args: { path: "src/one.ts" },
+				result: { content: [{ type: "text", text: "line1\nline2\nline3" }], details: { lineCount: 120 } },
+				isError: false,
+				isPartial: false,
+			},
+			{
+				id: "read-2",
+				toolName: "read",
+				args: { path: "src/two.ts" },
+				result: { content: [{ type: "text", text: "a\nb" }], details: { lineCount: 45 } },
+				isError: false,
+				isPartial: false,
+			},
+		]);
+		expect(text).toContain("read 2 files");
+		expect(text).toContain("one.ts (120 lines)");
+		expect(text).toContain("two.ts (45 lines)");
+	});
+
+	it("parseDiffStats correctly counts added and removed lines", () => {
+		const diff = `--- a/file.ts
++++ b/file.ts
+@@ -1,3 +1,4 @@
+ unchanged
++added line 1
++added line 2
+-removed line 1
+`;
+		const stats = parseDiffStats(diff);
+		expect(stats).toEqual({ added: 2, removed: 1 });
+	});
+
+	it("parseDiffStats returns undefined for empty or no-change diffs", () => {
+		expect(parseDiffStats(undefined)).toBeUndefined();
+		expect(parseDiffStats("")).toBeUndefined();
+		expect(parseDiffStats("no diff content here")).toBeUndefined();
 	});
 });

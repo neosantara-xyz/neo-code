@@ -460,6 +460,18 @@ export function summarizeToolCall(toolName: string, args: any): ToolActivityClas
 	}
 }
 
+export function parseDiffStats(diff: string | undefined): { added: number; removed: number } | undefined {
+	if (!diff) return undefined;
+	let added = 0;
+	let removed = 0;
+	for (const line of diff.split("\n")) {
+		if (line.startsWith("+") && !line.startsWith("+++")) added++;
+		else if (line.startsWith("-") && !line.startsWith("---")) removed++;
+	}
+	if (added === 0 && removed === 0) return undefined;
+	return { added, removed };
+}
+
 export function summarizeToolResult(
 	toolName: string,
 	args: any,
@@ -520,9 +532,12 @@ export function summarizeToolResult(
 			}
 			const exitCode = typeof details?.exitCode === "number" ? details.exitCode : undefined;
 			const lineCount = details?.progress?.totalLines ?? countOutputDisplayLines(output);
+			const elapsedMs = details?.progress?.elapsedMs;
+			const elapsedPart = typeof elapsedMs === "number" ? ` · ${formatDuration(elapsedMs)}` : "";
 			const linePart = lineCount > 0 ? ` · ${plural(lineCount, "line")}` : "";
 			return {
-				label: exitCode === undefined ? `done${linePart}` : `exit ${exitCode}${linePart}`,
+				label:
+					exitCode === undefined ? `done${elapsedPart}${linePart}` : `exit ${exitCode}${elapsedPart}${linePart}`,
 				status: exitCode === 0 || exitCode === undefined ? "success" : "error",
 			};
 		}
@@ -577,8 +592,11 @@ export function summarizeToolResult(
 		}
 		case "edit": {
 			const edits = details?.editCount ?? (Array.isArray(args?.edits) ? args.edits.length : 1);
+			const diff = (result?.details as any)?.diff;
+			const stats = parseDiffStats(typeof diff === "string" ? diff : undefined);
+			const statsLabel = stats ? ` (+${stats.added} -${stats.removed})` : "";
 			return {
-				label: `${edits} ${edits === 1 ? "edit" : "edits"} applied`,
+				label: `${edits} ${edits === 1 ? "edit" : "edits"} applied${statsLabel}`,
 				status: "success",
 				count: edits,
 			};
@@ -1016,6 +1034,31 @@ function shouldShowTargetDetails(
 	return kind === "read" || kind === "write" || kind === "edit";
 }
 
+function targetDetailSuffix(item: ToolActivityGroupItem): string | undefined {
+	if (item.isPartial || !item.result || item.isError) return undefined;
+	const activity = summarizeToolCall(item.toolName, item.args);
+	const details = knownDetails(item.result);
+	const output = getTextOutput(item.result).trim();
+	switch (activity.kind) {
+		case "read": {
+			const lines = details?.lineCount ?? countOutputDisplayLines(output);
+			return lines > 0 ? `(${plural(lines, "line")})` : undefined;
+		}
+		case "edit": {
+			const diff = (item.result?.details as any)?.diff;
+			const stats = parseDiffStats(typeof diff === "string" ? diff : undefined);
+			return stats ? `(+${stats.added} -${stats.removed})` : undefined;
+		}
+		case "write": {
+			const lineCount =
+				typeof item.args?.content === "string" ? countOutputDisplayLines(item.args.content) : undefined;
+			return lineCount !== undefined && lineCount > 0 ? `(${plural(lineCount, "line")})` : undefined;
+		}
+		default:
+			return undefined;
+	}
+}
+
 function targetDetailLabels(items: ToolActivityGroupItem[], maxItems = 3): string[] {
 	const labels: string[] = [];
 	const seen = new Set<string>();
@@ -1023,7 +1066,8 @@ function targetDetailLabels(items: ToolActivityGroupItem[], maxItems = 3): strin
 		const label = compactTargetForActivity(item);
 		if (!label || seen.has(label)) continue;
 		seen.add(label);
-		labels.push(label);
+		const suffix = targetDetailSuffix(item);
+		labels.push(suffix ? `${label} ${suffix}` : label);
 	}
 	const visible = labels.slice(0, maxItems);
 	const remaining = labels.length - visible.length;
