@@ -6898,6 +6898,11 @@ ${theme.fg("dim", "Hint:")} on Termux run \`pkg install termux-api\` and grant t
 			this.handleMemorySearch(query);
 			return;
 		}
+		if (subcommand === "add") {
+			const rest = args.slice("add".length).trim();
+			this.handleMemoryAdd(rest);
+			return;
+		}
 		if (subcommand === "delete" || subcommand === "rm") {
 			const id = args.slice(subcommand.length).trim();
 			this.handleMemoryDelete(id);
@@ -6905,6 +6910,10 @@ ${theme.fg("dim", "Hint:")} on Termux run \`pkg install termux-api\` and grant t
 		}
 		if (subcommand === "clear") {
 			this.handleMemoryClear();
+			return;
+		}
+		if (subcommand === "prune") {
+			this.handleMemoryPrune();
 			return;
 		}
 		if (subcommand === "help") {
@@ -7001,12 +7010,77 @@ ${theme.fg("muted", `No memories matching "${query}".`)}`);
 ${theme.fg("dim", "/memory")}              List all stored memories
 ${theme.fg("dim", "/memory list")}         Same as above
 ${theme.fg("dim", "/memory search")} <q>   Search memories by keyword
+${theme.fg("dim", "/memory add")} <t> <c>  Add a memory manually (title | content)
 ${theme.fg("dim", "/memory delete")} <id>  Delete a memory by ID prefix
 ${theme.fg("dim", "/memory clear")}        Delete all memories
+${theme.fg("dim", "/memory prune")}        Remove stale unused memories
 ${theme.fg("dim", "/memory help")}         Show this help
 
 Memories are automatically extracted from completed sessions and injected
-into future sessions that work in the same workspace.`);
+into future sessions that work in the same workspace.
+
+${theme.fg("dim", "Settings:")} memories.enabled, memories.autoExtract, memories.maxStored
+${theme.fg("dim", "Storage:")} ~/.neo-code/memories/`);
+	}
+
+	private handleMemoryAdd(input: string): void {
+		if (!input) {
+			this.showError("Usage: /memory add title | content");
+			return;
+		}
+		const { addMemory, redactSecrets, enforceMaxStored } =
+			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
+
+		// Parse: title | content
+		let title: string;
+		let content: string;
+
+		const pipeIdx = input.indexOf("|");
+		if (pipeIdx !== -1) {
+			title = input.slice(0, pipeIdx).trim();
+			content = input.slice(pipeIdx + 1).trim();
+		} else {
+			// Single string = title, content same as title
+			title = input.slice(0, 80);
+			content = input;
+		}
+
+		if (!title || !content) {
+			this.showError("Usage: /memory add title | content");
+			return;
+		}
+
+		const memSettings = this.settingsManager.getMemorySettings();
+		const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+		addMemory({
+			id,
+			createdAt: new Date().toISOString(),
+			workspace: this.sessionManager.getCwd(),
+			title: title.slice(0, 120),
+			content: redactSecrets(content.slice(0, 2000)),
+			tags: ["manual"],
+			usageCount: 0,
+			lastUsedAt: null,
+			sourceSessionId: null,
+		});
+		enforceMaxStored(memSettings.maxStored);
+		this.addPlainInfoBlock(`${theme.fg("success", "✓")} Added memory: ${title}`);
+	}
+
+	private handleMemoryPrune(): void {
+		const { pruneStaleMemories, enforceMaxStored } =
+			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
+		const memSettings = this.settingsManager.getMemorySettings();
+		const stalePruned = pruneStaleMemories(memSettings.pruneAfterDays);
+		const overflowPruned = enforceMaxStored(memSettings.maxStored);
+		const total = stalePruned + overflowPruned;
+		if (total === 0) {
+			this.addPlainInfoBlock(`${theme.fg("muted", "No memories to prune. All are within limits.")}`);
+		} else {
+			this.addPlainInfoBlock(
+				`${theme.fg("success", "✓")} Pruned ${total} memories (${stalePruned} stale, ${overflowPruned} over limit).`,
+			);
+		}
 	}
 
 	private handleMcpCommand(): void {
