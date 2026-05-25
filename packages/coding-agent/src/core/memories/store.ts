@@ -179,3 +179,42 @@ export function searchMemories(options: MemorySearchOptions = {}): MemoryEntry[]
 export function getMemoryCount(): number {
 	return loadMemoryIndex().length;
 }
+
+/**
+ * Prune memories that have not been used and are older than the given number of days.
+ * Returns the number of memories deleted.
+ */
+export function pruneStaleMemories(maxAgeDays: number): number {
+	const entries = loadMemoryIndex();
+	const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+	const stale = entries.filter((e) => {
+		if (e.usageCount > 0) return false; // Keep used memories
+		const createdMs = new Date(e.createdAt).getTime();
+		return createdMs < cutoff;
+	});
+	for (const entry of stale) {
+		deleteMemory(entry.id);
+	}
+	return stale.length;
+}
+
+/**
+ * Enforce max stored limit by removing oldest unused memories.
+ * Returns number of entries pruned.
+ */
+export function enforceMaxStored(maxStored: number): number {
+	const entries = loadMemoryIndex();
+	if (entries.length <= maxStored) return 0;
+
+	// Sort by usage count ascending, then by creation date ascending (oldest first)
+	const sorted = [...entries].sort((a, b) => {
+		if (a.usageCount !== b.usageCount) return a.usageCount - b.usageCount;
+		return a.createdAt.localeCompare(b.createdAt);
+	});
+
+	const toRemove = sorted.slice(0, entries.length - maxStored);
+	for (const entry of toRemove) {
+		deleteMemory(entry.id);
+	}
+	return toRemove.length;
+}

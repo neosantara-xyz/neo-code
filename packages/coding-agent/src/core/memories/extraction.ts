@@ -127,3 +127,37 @@ export function shouldExtractMemories(messageCount: number, hasToolCalls: boolea
 	// Sessions with tool calls are more likely to contain project-specific learnings
 	return hasToolCalls;
 }
+
+// ─── Secret Redaction ────────────────────────────────────────────────────────
+
+const SECRET_PATTERNS = [
+	// API keys and tokens (generic patterns)
+	/\b(sk|pk|api|key|token|secret|password|auth)[-_]?[A-Za-z0-9]{20,}\b/gi,
+	// Bearer tokens
+	/Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi,
+	// AWS keys
+	/AKIA[0-9A-Z]{16}/g,
+	// GitHub tokens
+	/gh[ps]_[A-Za-z0-9_]{36,}/g,
+	/github_pat_[A-Za-z0-9_]{22,}/g,
+	// npm tokens
+	/npm_[A-Za-z0-9]{36}/g,
+	// Generic hex secrets (32+ chars)
+	/\b[0-9a-f]{32,}\b/gi,
+	// JWT tokens
+	/eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
+	// Private keys
+	/-----BEGIN[A-Z ]+PRIVATE KEY-----[\s\S]*?-----END[A-Z ]+PRIVATE KEY-----/g,
+];
+
+/**
+ * Redact potential secrets from memory content before storing.
+ * Replaces matched patterns with [REDACTED].
+ */
+export function redactSecrets(text: string): string {
+	let result = text;
+	for (const pattern of SECRET_PATTERNS) {
+		result = result.replace(pattern, "[REDACTED]");
+	}
+	return result;
+}
