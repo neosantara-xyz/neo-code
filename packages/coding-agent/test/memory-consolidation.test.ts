@@ -22,6 +22,11 @@ function makeEntry(overrides: Partial<MemoryEntry> = {}): MemoryEntry {
 }
 
 describe("shouldConsolidate", () => {
+	// Note: The drift scenario (manual deletion pushing count below watermark) is handled
+	// by a watermark reset in the orchestration layer (_consolidateMemoriesIfNeeded),
+	// not in shouldConsolidate itself. The reset ensures memoryCountAtLastConsolidation
+	// never exceeds the actual count, so future additions properly trigger consolidation.
+
 	it("returns false when memory count equals state count", () => {
 		const entries = [makeEntry(), makeEntry(), makeEntry()];
 		const state: ConsolidationState = {

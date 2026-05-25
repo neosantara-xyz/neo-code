@@ -2598,8 +2598,18 @@ export class AgentSession {
 			const memorySettings = this.settingsManager.getMemorySettings();
 			if (!memorySettings.enabled) return;
 
-			const state = loadConsolidationState();
-			const entries = loadMemoryIndex();
+			let state = loadConsolidationState();
+			const allEntries = loadMemoryIndex();
+			const entries = allEntries.filter(
+				(e) => e.workspace === this._cwd || e.workspace.startsWith(this._cwd) || this._cwd.startsWith(e.workspace),
+			);
+
+			// Reset watermark if memories were manually deleted (prevents permanent suppression)
+			if (entries.length < state.memoryCountAtLastConsolidation) {
+				state = { ...state, memoryCountAtLastConsolidation: entries.length };
+				saveConsolidationState(state);
+			}
+
 			if (!shouldConsolidate(entries, state)) return;
 
 			// Get model and auth
@@ -2643,9 +2653,9 @@ export class AgentSession {
 				addMemory({
 					id: uuidv7(),
 					createdAt: new Date().toISOString(),
-					workspace: entries[0]?.workspace ?? this._cwd,
-					title: memory.title,
-					content: memory.content,
+					workspace: this._cwd,
+					title: redactSecrets(memory.title),
+					content: redactSecrets(memory.content),
 					tags: memory.tags,
 					usageCount: 0,
 					lastUsedAt: null,
