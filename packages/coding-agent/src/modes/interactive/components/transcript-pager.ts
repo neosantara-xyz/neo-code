@@ -111,8 +111,13 @@ export class TranscriptPagerComponent implements Component, Focusable {
 	}
 
 	private renderFooter(width: number): string[] {
+		const lines = this.getLines();
+		const viewportHeight = Math.max(1, this.getTerminalRows() - 3);
+		const totalLines = lines.length;
+		const currentLine = Math.min(this.scrollOffset + viewportHeight, totalLines);
+		const positionIndicator = totalLines > 0 ? `Line ${currentLine}/${totalLines}` : "";
 		const followStatus = this.autoFollow ? "on" : "off";
-		const hint = `${rawKeyHint("up/dn", "scroll")} ${rawKeyHint("PgUp/PgDn", "page")} ${rawKeyHint("q/Esc", "close")} ${theme.fg("dim", `auto-follow: ${followStatus}`)}`;
+		const hint = `${rawKeyHint("up/dn", "scroll")} ${rawKeyHint("PgUp/PgDn", "page")} ${rawKeyHint("q/Esc", "close")} ${theme.fg("dim", `${positionIndicator} auto-follow: ${followStatus}`)}`;
 		return [truncateToWidth(hint, Math.max(1, width), "")];
 	}
 }

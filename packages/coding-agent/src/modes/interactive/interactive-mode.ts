@@ -3952,6 +3952,7 @@ export class InteractiveMode {
 				}
 				this.setToolActivityAnimationPaused(false);
 				this.activeToolExecutionIds.clear();
+				this.transcriptPagerToolCallId = undefined;
 				if (this.terminalBlurredAt) {
 					this.workCompletedWhileAway = true;
 				}
