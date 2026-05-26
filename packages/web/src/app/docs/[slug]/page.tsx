@@ -10,14 +10,15 @@ export async function generateStaticParams() {
   return getAllSlugs().map((slug) => ({ slug }));
 }
 
-export default function DocPage({ params }: { params: { slug: string } }) {
-  const current = loadDoc(params.slug);
+export default async function DocPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const current = loadDoc(slug);
   if (!current) notFound();
 
   const { content } = current;
   const toc = extractTableOfContents(content);
   const docs = loadDocs();
-  const currentIdx = docs.findIndex((doc) => doc.slug === params.slug);
+  const currentIdx = docs.findIndex((doc) => doc.slug === slug);
   const prev = currentIdx > 0 ? docs[currentIdx - 1] : null;
   const next = currentIdx >= 0 && currentIdx < docs.length - 1 ? docs[currentIdx + 1] : null;
 
@@ -31,11 +32,11 @@ export default function DocPage({ params }: { params: { slug: string } }) {
 
       <div className="mb-12 grid gap-6 xl:grid-cols-[13rem_minmax(0,1fr)_14rem] xl:items-start">
         <aside className="sticky top-6 hidden max-h-[calc(100vh-3rem)] overflow-y-auto xl:block">
-          <DocsSideNav docs={docs} currentSlug={params.slug} />
+          <DocsSideNav docs={docs} currentSlug={slug} />
         </aside>
 
         <div className="xl:hidden">
-          <DocsMobileNav docs={docs} currentSlug={params.slug} />
+          <DocsMobileNav docs={docs} currentSlug={slug} />
         </div>
 
         <div className="lg:hidden">
