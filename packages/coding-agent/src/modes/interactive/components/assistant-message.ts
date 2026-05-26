@@ -76,9 +76,24 @@ export class AssistantMessageComponent extends Container {
 		// Clear content container
 		this.contentContainer.clear();
 
-		const hasVisibleContent = message.content.some(
-			(c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()),
-		);
+		const hasToolCalls = message.content.some((c) => c.type === "toolCall");
+		this.hasToolCalls = hasToolCalls;
+
+		const hasTextContent = message.content.some((c) => c.type === "text" && c.text.trim());
+		const hasThinkingContent = message.content.some((c) => c.type === "thinking" && c.thinking.trim());
+
+		// When the message has tool calls and only thinking (no text), suppress
+		// the thinking display entirely. The thinking happened "behind the scenes"
+		// and the tool activity tree is the visible result. Rendering a thinking
+		// label or spacer here would break visual continuity of consecutive tool
+		// activity groups.
+		const suppressThinking = hasToolCalls && hasThinkingContent && !hasTextContent;
+
+		const hasVisibleContent = suppressThinking
+			? false
+			: message.content.some(
+					(c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()),
+				);
 
 		if (hasVisibleContent) {
 			this.contentContainer.addChild(new Spacer(1));
@@ -91,7 +106,7 @@ export class AssistantMessageComponent extends Container {
 				// Assistant text messages with no background - trim the text
 				// Set paddingY=0 to avoid extra spacing before tool executions
 				this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, this.markdownTheme));
-			} else if (content.type === "thinking" && content.thinking.trim()) {
+			} else if (content.type === "thinking" && content.thinking.trim() && !suppressThinking) {
 				// Add spacing only when another visible assistant content block follows.
 				// This avoids a superfluous blank line before separately-rendered tool execution blocks.
 				const hasVisibleContentAfter = message.content
@@ -99,12 +114,16 @@ export class AssistantMessageComponent extends Container {
 					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
 
 				if (this.hideThinkingBlock) {
-					// Show static thinking label when hidden
-					this.contentContainer.addChild(
-						new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), 1, 0),
-					);
-					if (hasVisibleContentAfter) {
-						this.contentContainer.addChild(new Spacer(1));
+					// Show static thinking label when hidden — but only when there
+					// are no tool calls. When tool calls follow, the tool activity
+					// tree provides the visible progress indication.
+					if (!hasToolCalls) {
+						this.contentContainer.addChild(
+							new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), 1, 0),
+						);
+						if (hasVisibleContentAfter) {
+							this.contentContainer.addChild(new Spacer(1));
+						}
 					}
 				} else {
 					// Thinking traces in thinkingText color, italic
@@ -123,8 +142,6 @@ export class AssistantMessageComponent extends Container {
 
 		// Check if aborted - show after partial content
 		// But only if there are no tool calls (tool execution components will show the error)
-		const hasToolCalls = message.content.some((c) => c.type === "toolCall");
-		this.hasToolCalls = hasToolCalls;
 		if (!hasToolCalls) {
 			if (message.stopReason === "aborted") {
 				const abortMessage =
