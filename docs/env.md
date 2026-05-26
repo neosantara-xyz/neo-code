@@ -9,8 +9,8 @@ the repo root.
 | Variable | Used by | Default |
 | --- | --- | --- |
 | `NEOSANTARA_API_KEY` | `@neosantara/ai` transports, coding-agent fallback resolver | required |
-| `NEOSANTARA_API_BASE_URL` | `neo login` device flow (`coding-agent`) | `https://api.neosantara.xyz` |
-| `NEO_CODE_NEOSANTARA_API_BASE_URL` | `neo login` device flow override (preferred name inside the CLI) | falls back to `NEOSANTARA_API_BASE_URL` |
+| `NEOSANTARA_API_BASE_URL` | `neo login` device flow, API base URL | `https://api.neosantara.xyz` |
+| `NEO_CODE_NEOSANTARA_API_BASE_URL` | Fallback for `NEOSANTARA_API_BASE_URL` inside the CLI | falls back to `NEOSANTARA_API_BASE_URL` |
 
 ## Coding-agent runtime
 
@@ -25,6 +25,8 @@ the repo root.
 | `NEO_CODE_TELEMETRY` | Force-enable (`1`/`true`/`yes`) or disable (`0`/`false`/`no`) install telemetry. |
 | `NEO_CODE_CACHE_RETENTION` | Set to `long` to opt-in to 24h prompt cache retention where supported. |
 | `NEO_CODE_STARTUP_BENCHMARK` | Force a startup benchmark output (interactive mode only). |
+| `NEO_CODE_TIMING` | Enable timing instrumentation (`1`). |
+| `NEO_CODE_INSTALLER_URL` | Override installer URL for self-update. |
 
 ## TUI debug
 

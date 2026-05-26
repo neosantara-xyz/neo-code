@@ -9,11 +9,13 @@ Neo Code exposes tools to the AI model for interacting with your codebase.
 | `read` | Read file contents with line ranges |
 | `write` | Create or overwrite files |
 | `edit` | Apply targeted edits to existing files |
+| `apply_patch` | Apply unified diff patches to files |
 | `bash` | Execute shell commands |
 | `grep` | Search file contents with regex |
 | `find` | Find files by glob pattern |
 | `ls` | List directory contents |
 | `lsp` | Language Server Protocol queries |
+| `mcp` | Call tools from configured MCP servers |
 | `todo` | Manage task plans |
 | `agent` | Dispatch subagent for parallel work |
 
@@ -22,7 +24,7 @@ Neo Code exposes tools to the AI model for interacting with your codebase.
 Tools require approval based on the workflow mode:
 
 - **Read-only tools** (read, grep, find, ls, lsp) — always allowed
-- **Write tools** (edit, write) — require approval in default mode
+- **Write tools** (edit, write, apply_patch) — require approval in default mode
 - **Shell commands** (bash) — require approval in default mode
 
 Use `/permissions` to adjust, or switch to `accept-edits` or `full` mode.

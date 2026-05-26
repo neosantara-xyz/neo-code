@@ -1,8 +1,8 @@
-import { PageSkeleton } from "@/components/page-skeleton";
+import { SiteFooter } from "@/components/site-footer";
 import { Separator } from "@/components/ui/8bit/separator";
 import Hero1 from "@/components/ui/8bit/blocks/hero1";
 import Timeline3 from "@/components/ui/8bit/blocks/timeline3";
-import Footer1 from "@/components/ui/8bit/blocks/footer1";
+import { PageSkeleton } from "@/components/page-skeleton";
 import FAQ1 from "@/components/ui/8bit/blocks/faq1";
 import Team2 from "@/components/ui/8bit/blocks/team2";
 import Advanced1 from "@/components/ui/8bit/blocks/advanced1";
@@ -126,35 +126,7 @@ export default function Home() {
         ]}
       />
 
-      <Footer1
-        title="Neo Code"
-        description="Neosantara-first AI coding agent for your terminal."
-        copyright={`${new Date().getFullYear()} Neosantara. All rights reserved.`}
-        columns={[
-          {
-            title: "Product",
-            links: [
-              { label: "Install", href: "#install" },
-              { label: "Documentation", href: "/docs" },
-              { label: "GitHub", href: "https://github.com/ErRickow/neo-code" },
-            ],
-          },
-          {
-            title: "Neosantara",
-            links: [
-              { label: "Dashboard", href: "https://app.neosantara.xyz" },
-              { label: "API", href: "https://api.neosantara.xyz" },
-            ],
-          },
-          {
-            title: "Legal",
-            links: [
-              { label: "Terms", href: "https://www.neosantara.xyz/terms" },
-              { label: "Privacy", href: "https://www.neosantara.xyz/privacy" },
-            ],
-          },
-        ]}
-      />
+      <SiteFooter />
     </main>
     </PageSkeleton>
   );

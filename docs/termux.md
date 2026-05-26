@@ -35,6 +35,18 @@ If `termux-api` is installed, Neo Code can use:
 
 Check availability with `/termux-status`.
 
+### Notification Settings
+
+Notifications fire when the terminal is unfocused and a turn exceeds the
+minimum duration. Configure in `settings.json`:
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `notifications.termux.enabled` | false | Enable Termux notifications |
+| `notifications.termux.minDurationMs` | 5000 | Min turn duration to trigger |
+| `notifications.termux.vibrate` | true | Vibrate on notification |
+| `notifications.termux.sound` | false | Play sound on notification |
+
 ## Performance Notes
 
 - LSP servers are heavy on mobile — most users won't need them

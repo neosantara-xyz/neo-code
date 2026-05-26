@@ -17,12 +17,24 @@ Sources can be:
 
 ## Using Skills
 
-Skills are invoked automatically when a task matches their description, or
-explicitly:
+Skills are loaded automatically when a task matches their description. They can
+also be invoked explicitly:
 
 ```
-/skill:<name>              Invoke a skill by name
-$skill-name in prompt      Mention a skill with $ prefix
+/skill:<name>              Invoke a skill as a slash command
+```
+
+The `/skill:name` commands are available when `enableSkillCommands` is true in
+settings (default: true).
+
+Skills can also opt out of automatic invocation via frontmatter:
+
+```yaml
+---
+name: skill-name
+description: Use when [conditions]
+disable-model-invocation: true
+---
 ```
 
 ## Skill Structure

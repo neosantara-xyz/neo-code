@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import Footer1 from "@/components/ui/8bit/blocks/footer1";
+import { SiteFooter } from "@/components/site-footer";
 import "@/components/ui/8bit/styles/retro.css";
 
 interface DocEntry {
@@ -28,7 +28,7 @@ function extractDescription(content: string): string {
 function loadDocs(): DocEntry[] {
   const docsDir = path.resolve(process.cwd(), "../../docs");
   if (!fs.existsSync(docsDir)) return [];
-  const order = ["getting-started", "configuration", "tools", "memory", "skills", "lsp", "termux", "env"];
+  const order = ["getting-started", "configuration", "tools", "sessions", "subagents", "extensions", "themes", "memory", "skills", "lsp", "termux", "env"];
   const files = fs.readdirSync(docsDir).filter((f) => f.endsWith(".md"));
   const docs = files.map((f) => {
     const content = fs.readFileSync(path.join(docsDir, f), "utf-8");
@@ -45,7 +45,7 @@ export default function DocsPage() {
   const docs = loadDocs();
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-12">
+    <main className="py-4">
       <div className="mb-8">
         <a href="/" className="text-sm text-muted-foreground hover:text-foreground">
           &larr; Home
@@ -70,16 +70,7 @@ export default function DocsPage() {
         ))}
       </div>
 
-      <Footer1
-        title="Neo Code"
-        description="Neosantara-first AI coding agent for your terminal."
-        copyright={`${new Date().getFullYear()} Neosantara. All rights reserved.`}
-        columns={[
-          { title: "Product", links: [{ label: "Install", href: "/#install" }, { label: "Docs", href: "/docs" }, { label: "GitHub", href: "https://github.com/ErRickow/neo-code" }] },
-          { title: "Neosantara", links: [{ label: "Dashboard", href: "https://app.neosantara.xyz" }, { label: "API", href: "https://api.neosantara.xyz" }] },
-          { title: "Legal", links: [{ label: "Terms", href: "https://www.neosantara.xyz/terms" }, { label: "Privacy", href: "https://www.neosantara.xyz/privacy" }] },
-        ]}
-      />
+      <SiteFooter />
     </main>
   );
 }
