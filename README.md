@@ -83,6 +83,14 @@ Environment variables: [`docs/env.md`](docs/env.md)
 - [Termux](docs/termux.md)
 - [Environment Variables](docs/env.md)
 
+## Acknowledgments
+
+Neo Code builds upon the work of these open source projects:
+
+- [Pi](https://github.com/earendil-works/pi) by Earendil Works — terminal coding agent architecture, extension system, and TUI framework
+- [Codex CLI](https://github.com/openai/codex) by OpenAI — agent loop patterns and device auth flow
+- [Claude Code](https://github.com/codeaashu/claude-code) — reference implementation for AI coding agents
+
 ## License
 
 MIT

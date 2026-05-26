@@ -402,6 +402,12 @@ cat README.md | neo -p "Summarize this"
 - [@neosantara/agent-core](../agent/) — Agent loop and runtime primitives
 - [@neosantara/tui](../tui/) — Terminal UI framework
 
+## Acknowledgments
+
+- [Pi](https://github.com/earendil-works/pi) by Earendil Works — architecture, extension system, TUI framework
+- [Codex CLI](https://github.com/openai/codex) by OpenAI — agent loop patterns
+- [Claude Code](https://github.com/codeaashu/claude-code) — reference implementation
+
 ## License
 
 MIT
