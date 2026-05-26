@@ -18,10 +18,12 @@ export default function Install() {
       textarea.value = INSTALL_COMMAND;
       document.body.appendChild(textarea);
       textarea.select();
-      document.execCommand("copy");
+      const success = document.execCommand("copy");
       document.body.removeChild(textarea);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (success) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
     }
   };
 
