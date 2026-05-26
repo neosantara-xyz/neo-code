@@ -41,7 +41,9 @@ describe("install.sh", () => {
 			cwd,
 		);
 
-		expect(output).toContain("https://code.neosantara.xyz/releases/v0.74.0/neo-linux-x64.tar.gz");
+		expect(output).toContain(
+			"https://github.com/neosantara-xyz/neo-code/releases/download/v0.74.0/neo-linux-x64.tar.gz",
+		);
 		expect(output).toContain("Neo Code");
 		expect(output).toContain("[fetch] Downloading neo-linux-x64.tar.gz");
 		expect(output).toContain(`ln -s ${home}/.local/neo/neo ${home}/.local/bin/neo`);
@@ -62,7 +64,9 @@ describe("install.sh", () => {
 		);
 
 		expect(output).toContain("Termux detected; using prebuilt npm bundle");
-		expect(output).toContain("https://code.neosantara.xyz/releases/v0.74.0/neo-termux-npm-bundle.tar.gz");
+		expect(output).toContain(
+			"https://github.com/neosantara-xyz/neo-code/releases/download/v0.74.0/neo-termux-npm-bundle.tar.gz",
+		);
 		expect(output).toContain("[fetch] Downloading Termux bundle");
 		expect(output).toContain("[extract] Extracting installer bundle");
 		expect(output).toContain(
@@ -83,6 +87,8 @@ describe("install.sh", () => {
 			cwd,
 		);
 
-		expect(output).toContain("https://github.com/neosantara/neo-code/releases/download/v0.74.0/neo-linux-x64.tar.gz");
+		expect(output).toContain(
+			"https://github.com/neosantara-xyz/neo-code/releases/download/v0.74.0/neo-linux-x64.tar.gz",
+		);
 	});
 });

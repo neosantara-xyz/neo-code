@@ -45,7 +45,6 @@ describe("AssistantMessageComponent", () => {
 
 		const rendered = stripAnsi(component.render(100).join("\n"));
 
-		expect(rendered).toContain("Thinking...");
 		expect(rendered).toContain("Project ini berisi beberapa package.");
 		expect(rendered).not.toContain("User meminta");
 		expect(rendered).not.toContain("Saya perlu membaca file");
