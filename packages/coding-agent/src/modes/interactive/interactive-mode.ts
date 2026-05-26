@@ -97,7 +97,7 @@ import {
 	searchMemories,
 } from "../../core/memories/index.js";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.js";
-import { loginWithNeosantaraDeviceAuth } from "../../core/neosantara-device-auth.js";
+import { loginWithNeosantaraDeviceAuth, revokeNeosantaraToken } from "../../core/neosantara-device-auth.js";
 import { openLocal } from "../../core/open-file.js";
 import { DefaultPackageManager } from "../../core/package-manager.js";
 import { exitAfterCleanup } from "../../core/process-lifecycle.js";
@@ -900,6 +900,29 @@ export class InteractiveMode {
 		}
 	}
 
+	private validateTokenOnStartup(): void {
+		const authStorage = this.session.modelRegistry.authStorage;
+		authStorage
+			.getApiKey("neosantara", { includeFallback: false })
+			.then((apiKey) => {
+				if (!apiKey) return;
+				const baseUrl = normalizeNeosantaraApiBaseUrl();
+				fetch(`${baseUrl}/v1/auth/cli/validate`, {
+					headers: { Authorization: `Bearer ${apiKey}` },
+					signal: AbortSignal.timeout(5000),
+				})
+					.then((res) => {
+						if (res.status === 401 || res.status === 403) {
+							this.showStatus("Session expired or token revoked. Run /login to re-authenticate.");
+						}
+					})
+					.catch(() => {
+						/* offline or timeout — ignore */
+					});
+			})
+			.catch(() => {});
+	}
+
 	private showStartupNoticesIfNeeded(): void {
 		if (this.startupNoticesShown) {
 			return;
@@ -953,6 +976,9 @@ export class InteractiveMode {
 		// Both are needed: fd for autocomplete, rg for grep tool and bash commands
 		const [fdPath] = await Promise.all([ensureTool("fd"), ensureTool("rg")]);
 		this.fdPath = fdPath;
+
+		// Validate token in background (non-blocking)
+		this.validateTokenOnStartup();
 
 		// Add header container as first child
 		this.ui.addChild(this.headerContainer);
@@ -5934,6 +5960,13 @@ export class InteractiveMode {
 					}
 
 					try {
+						// Revoke token server-side for neosantara provider
+						if (providerOption.id === "neosantara") {
+							const cred = this.session.modelRegistry.authStorage.get(providerOption.id);
+							if (cred && "apiKey" in cred) {
+								await revokeNeosantaraToken({ token: cred.apiKey as string });
+							}
+						}
 						this.session.modelRegistry.authStorage.logout(providerOption.id);
 						this.session.modelRegistry.refresh();
 						await this.updateAvailableProviderCount();

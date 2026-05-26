@@ -370,3 +370,28 @@ export async function runNeosantaraDeviceLogin(args: string[], options: DeviceLo
 		process.exitCode = 1;
 	}
 }
+
+export interface RevokeTokenOptions {
+	apiBaseUrl?: string;
+	token: string;
+	fetchImpl?: typeof fetch;
+}
+
+export async function revokeNeosantaraToken(options: RevokeTokenOptions): Promise<boolean> {
+	const baseUrl = normalizeBaseUrl(options.apiBaseUrl || undefined);
+	const fetchFn = options.fetchImpl ?? fetch;
+
+	try {
+		const response = await fetchFn(`${baseUrl}/v1/auth/cli/revoke`, {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${options.token}`,
+				"Content-Type": "application/json",
+			},
+			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+		});
+		return response.ok;
+	} catch {
+		return false;
+	}
+}
