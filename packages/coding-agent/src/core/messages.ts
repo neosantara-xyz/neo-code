@@ -5,8 +5,8 @@
  * and provides a transformer to convert them to LLM-compatible messages.
  */
 
-import type { AgentMessage } from "@neosantara-xyz/agent-core";
-import type { ImageContent, Message, TextContent } from "@neosantara-xyz/ai";
+import type { AgentMessage } from "@neosantara/agent-core";
+import type { ImageContent, Message, TextContent } from "@neosantara/ai";
 
 export const COMPACTION_SUMMARY_PREFIX = `The conversation history before this point was compacted into the following summary:
 
@@ -69,7 +69,7 @@ export interface CompactionSummaryMessage {
 }
 
 // Extend CustomAgentMessages via declaration merging
-declare module "@neosantara-xyz/agent-core" {
+declare module "@neosantara/agent-core" {
 	interface CustomAgentMessages {
 		bashExecution: BashExecutionMessage;
 		custom: CustomMessage;

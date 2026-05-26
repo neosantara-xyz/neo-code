@@ -1,5 +1,5 @@
-import type { ThinkingLevel } from "@neosantara-xyz/agent-core";
-import type { Transport } from "@neosantara-xyz/ai";
+import type { ThinkingLevel } from "@neosantara/agent-core";
+import type { Transport } from "@neosantara/ai";
 import {
 	Container,
 	getCapabilities,
@@ -10,7 +10,7 @@ import {
 	SettingsList,
 	Spacer,
 	Text,
-} from "@neosantara-xyz/tui";
+} from "@neosantara/tui";
 import type { WarningSettings } from "../../../core/settings-manager.js";
 import { getSelectListTheme, getSettingsListTheme, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";

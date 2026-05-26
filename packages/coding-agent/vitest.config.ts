@@ -20,19 +20,19 @@ export default defineConfig({
 	resolve: {
 		alias: [
 			{
-				find: "@neosantara-xyz/ai/oauth",
+				find: "@neosantara/ai/oauth",
 				replacement: aiSrcOAuth,
 			},
 			{
-				find: "@neosantara-xyz/ai",
+				find: "@neosantara/ai",
 				replacement: aiSrcIndex,
 			},
 			{
-				find: "@neosantara-xyz/agent-core",
+				find: "@neosantara/agent-core",
 				replacement: agentSrcIndex,
 			},
 			{
-				find: "@neosantara-xyz/tui",
+				find: "@neosantara/tui",
 				replacement: tuiSrcIndex,
 			},
 		],

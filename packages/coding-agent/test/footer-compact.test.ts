@@ -1,4 +1,4 @@
-import { setKeybindings } from "@neosantara-xyz/tui";
+import { setKeybindings } from "@neosantara/tui";
 import { beforeAll, describe, expect, it } from "vitest";
 import { KeybindingsManager } from "../src/core/keybindings.js";
 import {

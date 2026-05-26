@@ -434,7 +434,7 @@ interface PackageJson {
 const pkg = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8")) as PackageJson;
 
 const neosantaraConfigName: string | undefined = pkg.neosantaraConfig?.name;
-export const PACKAGE_NAME: string = pkg.name || "@neosantara-xyz/code";
+export const PACKAGE_NAME: string = pkg.name || "@neosantara/code";
 export const APP_NAME: string = neosantaraConfigName || "neo";
 export const APP_TITLE: string = "Neo Code";
 export const CONFIG_DIR_NAME: string = pkg.neosantaraConfig?.configDir || ".neo-code";

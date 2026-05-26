@@ -1,6 +1,6 @@
 import * as os from "node:os";
-import type { ImageContent, TextContent } from "@neosantara-xyz/ai";
-import { getCapabilities, getImageDimensions, imageFallback } from "@neosantara-xyz/tui";
+import type { ImageContent, TextContent } from "@neosantara/ai";
+import { getCapabilities, getImageDimensions, imageFallback } from "@neosantara/tui";
 import { stripAnsi } from "../../utils/ansi.js";
 import { sanitizeBinaryOutput } from "../../utils/shell.js";
 

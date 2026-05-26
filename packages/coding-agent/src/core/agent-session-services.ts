@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import type { ThinkingLevel } from "@neosantara-xyz/agent-core";
-import type { Model } from "@neosantara-xyz/ai";
+import type { ThinkingLevel } from "@neosantara/agent-core";
+import type { Model } from "@neosantara/ai";
 import { getAgentDir } from "../config.js";
 import { AuthStorage } from "./auth-storage.js";
 import type { SessionStartEvent, ToolDefinition } from "./extensions/index.js";

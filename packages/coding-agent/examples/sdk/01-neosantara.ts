@@ -1,5 +1,5 @@
-import { getModel } from "@neosantara-xyz/ai";
-import { createAgentSession } from "@neosantara-xyz/code";
+import { getModel } from "@neosantara/ai";
+import { createAgentSession } from "@neosantara/code";
 
 const model = getModel("neosantara", "grok-4.1-fast-non-reasoning");
 if (!model) throw new Error("Neosantara default model not found");

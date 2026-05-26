@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
-import type { Component } from "@neosantara-xyz/tui";
-import { truncateToWidth, visibleWidth } from "@neosantara-xyz/tui";
+import type { Component } from "@neosantara/tui";
+import { truncateToWidth, visibleWidth } from "@neosantara/tui";
 import { APP_TITLE } from "../../../config.js";
 import { theme } from "../theme/theme.js";
 

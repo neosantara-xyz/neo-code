@@ -1,4 +1,4 @@
-import type { ImageContent, Model, SimpleStreamOptions, TextContent, Transport } from "@neosantara-xyz/ai";
+import type { ImageContent, Model, SimpleStreamOptions, TextContent, Transport } from "@neosantara/ai";
 import type { QueueMode } from "../agent.js";
 import type { AgentEvent, AgentMessage, AgentTool, ThinkingLevel } from "../index.js";
 import type { Session } from "./session/session.js";

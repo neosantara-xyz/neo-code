@@ -5,7 +5,7 @@ import {
 	type KeyId,
 	TUI_KEYBINDINGS,
 	KeybindingsManager as TuiKeybindingsManager,
-} from "@neosantara-xyz/tui";
+} from "@neosantara/tui";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { getAgentDir } from "../config.js";
@@ -60,7 +60,7 @@ export interface AppKeybindings {
 
 export type AppKeybinding = keyof AppKeybindings;
 
-declare module "@neosantara-xyz/tui" {
+declare module "@neosantara/tui" {
 	interface Keybindings extends AppKeybindings {}
 }
 

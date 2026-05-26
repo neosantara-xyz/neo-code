@@ -2,7 +2,7 @@
  * Shared utilities for compaction and branch summarization.
  */
 
-import type { Message } from "@neosantara-xyz/ai";
+import type { Message } from "@neosantara/ai";
 import type { AgentMessage } from "../../types.js";
 
 // ============================================================================

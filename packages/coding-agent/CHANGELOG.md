@@ -80,7 +80,7 @@
 - Added a `todo` planning tool backed by `.neo-code/todos.json`.
 - Added `/config`, `/memory`, `/mcp`, and `/todo` slash commands.
 - Added LSP-aware static code navigation for definitions, references, and workspace symbols.
-- Added `@neosantara-xyz/code/hooks` export shim.
+- Added `@neosantara/code/hooks` export shim.
 
 ## [0.74.47] - 2026-05-20
 

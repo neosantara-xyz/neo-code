@@ -4,8 +4,8 @@
  * Exposes /tui to show TUI redraw stats.
  */
 
-import type { ExtensionAPI } from "@neosantara-xyz/code";
-import { Text } from "@neosantara-xyz/tui";
+import type { ExtensionAPI } from "@neosantara/code";
+import { Text } from "@neosantara/tui";
 
 export default function (neoApi: ExtensionAPI) {
 	neoApi.registerCommand("tui", {

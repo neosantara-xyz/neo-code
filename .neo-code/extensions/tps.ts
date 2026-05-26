@@ -1,5 +1,5 @@
-import type { AssistantMessage } from "@neosantara-xyz/ai";
-import type { ExtensionAPI } from "@neosantara-xyz/code";
+import type { AssistantMessage } from "@neosantara/ai";
+import type { ExtensionAPI } from "@neosantara/code";
 
 function isAssistantMessage(message: unknown): message is AssistantMessage {
 	if (!message || typeof message !== "object") return false;

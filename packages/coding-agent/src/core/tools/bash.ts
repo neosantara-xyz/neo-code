@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
-import type { AgentTool } from "@neosantara-xyz/agent-core";
-import { Container, Text, truncateToWidth } from "@neosantara-xyz/tui";
+import type { AgentTool } from "@neosantara/agent-core";
+import { Container, Text, truncateToWidth } from "@neosantara/tui";
 import { spawn } from "child_process";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";

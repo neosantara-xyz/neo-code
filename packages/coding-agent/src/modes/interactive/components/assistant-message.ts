@@ -1,5 +1,5 @@
-import type { AssistantMessage } from "@neosantara-xyz/ai";
-import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@neosantara-xyz/tui";
+import type { AssistantMessage } from "@neosantara/ai";
+import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@neosantara/tui";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";

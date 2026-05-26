@@ -84,7 +84,7 @@ export {
 	type WriteToolOptions,
 } from "./write.js";
 
-import type { AgentTool } from "@neosantara-xyz/agent-core";
+import type { AgentTool } from "@neosantara/agent-core";
 import type { ToolDefinition } from "../extensions/types.js";
 import { createAgentToolDefinition } from "./agent.js";
 import { createApplyPatchToolDefinition } from "./apply-patch-tool.js";

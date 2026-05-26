@@ -1,4 +1,4 @@
-import { Box, Container, Markdown, type MarkdownTheme } from "@neosantara-xyz/tui";
+import { Box, Container, Markdown, type MarkdownTheme } from "@neosantara/tui";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";

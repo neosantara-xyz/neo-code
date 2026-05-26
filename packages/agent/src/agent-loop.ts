@@ -10,7 +10,7 @@ import {
 	streamSimple,
 	type ToolResultMessage,
 	validateToolArguments,
-} from "@neosantara-xyz/ai";
+} from "@neosantara/ai";
 import type {
 	AgentContext,
 	AgentEvent,

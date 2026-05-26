@@ -1,6 +1,6 @@
-import { Agent, type AgentMessage, type AgentTool } from "@neosantara-xyz/agent-core";
-import { type Api, type Model, streamSimple } from "@neosantara-xyz/ai";
-import { Text } from "@neosantara-xyz/tui";
+import { Agent, type AgentMessage, type AgentTool } from "@neosantara/agent-core";
+import { type Api, type Model, streamSimple } from "@neosantara/ai";
+import { Text } from "@neosantara/tui";
 import { type Static, Type } from "typebox";
 import type { ToolDefinition } from "../extensions/types.js";
 import type { McpServersSettings } from "../mcp.js";

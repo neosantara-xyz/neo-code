@@ -13,7 +13,7 @@ npm run check
 Link the CLI for local testing:
 
 ```bash
-npm link --workspace @neosantara-xyz/code
+npm link --workspace @neosantara/code
 neo login
 ```
 

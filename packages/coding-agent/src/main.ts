@@ -7,8 +7,8 @@
 
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { type ImageContent, modelsAreEqual } from "@neosantara-xyz/ai";
-import { ProcessTerminal, setKeybindings, TUI } from "@neosantara-xyz/tui";
+import { type ImageContent, modelsAreEqual } from "@neosantara/ai";
+import { ProcessTerminal, setKeybindings, TUI } from "@neosantara/tui";
 import chalk from "chalk";
 import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";

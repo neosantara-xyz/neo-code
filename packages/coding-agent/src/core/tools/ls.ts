@@ -1,5 +1,5 @@
-import type { AgentTool } from "@neosantara-xyz/agent-core";
-import { Text } from "@neosantara-xyz/tui";
+import type { AgentTool } from "@neosantara/agent-core";
+import { Text } from "@neosantara/tui";
 import { existsSync, readdirSync, statSync } from "fs";
 import nodePath from "path";
 import { type Static, Type } from "typebox";

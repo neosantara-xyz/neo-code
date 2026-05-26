@@ -1,5 +1,5 @@
 {
-	"name": "@neosantara-xyz/agent-core",
+	"name": "@neosantara/agent-core",
 	"version": "0.76.76",
 	"description": "Neo Code agent runtime primitives",
 	"type": "module",
@@ -20,7 +20,7 @@
 		"ignore": "^7.0.5",
 		"typebox": "^1.1.24",
 		"yaml": "^2.8.2",
-		"@neosantara-xyz/ai": "^0.76.76"
+		"@neosantara/ai": "^0.76.76"
 	},
 	"keywords": [
 		"ai",
@@ -43,8 +43,5 @@
 		"@types/node": "^24.3.0",
 		"typescript": "^5.7.3",
 		"vitest": "^3.2.4"
-	},
-	"publishConfig": {
-		"registry": "https://npm.pkg.github.com"
 	}
 }

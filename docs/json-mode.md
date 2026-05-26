@@ -44,12 +44,12 @@ type AgentEvent =
 
 ## Message Types
 
-Base messages (`@neosantara-xyz/ai`):
+Base messages (`@neosantara/ai`):
 - `UserMessage` — user input with text/image content
 - `AssistantMessage` — model response with text/thinking/toolCall content
 - `ToolResultMessage` — tool execution result
 
-Extended messages (`@neosantara-xyz/code`):
+Extended messages (`@neosantara/code`):
 - `BashExecutionMessage` — user `!` / `!!` command execution
 - `CustomMessage` — extension-injected messages
 - `BranchSummaryMessage` — branch navigation summary

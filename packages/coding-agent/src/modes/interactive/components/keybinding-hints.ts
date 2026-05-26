@@ -2,7 +2,7 @@
  * Utilities for formatting keybinding hints in the UI.
  */
 
-import { getKeybindings, type Keybinding, type KeyId } from "@neosantara-xyz/tui";
+import { getKeybindings, type Keybinding, type KeyId } from "@neosantara/tui";
 import { theme } from "../theme/theme.js";
 
 export interface KeyTextFormatOptions {

@@ -1,4 +1,4 @@
-# @neosantara-xyz/ai
+# @neosantara/ai
 
 Unified LLM transport for the Neosantara platform. OpenAI SDK-only, single
 provider, with automatic model discovery, token/cost tracking in IDR, and
@@ -19,7 +19,7 @@ Supported APIs:
 
 ```bash
 # Part of the neo-code monorepo
-npm install @neosantara-xyz/ai
+npm install @neosantara/ai
 ```
 
 TypeBox exports are re-exported: `Type`, `Static`, and `TSchema`.
@@ -27,7 +27,7 @@ TypeBox exports are re-exported: `Type`, `Static`, and `TSchema`.
 ## Quick Start
 
 ```typescript
-import { getModel, streamSimple, completeSimple, Type } from "@neosantara-xyz/ai";
+import { getModel, streamSimple, completeSimple, Type } from "@neosantara/ai";
 
 // Get a model (auto-complete supported)
 const model = getModel("neosantara", "grok-4.1-fast-non-reasoning");
@@ -54,7 +54,7 @@ console.log(`Cost: Rp ${message.usage.cost.total}`);
 Define tools with TypeBox schemas for type safety and validation:
 
 ```typescript
-import { Type, Tool } from "@neosantara-xyz/ai";
+import { Type, Tool } from "@neosantara/ai";
 
 const tools: Tool[] = [{
   name: "read_file",
@@ -82,7 +82,7 @@ for (const block of response.content) {
 ### Validating Tool Arguments
 
 ```typescript
-import { validateToolArguments } from "@neosantara-xyz/ai";
+import { validateToolArguments } from "@neosantara/ai";
 
 // Returns validated args or throws with descriptive error
 const args = validateToolArguments(tool.parameters, rawArgs);
@@ -148,7 +148,7 @@ if (model.input.includes("image")) {
 Models are auto-generated from `https://api.neosantara.xyz/v1/models`.
 
 ```typescript
-import { getProviders, getModels, getModel } from "@neosantara-xyz/ai";
+import { getProviders, getModels, getModel } from "@neosantara/ai";
 
 const providers = getProviders(); // ["neosantara"]
 const models = getModels("neosantara");
@@ -226,7 +226,7 @@ import {
   fauxText,
   fauxToolCall,
   registerFauxProvider,
-} from "@neosantara-xyz/ai";
+} from "@neosantara/ai";
 
 const faux = registerFauxProvider();
 const model = faux.getModel();

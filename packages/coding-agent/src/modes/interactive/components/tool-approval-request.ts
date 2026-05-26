@@ -1,4 +1,4 @@
-import { type Component, type Focusable, getKeybindings, Text, visibleWidth } from "@neosantara-xyz/tui";
+import { type Component, type Focusable, getKeybindings, Text, visibleWidth } from "@neosantara/tui";
 import {
 	getExitPlanModePlan,
 	type ToolApprovalDecision,

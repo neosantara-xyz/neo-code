@@ -23,7 +23,7 @@ commands, and more.
 Create `~/.neo-code/agent/extensions/my-extension.ts`:
 
 ```typescript
-import type { ExtensionAPI } from "@neosantara-xyz/code";
+import type { ExtensionAPI } from "@neosantara/code";
 import { Type } from "typebox";
 
 export default function (neo: ExtensionAPI) {
@@ -93,10 +93,10 @@ Additional paths via `settings.json`:
 
 | Package | Purpose |
 |---------|---------|
-| `@neosantara-xyz/code` | Extension types (`ExtensionAPI`, `ExtensionContext`, events) |
+| `@neosantara/code` | Extension types (`ExtensionAPI`, `ExtensionContext`, events) |
 | `typebox` | Schema definitions for tool parameters |
-| `@neosantara-xyz/ai` | AI utilities |
-| `@neosantara-xyz/tui` | TUI components for custom rendering |
+| `@neosantara/ai` | AI utilities |
+| `@neosantara/tui` | TUI components for custom rendering |
 
 Node.js built-ins (`node:fs`, `node:path`, etc.) are also available.
 

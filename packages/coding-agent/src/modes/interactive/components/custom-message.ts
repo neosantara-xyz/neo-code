@@ -1,6 +1,6 @@
-import type { TextContent } from "@neosantara-xyz/ai";
-import type { Component } from "@neosantara-xyz/tui";
-import { Box, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@neosantara-xyz/tui";
+import type { TextContent } from "@neosantara/ai";
+import type { Component } from "@neosantara/tui";
+import { Box, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@neosantara/tui";
 import type { MessageRenderer } from "../../../core/extensions/types.js";
 import type { CustomMessage } from "../../../core/messages.js";
 import { getMarkdownTheme, theme } from "../theme/theme.js";

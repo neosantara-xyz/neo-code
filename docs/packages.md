@@ -107,10 +107,10 @@ is configured, git packages use plain `install` for compatibility.
 
 Core packages are bundled by Neo Code. If you import these, list them in
 `peerDependencies` with `"*"` range:
-- `@neosantara-xyz/ai`
-- `@neosantara-xyz/agent-core`
-- `@neosantara-xyz/code`
-- `@neosantara-xyz/tui`
+- `@neosantara/ai`
+- `@neosantara/agent-core`
+- `@neosantara/code`
+- `@neosantara/tui`
 - `typebox`
 
 ## Package Filtering

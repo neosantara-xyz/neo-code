@@ -2,8 +2,8 @@
  * List available models with optional fuzzy search
  */
 
-import type { Api, Model } from "@neosantara-xyz/ai";
-import { fuzzyFilter } from "@neosantara-xyz/tui";
+import type { Api, Model } from "@neosantara/ai";
+import { fuzzyFilter } from "@neosantara/tui";
 import chalk from "chalk";
 import { formatNoModelsAvailableMessage } from "../core/auth-guidance.js";
 import type { ModelRegistry } from "../core/model-registry.js";

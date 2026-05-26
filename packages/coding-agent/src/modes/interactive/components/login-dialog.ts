@@ -1,5 +1,5 @@
-import { getOAuthProviders } from "@neosantara-xyz/ai/oauth";
-import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TUI } from "@neosantara-xyz/tui";
+import { getOAuthProviders } from "@neosantara/ai/oauth";
+import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TUI } from "@neosantara/tui";
 import { exec } from "child_process";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";

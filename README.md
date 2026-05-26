@@ -44,18 +44,18 @@ git clone https://github.com/neosantara-xyz/neo-code.git
 cd neo-code
 npm install --ignore-scripts
 npm run build
-npm link --workspace @neosantara-xyz/code
+npm link --workspace @neosantara/code
 ```
 
 ## Packages
 
 | Package | Purpose |
 | --- | --- |
-| `@neosantara-xyz/ai` | OpenAI-compatible transport for Neosantara |
-| `@neosantara-xyz/code` | `neo` CLI/TUI coding agent |
-| `@neosantara-xyz/agent-core` | Agent loop/runtime primitives |
-| `@neosantara-xyz/tui` | Terminal UI primitives |
-| `@neosantara-xyz/web` | Landing page and docs (static export) |
+| `@neosantara/ai` | OpenAI-compatible transport for Neosantara |
+| `@neosantara/code` | `neo` CLI/TUI coding agent |
+| `@neosantara/agent-core` | Agent loop/runtime primitives |
+| `@neosantara/tui` | Terminal UI primitives |
+| `@neosantara/web` | Landing page and docs (static export) |
 
 ## Development
 

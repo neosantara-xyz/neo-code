@@ -1,4 +1,4 @@
-import { type Component, type Focusable, getKeybindings, Text, visibleWidth } from "@neosantara-xyz/tui";
+import { type Component, type Focusable, getKeybindings, Text, visibleWidth } from "@neosantara/tui";
 import { spawn } from "child_process";
 import type { RateLimitActionRequiredEvent } from "../../../core/agent-session.js";
 import { theme } from "../theme/theme.js";

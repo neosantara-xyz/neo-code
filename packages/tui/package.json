@@ -1,5 +1,5 @@
 {
-	"name": "@neosantara-xyz/tui",
+	"name": "@neosantara/tui",
 	"version": "0.76.76",
 	"description": "Neo Code terminal UI primitives",
 	"type": "module",
@@ -46,8 +46,5 @@
 		"@xterm/headless": "^5.5.0",
 		"@xterm/xterm": "^5.5.0",
 		"chalk": "^5.5.0"
-	},
-	"publishConfig": {
-		"registry": "https://npm.pkg.github.com"
 	}
 }

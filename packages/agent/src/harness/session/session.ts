@@ -1,4 +1,4 @@
-import type { ImageContent, TextContent } from "@neosantara-xyz/ai";
+import type { ImageContent, TextContent } from "@neosantara/ai";
 import type { AgentMessage } from "../../types.js";
 import { createBranchSummaryMessage, createCompactionSummaryMessage, createCustomMessage } from "../messages.js";
 import type {

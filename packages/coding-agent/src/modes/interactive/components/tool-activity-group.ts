@@ -1,4 +1,4 @@
-import { Container, Spacer, Text, type TUI, visibleWidth } from "@neosantara-xyz/tui";
+import { Container, Spacer, Text, type TUI, visibleWidth } from "@neosantara/tui";
 import {
 	buildToolActivityGroupRender as buildRender,
 	canMergeToolIntoActivityGroup,

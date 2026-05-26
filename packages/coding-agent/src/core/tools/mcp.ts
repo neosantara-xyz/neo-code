@@ -1,4 +1,4 @@
-import type { AgentToolResult } from "@neosantara-xyz/agent-core";
+import type { AgentToolResult } from "@neosantara/agent-core";
 import { type Static, Type } from "typebox";
 import type { ToolDefinition } from "../extensions/types.js";
 import { type McpServersSettings, parseMcpToolsList, withMcpServer } from "../mcp.js";

@@ -5,8 +5,8 @@
  * Responses and events are emitted as JSON lines on stdout.
  */
 
-import type { AgentMessage, ThinkingLevel } from "@neosantara-xyz/agent-core";
-import type { ImageContent, Model } from "@neosantara-xyz/ai";
+import type { AgentMessage, ThinkingLevel } from "@neosantara/agent-core";
+import type { ImageContent, Model } from "@neosantara/ai";
 import type { SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
 import type { CompactionResult } from "../../core/compaction/index.js";

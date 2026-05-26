@@ -1,4 +1,4 @@
-import type { Transport } from "@neosantara-xyz/ai";
+import type { Transport } from "@neosantara/ai";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { dirname, join } from "path";

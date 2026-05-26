@@ -16,8 +16,8 @@ import {
 	registerApiProvider,
 	resetApiProviders,
 	type SimpleStreamOptions,
-} from "@neosantara-xyz/ai";
-import { registerOAuthProvider, resetOAuthProviders } from "@neosantara-xyz/ai/oauth";
+} from "@neosantara/ai";
+import { registerOAuthProvider, resetOAuthProviders } from "@neosantara/ai/oauth";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { type Static, Type } from "typebox";

@@ -3,10 +3,10 @@
 	"compilerOptions": {
 		"noEmit": true,
 		"paths": {
-			"@neosantara-xyz/code": ["./src/index.ts"],
-			"@neosantara-xyz/code/hooks": ["./src/core/hooks/index.ts"],
-			"@neosantara-xyz/tui": ["../tui/src/index.ts"],
-			"@neosantara-xyz/ai": ["../ai/src/index.ts"],
+			"@neosantara/code": ["./src/index.ts"],
+			"@neosantara/code/hooks": ["./src/core/hooks/index.ts"],
+			"@neosantara/tui": ["../tui/src/index.ts"],
+			"@neosantara/ai": ["../ai/src/index.ts"],
 			"typebox": ["../../node_modules/typebox"]
 		},
 		"skipLibCheck": true

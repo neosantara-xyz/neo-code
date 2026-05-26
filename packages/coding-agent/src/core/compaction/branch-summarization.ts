@@ -5,9 +5,9 @@
  * a summary of the branch being left so context isn't lost.
  */
 
-import type { AgentMessage } from "@neosantara-xyz/agent-core";
-import type { Model } from "@neosantara-xyz/ai";
-import { completeSimple } from "@neosantara-xyz/ai";
+import type { AgentMessage } from "@neosantara/agent-core";
+import type { Model } from "@neosantara/ai";
+import { completeSimple } from "@neosantara/ai";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,

@@ -279,7 +279,7 @@ neo config                    # Enable/disable resources
 ### SDK
 
 ```typescript
-import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@neosantara-xyz/code";
+import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@neosantara/code";
 
 const authStorage = AuthStorage.create();
 const modelRegistry = ModelRegistry.create(authStorage);
@@ -398,9 +398,9 @@ cat README.md | neo -p "Summarize this"
 
 ## See Also
 
-- [@neosantara-xyz/ai](../ai/) — OpenAI-compatible LLM transport
-- [@neosantara-xyz/agent-core](../agent/) — Agent loop and runtime primitives
-- [@neosantara-xyz/tui](../tui/) — Terminal UI framework
+- [@neosantara/ai](../ai/) — OpenAI-compatible LLM transport
+- [@neosantara/agent-core](../agent/) — Agent loop and runtime primitives
+- [@neosantara/tui](../tui/) — Terminal UI framework
 
 ## License
 

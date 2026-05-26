@@ -1,5 +1,5 @@
 {
-	"name": "@neosantara-xyz/ai",
+	"name": "@neosantara/ai",
 	"version": "0.76.76",
 	"description": "Neosantara OpenAI-compatible AI provider package",
 	"type": "module",
@@ -65,8 +65,5 @@
 	"devDependencies": {
 		"@types/node": "^24.3.0",
 		"vitest": "^3.2.4"
-	},
-	"publishConfig": {
-		"registry": "https://npm.pkg.github.com"
 	}
 }

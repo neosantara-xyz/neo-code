@@ -8,7 +8,7 @@ the repo root.
 
 | Variable | Used by | Default |
 | --- | --- | --- |
-| `NEOSANTARA_API_KEY` | `@neosantara-xyz/ai` transports, coding-agent fallback resolver | required |
+| `NEOSANTARA_API_KEY` | `@neosantara/ai` transports, coding-agent fallback resolver | required |
 | `NEOSANTARA_API_BASE_URL` | `neo login` device flow, API base URL | `https://api.neosantara.xyz` |
 | `NEO_CODE_NEOSANTARA_API_BASE_URL` | Fallback for `NEOSANTARA_API_BASE_URL` inside the CLI | falls back to `NEOSANTARA_API_BASE_URL` |
 
@@ -39,7 +39,7 @@ the repo root.
 
 ## Where flags are read
 
-The `@neosantara-xyz/ai` package exposes accessors in
+The `@neosantara/ai` package exposes accessors in
 `packages/ai/src/env-flags.ts`. Coding-agent reads the rest from
 `packages/coding-agent/src/config.ts` and `packages/coding-agent/src/main.ts`.
 When you start reading a new flag, add it to one of those files (or to

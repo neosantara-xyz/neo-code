@@ -34,7 +34,7 @@
 
 ### Changed
 
-- Published lockstep runtime compatibility for Claude-style subagent orchestration in `@neosantara-xyz/code`.
+- Published lockstep runtime compatibility for Claude-style subagent orchestration in `@neosantara/code`.
 
 ## [0.75.0] - 2026-05-20
 

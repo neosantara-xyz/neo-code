@@ -1,4 +1,4 @@
-import type { Model } from "@neosantara-xyz/ai";
+import type { Model } from "@neosantara/ai";
 import {
 	Container,
 	type Focusable,
@@ -9,7 +9,7 @@ import {
 	matchesKey,
 	Spacer,
 	Text,
-} from "@neosantara-xyz/tui";
+} from "@neosantara/tui";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyText } from "./keybinding-hints.js";

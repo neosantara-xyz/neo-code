@@ -1,4 +1,4 @@
-import type { KnownProvider } from "@neosantara-xyz/ai";
+import type { KnownProvider } from "@neosantara/ai";
 
 export const BUILT_IN_PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 	neosantara: "Neosantara",

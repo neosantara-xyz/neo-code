@@ -1,5 +1,5 @@
-import type { AgentMessage } from "@neosantara-xyz/agent-core";
-import type { ImageContent, Message, TextContent } from "@neosantara-xyz/ai";
+import type { AgentMessage } from "@neosantara/agent-core";
+import type { ImageContent, Message, TextContent } from "@neosantara/ai";
 import { randomUUID } from "crypto";
 import {
 	appendFileSync,

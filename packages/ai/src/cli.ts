@@ -65,7 +65,7 @@ async function main(): Promise<void> {
 
 	if (!command || command === "help" || command === "--help" || command === "-h") {
 		const providerList = PROVIDERS.map((p) => `  ${p.id.padEnd(20)} ${p.name}`).join("\n");
-		console.log(`Usage: npx @neosantara-xyz/ai <command> [provider]
+		console.log(`Usage: npx @neosantara/ai <command> [provider]
 
 Commands:
   login [provider]  Login to an OAuth provider
@@ -75,9 +75,9 @@ Providers:
 ${providerList}
 
 Examples:
-  npx @neosantara-xyz/ai login              # interactive provider selection
-  npx @neosantara-xyz/ai list               # list providers
-  npx @neosantara-xyz/ai list               # list providers
+  npx @neosantara/ai login              # interactive provider selection
+  npx @neosantara/ai list               # list providers
+  npx @neosantara/ai list               # list providers
 `);
 		return;
 	}
@@ -114,7 +114,7 @@ Examples:
 
 		if (!PROVIDERS.some((p) => p.id === provider)) {
 			console.error(`Unknown provider: ${provider}`);
-			console.error(`Use 'npx @neosantara-xyz/ai list' to see available providers`);
+			console.error(`Use 'npx @neosantara/ai list' to see available providers`);
 			exitAfterCleanup(1);
 		}
 
@@ -124,7 +124,7 @@ Examples:
 	}
 
 	console.error(`Unknown command: ${command}`);
-	console.error(`Use 'npx @neosantara-xyz/ai --help' for usage`);
+	console.error(`Use 'npx @neosantara/ai --help' for usage`);
 	exitAfterCleanup(1);
 }
 

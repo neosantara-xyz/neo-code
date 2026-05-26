@@ -818,7 +818,7 @@ function parseChunkUsage(
 	const reportedCachedTokens = rawUsage.prompt_tokens_details?.cached_tokens ?? rawUsage.prompt_cache_hit_tokens ?? 0;
 	const cacheWriteTokens = rawUsage.prompt_tokens_details?.cache_write_tokens || 0;
 
-	// Normalize to @neosantara-xyz/ai semantics:
+	// Normalize to @neosantara/ai semantics:
 	// - cacheRead: hits from cache created by previous requests only
 	// - cacheWrite: tokens written to cache in this request
 	// Some OpenAI-compatible endpoints report cached_tokens

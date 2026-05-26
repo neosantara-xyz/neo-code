@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { Container } from "@neosantara-xyz/tui";
+import { Container } from "@neosantara/tui";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { type BashOperations, createBashToolDefinition } from "../src/core/tools/bash.js";
 import {

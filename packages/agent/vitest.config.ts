@@ -12,7 +12,7 @@ export default defineConfig({
 	resolve: {
 		alias: [
 			{
-				find: "@neosantara-xyz/ai",
+				find: "@neosantara/ai",
 				replacement: aiSrcIndex,
 			},
 		],

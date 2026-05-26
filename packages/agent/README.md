@@ -1,7 +1,7 @@
-# @neosantara-xyz/agent-core
+# @neosantara/agent-core
 
 Core agent loop and runtime primitives for Neo Code. Provider-agnostic — works
-with any LLM transport that implements the `@neosantara-xyz/ai` stream interface.
+with any LLM transport that implements the `@neosantara/ai` stream interface.
 
 ## Architecture
 
@@ -27,7 +27,7 @@ AgentHarness (session management, compaction, prompt templates)
 High-level agent class with message queuing, steering, and state management.
 
 ```ts
-import { Agent } from "@neosantara-xyz/agent-core";
+import { Agent } from "@neosantara/agent-core";
 
 const agent = new Agent({
   model,
@@ -53,7 +53,7 @@ Low-level loop that executes a single prompt through multiple LLM turns until
 the model stops calling tools.
 
 ```ts
-import { runAgentLoop } from "@neosantara-xyz/agent-core";
+import { runAgentLoop } from "@neosantara/agent-core";
 
 await runAgentLoop({
   messages,
@@ -73,7 +73,7 @@ Events emitted: `agent_start`, `agent_end`, `turn_start`, `turn_end`,
 Session-aware wrapper that adds persistence, compaction, and prompt templates.
 
 ```ts
-import { AgentHarness } from "@neosantara-xyz/agent-core";
+import { AgentHarness } from "@neosantara/agent-core";
 
 const harness = new AgentHarness({
   model,
@@ -98,7 +98,7 @@ Features:
 Tree-based session storage supporting fork, resume, and branch navigation.
 
 ```ts
-import { Session, JsonlSessionRepo } from "@neosantara-xyz/agent-core";
+import { Session, JsonlSessionRepo } from "@neosantara/agent-core";
 
 const repo = new JsonlSessionRepo("/path/to/session.jsonl");
 const session = await Session.load(repo);
@@ -119,7 +119,7 @@ Storage backends:
 Automatic context window management.
 
 ```ts
-import { shouldCompact, compact } from "@neosantara-xyz/agent-core";
+import { shouldCompact, compact } from "@neosantara/agent-core";
 
 if (shouldCompact(messages, model.contextWindow, settings)) {
   const result = await compact(messages, model, streamFn, settings);
@@ -137,7 +137,7 @@ Functions:
 ## Tool Interface
 
 ```ts
-import type { AgentTool } from "@neosantara-xyz/agent-core";
+import type { AgentTool } from "@neosantara/agent-core";
 
 const myTool: AgentTool = {
   name: "read_file",
@@ -168,5 +168,5 @@ const myTool: AgentTool = {
 Utilities for proxying agent events between processes (used by subagents).
 
 ```ts
-import { AgentProxy } from "@neosantara-xyz/agent-core";
+import { AgentProxy } from "@neosantara/agent-core";
 ```
