@@ -969,6 +969,23 @@ export class InteractiveMode {
 
 		this.registerSignalHandlers();
 
+		// Show mascot loading screen during initialization
+		const loadingLines = [
+			"",
+			"  \x1b[36m  ▄██▄   ▄██▄\x1b[0m",
+			"  \x1b[36m ██░░██▄██░░██\x1b[0m",
+			"  \x1b[36m ██░░█████░░██\x1b[0m",
+			"  \x1b[36m   ███ >_ ███\x1b[0m",
+			"  \x1b[36m  ██  ▐▌ ▐▌ ██\x1b[0m",
+			"  \x1b[36m  ▀██▄███▄██▀\x1b[0m",
+			"  \x1b[36m     ▀▀▀▀▀\x1b[0m",
+			"",
+			`  \x1b[1mNeo Code\x1b[0m \x1b[90mv${this.version}\x1b[0m`,
+			"  \x1b[90mInitializing...\x1b[0m",
+			"",
+		];
+		process.stdout.write(loadingLines.join("\n"));
+
 		// Load changelog (only show new entries, skip for resumed sessions)
 		this.changelogMarkdown = this.getChangelogForDisplay();
 
@@ -1064,6 +1081,7 @@ export class InteractiveMode {
 		this.setupEditorSubmitHandler();
 
 		// Start the UI before initializing extensions so session_start handlers can use interactive dialogs
+		process.stdout.write("\x1b[2J\x1b[H"); // Clear screen before TUI takes over
 		this.ui.start();
 		this.isInitialized = true;
 
