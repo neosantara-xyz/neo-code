@@ -31,5 +31,5 @@ cp neosantara-agent-core-*.tgz "$STAGE_DIR/neosantara-agent-core.tgz"
 cp neosantara-tui-*.tgz "$STAGE_DIR/neosantara-tui.tgz"
 cp neosantara-code-*.tgz "$STAGE_DIR/neosantara-code.tgz"
 
-tar -czf "$OUT_DIR/neo-termux-npm-bundle.tar.gz" -C "$STAGE_DIR" .
-printf '%s\n' "$OUT_DIR/neo-termux-npm-bundle.tar.gz"
+tar -czf "$OUT_DIR/neo-termux.tar.gz" -C "$STAGE_DIR" .
+printf '%s\n' "$OUT_DIR/neo-termux.tar.gz"

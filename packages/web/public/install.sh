@@ -83,9 +83,9 @@ bundle_install_url() {
   release_ref="$1"
   cache_buster="$(date +%s 2>/dev/null || printf '%s' "$release_ref")"
   if [ -n "$DOWNLOAD_BASE_URL" ]; then
-    printf '%s/releases/%s/neo-termux-npm-bundle.tar.gz?neo_code_cache=%s' "$DOWNLOAD_BASE_URL" "$release_ref" "$cache_buster"
+    printf '%s/releases/%s/neo-termux.tar.gz?neo_code_cache=%s' "$DOWNLOAD_BASE_URL" "$release_ref" "$cache_buster"
   else
-    printf 'https://github.com/%s/releases/download/%s/neo-termux-npm-bundle.tar.gz?neo_code_cache=%s' "$REPO" "$release_ref" "$cache_buster"
+    printf 'https://github.com/%s/releases/download/%s/neo-termux.tar.gz?neo_code_cache=%s' "$REPO" "$release_ref" "$cache_buster"
   fi
 }
 
@@ -396,11 +396,11 @@ install_termux_bundle() {
   step "fetch" "Downloading Termux bundle"
   run mkdir -p "$bundle_dir"
   run mkdir -p "$TERMUX_PREFIX/bin"
-  download "$url" "$tmp/neo-termux-npm-bundle.tar.gz" || return 1
+  download "$url" "$tmp/neo-termux.tar.gz" || return 1
   ok "fetch"
 
   step "extract" "Extracting installer bundle"
-  run tar -xzf "$tmp/neo-termux-npm-bundle.tar.gz" -C "$bundle_dir"
+  run tar -xzf "$tmp/neo-termux.tar.gz" -C "$bundle_dir"
   ok "extract"
 
   INSTALLED_VERSION="$(detect_bundle_version "$bundle_dir")"
