@@ -5,8 +5,8 @@
  * and converting the ANSI output to HTML.
  */
 
-import type { ImageContent, TextContent } from "@neosantara/ai";
-import type { Component } from "@neosantara/tui";
+import type { ImageContent, TextContent } from "@neosantara-xyz/ai";
+import type { Component } from "@neosantara-xyz/tui";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { ToolDefinition, ToolRenderContext } from "../extensions/types.js";
 import { ansiLinesToHtml } from "./ansi-to-html.js";

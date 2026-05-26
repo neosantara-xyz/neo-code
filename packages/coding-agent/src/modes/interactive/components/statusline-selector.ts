@@ -16,7 +16,7 @@
  * keeps rendering its previous state until the user explicitly saves.
  */
 
-import { Container, getKeybindings, Spacer, Text, truncateToWidth } from "@neosantara/tui";
+import { Container, getKeybindings, Spacer, Text, truncateToWidth } from "@neosantara-xyz/tui";
 import {
 	getStatuslineItemMetadata,
 	normalizeStatuslineItems,

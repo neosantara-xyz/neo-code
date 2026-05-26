@@ -1,4 +1,4 @@
-import type { Component } from "@neosantara/tui";
+import type { Component } from "@neosantara-xyz/tui";
 import { theme } from "../theme/theme.js";
 
 /**

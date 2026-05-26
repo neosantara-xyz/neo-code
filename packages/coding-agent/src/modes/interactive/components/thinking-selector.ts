@@ -1,5 +1,5 @@
-import type { ThinkingLevel } from "@neosantara/agent-core";
-import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@neosantara/tui";
+import type { ThinkingLevel } from "@neosantara-xyz/agent-core";
+import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@neosantara-xyz/tui";
 import { getSelectListTheme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 

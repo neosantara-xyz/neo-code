@@ -1,5 +1,5 @@
-import type { AgentTool } from "@neosantara/agent-core";
-import { Box, Container, Spacer, Text } from "@neosantara/tui";
+import type { AgentTool } from "@neosantara-xyz/agent-core";
+import { Box, Container, Spacer, Text } from "@neosantara-xyz/tui";
 import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile, writeFile as fsWriteFile } from "fs/promises";
 import { type Static, Type } from "typebox";

@@ -6,7 +6,7 @@
  * single call using a compact patch format, dramatically reducing token usage.
  */
 
-import type { AgentToolResult } from "@neosantara/agent-core";
+import type { AgentToolResult } from "@neosantara-xyz/agent-core";
 import { type Static, Type } from "typebox";
 import type { ToolDefinition } from "../extensions/types.js";
 import { type ApplyPatchResult, applyPatch, PatchApplyError, PatchParseError } from "./apply-patch.js";

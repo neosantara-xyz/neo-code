@@ -1,4 +1,4 @@
-import type { ImageContent } from "@neosantara/ai";
+import type { ImageContent } from "@neosantara-xyz/ai";
 import { applyExifOrientation } from "./exif-orientation.js";
 import { loadPhoton } from "./photon.js";
 

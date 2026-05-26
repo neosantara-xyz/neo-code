@@ -7,7 +7,7 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentMessage } from "@neosantara/agent-core";
+import type { AgentMessage } from "@neosantara-xyz/agent-core";
 import {
 	type AssistantMessage,
 	getProviders,
@@ -16,7 +16,7 @@ import {
 	type Model,
 	type OAuthProviderId,
 	type OAuthSelectPrompt,
-} from "@neosantara/ai";
+} from "@neosantara-xyz/ai";
 import type {
 	AutocompleteItem,
 	AutocompleteProvider,
@@ -27,7 +27,7 @@ import type {
 	OverlayHandle,
 	OverlayOptions,
 	SlashCommand,
-} from "@neosantara/tui";
+} from "@neosantara-xyz/tui";
 import {
 	CombinedAutocompleteProvider,
 	type Component,
@@ -45,7 +45,7 @@ import {
 	TUI,
 	truncateToWidth,
 	visibleWidth,
-} from "@neosantara/tui";
+} from "@neosantara-xyz/tui";
 import { spawn, spawnSync } from "child_process";
 import {
 	APP_NAME,

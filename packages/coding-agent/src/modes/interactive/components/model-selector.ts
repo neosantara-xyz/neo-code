@@ -1,5 +1,14 @@
-import { type Model, modelsAreEqual } from "@neosantara/ai";
-import { Container, type Focusable, fuzzyFilter, getKeybindings, Input, Spacer, Text, type TUI } from "@neosantara/tui";
+import { type Model, modelsAreEqual } from "@neosantara-xyz/ai";
+import {
+	Container,
+	type Focusable,
+	fuzzyFilter,
+	getKeybindings,
+	Input,
+	Spacer,
+	Text,
+	type TUI,
+} from "@neosantara-xyz/tui";
 import type { ModelRegistry } from "../../../core/model-registry.js";
 import type { SettingsManager } from "../../../core/settings-manager.js";
 import { theme } from "../theme/theme.js";

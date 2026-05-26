@@ -5,9 +5,9 @@
  * and after compaction the session is reloaded.
  */
 
-import type { AgentMessage, ThinkingLevel } from "@neosantara/agent-core";
-import type { AssistantMessage, Model, Usage } from "@neosantara/ai";
-import { completeSimple } from "@neosantara/ai";
+import type { AgentMessage, ThinkingLevel } from "@neosantara-xyz/agent-core";
+import type { AssistantMessage, Model, Usage } from "@neosantara-xyz/ai";
+import { completeSimple } from "@neosantara-xyz/ai";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,

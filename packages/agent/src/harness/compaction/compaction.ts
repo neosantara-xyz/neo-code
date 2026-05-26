@@ -5,8 +5,8 @@
  * and after compaction the session is reloaded.
  */
 
-import type { AssistantMessage, ImageContent, Model, TextContent, Usage } from "@neosantara/ai";
-import { completeSimple } from "@neosantara/ai";
+import type { AssistantMessage, ImageContent, Model, TextContent, Usage } from "@neosantara-xyz/ai";
+import { completeSimple } from "@neosantara-xyz/ai";
 import type { AgentMessage, ThinkingLevel } from "../../types.js";
 import {
 	convertToLlm,

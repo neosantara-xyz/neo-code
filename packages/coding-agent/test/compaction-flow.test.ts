@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@neosantara/ai";
+import type { AssistantMessage } from "@neosantara-xyz/ai";
 import { describe, expect, it } from "vitest";
 import { isInputTokenRateLimitErrorMessage } from "../src/core/agent-session.js";
 import {

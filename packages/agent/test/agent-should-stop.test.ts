@@ -1,4 +1,4 @@
-import { type AssistantMessage, createAssistantMessageEventStream, type Model, Type } from "@neosantara/ai";
+import { type AssistantMessage, createAssistantMessageEventStream, type Model, Type } from "@neosantara-xyz/ai";
 import { describe, expect, it } from "vitest";
 import { Agent } from "../src/agent.js";
 import type { AgentTool, StreamFn } from "../src/types.js";

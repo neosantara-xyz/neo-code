@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline";
-import type { AgentTool } from "@neosantara/agent-core";
-import { Text } from "@neosantara/tui";
+import type { AgentTool } from "@neosantara-xyz/agent-core";
+import { Text } from "@neosantara-xyz/tui";
 import { spawn } from "child_process";
 import { readFileSync, statSync } from "fs";
 import path from "path";

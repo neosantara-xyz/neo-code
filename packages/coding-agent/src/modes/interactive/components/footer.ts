@@ -1,4 +1,4 @@
-import { type Component, truncateToWidth, visibleWidth } from "@neosantara/tui";
+import { type Component, truncateToWidth, visibleWidth } from "@neosantara-xyz/tui";
 import { getAgentWorkModeLabel, getAgentWorkModeSymbol, isDefaultAgentWorkMode } from "../../../core/agent-mode.js";
 import type { AgentSession } from "../../../core/agent-session.js";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";

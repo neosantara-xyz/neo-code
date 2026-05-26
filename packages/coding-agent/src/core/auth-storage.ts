@@ -12,8 +12,8 @@ import {
 	type OAuthCredentials,
 	type OAuthLoginCallbacks,
 	type OAuthProviderId,
-} from "@neosantara/ai";
-import { getOAuthApiKey, getOAuthProvider, getOAuthProviders } from "@neosantara/ai/oauth";
+} from "@neosantara-xyz/ai";
+import { getOAuthApiKey, getOAuthProvider, getOAuthProviders } from "@neosantara-xyz/ai/oauth";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";

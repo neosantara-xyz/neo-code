@@ -6,47 +6,47 @@
 			"*": [
 				"./*"
 			],
-			"@neosantara/ai": [
+			"@neosantara-xyz/ai": [
 				"./packages/ai/src/index.ts"
 			],
-			"@neosantara/ai/oauth": [
+			"@neosantara-xyz/ai/oauth": [
 				"./packages/ai/src/oauth.ts"
 			],
-			"@neosantara/ai/*": [
+			"@neosantara-xyz/ai/*": [
 				"./packages/ai/src/*.ts",
 				"./packages/ai/src/providers/*.ts"
 			],
-			"@neosantara/ai/dist/*": [
+			"@neosantara-xyz/ai/dist/*": [
 				"./packages/ai/src/*"
 			],
-			"@neosantara/agent-core": [
+			"@neosantara-xyz/agent-core": [
 				"./packages/agent/src/index.ts"
 			],
-			"@neosantara/agent-core/*": [
+			"@neosantara-xyz/agent-core/*": [
 				"./packages/agent/src/*"
 			],
-			"@neosantara/code": [
+			"@neosantara-xyz/code": [
 				"./packages/coding-agent/src/index.ts"
 			],
-			"@neosantara/code/hooks": [
+			"@neosantara-xyz/code/hooks": [
 				"./packages/coding-agent/src/core/hooks/index.ts"
 			],
-			"@neosantara/code/*": [
+			"@neosantara-xyz/code/*": [
 				"./packages/coding-agent/src/*"
 			],
 			"typebox": [
 				"./node_modules/typebox"
 			],
-			"@neosantara/tui": [
+			"@neosantara-xyz/tui": [
 				"./packages/tui/src/index.ts"
 			],
-			"@neosantara/tui/*": [
+			"@neosantara-xyz/tui/*": [
 				"./packages/tui/src/*"
 			],
-			"@neosantara/agent-old": [
+			"@neosantara-xyz/agent-old": [
 				"./packages/agent-old/src/index.ts"
 			],
-			"@neosantara/agent-old/*": [
+			"@neosantara-xyz/agent-old/*": [
 				"./packages/agent-old/src/*"
 			]
 		}

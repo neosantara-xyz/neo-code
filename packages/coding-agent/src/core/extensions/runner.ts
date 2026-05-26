@@ -2,9 +2,9 @@
  * Extension runner - executes extensions and manages their lifecycle.
  */
 
-import type { AgentMessage } from "@neosantara/agent-core";
-import type { ImageContent, Model } from "@neosantara/ai";
-import type { KeyId } from "@neosantara/tui";
+import type { AgentMessage } from "@neosantara-xyz/agent-core";
+import type { ImageContent, Model } from "@neosantara-xyz/ai";
+import type { KeyId } from "@neosantara-xyz/tui";
 import { type Theme, theme } from "../../modes/interactive/theme/theme.js";
 import type { ResourceDiagnostic } from "../diagnostics.js";
 import type { KeybindingsConfig } from "../keybindings.js";

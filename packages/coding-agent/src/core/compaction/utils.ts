@@ -2,8 +2,8 @@
  * Shared utilities for compaction and branch summarization.
  */
 
-import type { AgentMessage } from "@neosantara/agent-core";
-import type { Message } from "@neosantara/ai";
+import type { AgentMessage } from "@neosantara-xyz/agent-core";
+import type { Message } from "@neosantara-xyz/ai";
 
 // ============================================================================
 // File Operation Tracking

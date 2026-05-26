@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@neosantara/ai";
+import type { AssistantMessage } from "@neosantara-xyz/ai";
 import { beforeAll, describe, expect, it } from "vitest";
 import { AssistantMessageComponent } from "../src/modes/interactive/components/assistant-message.js";
 import { initTheme } from "../src/modes/interactive/theme/theme.js";

@@ -1,4 +1,4 @@
-# @neosantara/web
+# @neosantara-xyz/web
 
 Landing page for Neo Code built with Next.js and NES.css 8-bit aesthetic.
 

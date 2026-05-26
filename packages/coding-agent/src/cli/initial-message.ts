@@ -1,4 +1,4 @@
-import type { ImageContent } from "@neosantara/ai";
+import type { ImageContent } from "@neosantara-xyz/ai";
 import type { Args } from "./args.js";
 
 export interface InitialMessageInput {

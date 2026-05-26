@@ -1,4 +1,4 @@
-import type { Context, Model } from "@neosantara/ai";
+import type { Context, Model } from "@neosantara-xyz/ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { streamProxy } from "../src/proxy.js";

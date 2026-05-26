@@ -8,11 +8,11 @@ import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import * as _bundledPiAgentCore from "@neosantara/agent-core";
-import * as _bundledPiAi from "@neosantara/ai";
-import * as _bundledPiAiOauth from "@neosantara/ai/oauth";
-import type { KeyId } from "@neosantara/tui";
-import * as _bundledPiTui from "@neosantara/tui";
+import * as _bundledPiAgentCore from "@neosantara-xyz/agent-core";
+import * as _bundledPiAi from "@neosantara-xyz/ai";
+import * as _bundledPiAiOauth from "@neosantara-xyz/ai/oauth";
+import type { KeyId } from "@neosantara-xyz/tui";
+import * as _bundledPiTui from "@neosantara-xyz/tui";
 import { createJiti } from "jiti/static";
 // Static imports of packages that extensions may use.
 // These MUST be static so Bun bundles them into the compiled binary.
@@ -22,7 +22,7 @@ import * as _bundledTypeboxCompile from "typebox/compile";
 import * as _bundledTypeboxValue from "typebox/value";
 import { CONFIG_DIR_NAME, getAgentDir, isBunBinary } from "../../config.js";
 // NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
-// avoiding a circular dependency. Extensions can import from @neosantara/code.
+// avoiding a circular dependency. Extensions can import from @neosantara-xyz/code.
 import * as _bundledPiCodingAgent from "../../index.js";
 import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec.js";
@@ -48,11 +48,11 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@sinclair/typebox": _bundledTypebox,
 	"@sinclair/typebox/compile": _bundledTypeboxCompile,
 	"@sinclair/typebox/value": _bundledTypeboxValue,
-	"@neosantara/agent-core": _bundledPiAgentCore,
-	"@neosantara/tui": _bundledPiTui,
-	"@neosantara/ai": _bundledPiAi,
-	"@neosantara/ai/oauth": _bundledPiAiOauth,
-	"@neosantara/code": _bundledPiCodingAgent,
+	"@neosantara-xyz/agent-core": _bundledPiAgentCore,
+	"@neosantara-xyz/tui": _bundledPiTui,
+	"@neosantara-xyz/ai": _bundledPiAi,
+	"@neosantara-xyz/ai/oauth": _bundledPiAiOauth,
+	"@neosantara-xyz/code": _bundledPiCodingAgent,
 };
 
 const require = createRequire(import.meta.url);
@@ -83,17 +83,17 @@ function getAliases(): Record<string, string> {
 	};
 
 	const piCodingAgentEntry = packageIndex;
-	const piAgentCoreEntry = resolveWorkspaceOrImport("agent/dist/index.js", "@neosantara/agent-core");
-	const piTuiEntry = resolveWorkspaceOrImport("tui/dist/index.js", "@neosantara/tui");
-	const piAiEntry = resolveWorkspaceOrImport("ai/dist/index.js", "@neosantara/ai");
-	const piAiOauthEntry = resolveWorkspaceOrImport("ai/dist/oauth.js", "@neosantara/ai/oauth");
+	const piAgentCoreEntry = resolveWorkspaceOrImport("agent/dist/index.js", "@neosantara-xyz/agent-core");
+	const piTuiEntry = resolveWorkspaceOrImport("tui/dist/index.js", "@neosantara-xyz/tui");
+	const piAiEntry = resolveWorkspaceOrImport("ai/dist/index.js", "@neosantara-xyz/ai");
+	const piAiOauthEntry = resolveWorkspaceOrImport("ai/dist/oauth.js", "@neosantara-xyz/ai/oauth");
 
 	_aliases = {
-		"@neosantara/code": piCodingAgentEntry,
-		"@neosantara/agent-core": piAgentCoreEntry,
-		"@neosantara/tui": piTuiEntry,
-		"@neosantara/ai": piAiEntry,
-		"@neosantara/ai/oauth": piAiOauthEntry,
+		"@neosantara-xyz/code": piCodingAgentEntry,
+		"@neosantara-xyz/agent-core": piAgentCoreEntry,
+		"@neosantara-xyz/tui": piTuiEntry,
+		"@neosantara-xyz/ai": piAiEntry,
+		"@neosantara-xyz/ai/oauth": piAiOauthEntry,
 		typebox: typeboxEntry,
 		"typebox/compile": typeboxCompileEntry,
 		"typebox/value": typeboxValueEntry,

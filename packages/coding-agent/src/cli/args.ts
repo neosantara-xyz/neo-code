@@ -2,7 +2,7 @@
  * CLI argument parsing and help display
  */
 
-import type { ThinkingLevel } from "@neosantara/agent-core";
+import type { ThinkingLevel } from "@neosantara-xyz/agent-core";
 import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.js";
 import { type AgentWorkMode, formatAgentWorkModeList, parseAgentWorkMode } from "../core/agent-mode.js";

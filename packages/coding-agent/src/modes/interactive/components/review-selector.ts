@@ -10,7 +10,7 @@
  * confirms, and an `onCancel` callback for `Esc`.
  */
 
-import { Container, getKeybindings, Spacer, Text, truncateToWidth } from "@neosantara/tui";
+import { Container, getKeybindings, Spacer, Text, truncateToWidth } from "@neosantara-xyz/tui";
 import type { BranchInfo, CommitInfo, ReviewTarget } from "../../../core/review/index.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";

@@ -1,5 +1,5 @@
-import { DynamicBorder, type ExtensionAPI, type ExtensionContext } from "@neosantara/code";
-import { Container, Text } from "@neosantara/tui";
+import { DynamicBorder, type ExtensionAPI, type ExtensionContext } from "@neosantara-xyz/code";
+import { Container, Text } from "@neosantara-xyz/tui";
 
 const PR_PROMPT_PATTERN = /^\s*You are given one or more GitHub PR URLs:\s*(\S+)/im;
 const ISSUE_PROMPT_PATTERN = /^\s*Analyze GitHub issue\(s\):\s*(\S+)/im;

@@ -2,7 +2,7 @@
  * TUI session selector for --resume flag
  */
 
-import { ProcessTerminal, setKeybindings, TUI } from "@neosantara/tui";
+import { ProcessTerminal, setKeybindings, TUI } from "@neosantara-xyz/tui";
 import { KeybindingsManager } from "../core/keybindings.js";
 import { exitAfterCleanup } from "../core/process-lifecycle.js";
 import type { SessionInfo, SessionListProgress } from "../core/session-manager.js";

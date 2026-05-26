@@ -2,8 +2,8 @@
  * Model resolution, scoping, and initial selection
  */
 
-import type { ThinkingLevel } from "@neosantara/agent-core";
-import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@neosantara/ai";
+import type { ThinkingLevel } from "@neosantara-xyz/agent-core";
+import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@neosantara-xyz/ai";
 import chalk from "chalk";
 import { minimatch } from "minimatch";
 import { isValidThinkingLevel } from "../cli/args.js";

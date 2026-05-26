@@ -1,4 +1,4 @@
-# @neosantara/ai
+# @neosantara-xyz/ai
 
 OpenAI-compatible AI transport package for the Neosantara-first build.
 

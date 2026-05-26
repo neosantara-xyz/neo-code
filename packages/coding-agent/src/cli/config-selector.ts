@@ -2,7 +2,7 @@
  * TUI config selector for `neo config` command
  */
 
-import { ProcessTerminal, TUI } from "@neosantara/tui";
+import { ProcessTerminal, TUI } from "@neosantara-xyz/tui";
 import type { ResolvedPaths } from "../core/package-manager.js";
 import { exitAfterCleanup } from "../core/process-lifecycle.js";
 import type { SettingsManager } from "../core/settings-manager.js";

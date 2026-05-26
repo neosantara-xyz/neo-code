@@ -1,4 +1,4 @@
-import { type Component, type Focusable, matchesKey, truncateToWidth } from "@neosantara/tui";
+import { type Component, type Focusable, matchesKey, truncateToWidth } from "@neosantara-xyz/tui";
 import { theme } from "../theme/theme.js";
 import { rawKeyHint } from "./keybinding-hints.js";
 

@@ -5,8 +5,8 @@
  * a summary of the branch being left so context isn't lost.
  */
 
-import type { ImageContent, Model, TextContent } from "@neosantara/ai";
-import { completeSimple } from "@neosantara/ai";
+import type { ImageContent, Model, TextContent } from "@neosantara-xyz/ai";
+import { completeSimple } from "@neosantara-xyz/ai";
 import type { AgentMessage } from "../../types.js";
 import {
 	convertToLlm,

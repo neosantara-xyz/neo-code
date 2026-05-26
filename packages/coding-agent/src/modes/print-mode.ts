@@ -6,7 +6,7 @@
  * - `neo --mode json "prompt"` - JSON event stream
  */
 
-import type { AssistantMessage, ImageContent } from "@neosantara/ai";
+import type { AssistantMessage, ImageContent } from "@neosantara-xyz/ai";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.js";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.js";
 import { exitAfterCleanup } from "../core/process-lifecycle.js";

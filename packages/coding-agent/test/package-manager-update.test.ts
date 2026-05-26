@@ -53,8 +53,8 @@ describe("package manager self update fallback", () => {
 
 		const command = selectSelfUpdateCommand({
 			command: "npm",
-			args: ["install", "-g", "@neosantara/code"],
-			display: "npm install -g @neosantara/code",
+			args: ["install", "-g", "@neosantara-xyz/code"],
+			display: "npm install -g @neosantara-xyz/code",
 		});
 
 		expect(command?.command).toBe("sh");

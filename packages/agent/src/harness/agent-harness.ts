@@ -1,4 +1,10 @@
-import { type AssistantMessage, type ImageContent, type Model, streamSimple, type UserMessage } from "@neosantara/ai";
+import {
+	type AssistantMessage,
+	type ImageContent,
+	type Model,
+	streamSimple,
+	type UserMessage,
+} from "@neosantara-xyz/ai";
 import { Agent, type QueueMode } from "../agent.js";
 import type { AgentEvent, AgentMessage, AgentTool, ThinkingLevel } from "../types.js";
 import { collectEntriesForBranchSummary, generateBranchSummary } from "./compaction/branch-summarization.js";

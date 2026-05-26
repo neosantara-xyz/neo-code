@@ -1,4 +1,4 @@
-import { Text } from "@neosantara/tui";
+import { Text } from "@neosantara-xyz/tui";
 import { type Static, Type } from "typebox";
 import type { AgentWorkMode } from "../agent-mode.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";

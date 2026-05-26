@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { AgentToolResult } from "@neosantara/agent-core";
+import type { AgentToolResult } from "@neosantara-xyz/agent-core";
 import { type Static, Type } from "typebox";
 import type { ExtensionContext, ToolDefinition } from "../extensions/types.js";
 

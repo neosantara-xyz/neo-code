@@ -1,5 +1,5 @@
-import type { AgentTool } from "@neosantara/agent-core";
-import { Container, Text } from "@neosantara/tui";
+import type { AgentTool } from "@neosantara-xyz/agent-core";
+import { Container, Text } from "@neosantara-xyz/tui";
 import { mkdir as fsMkdir, writeFile as fsWriteFile } from "fs/promises";
 import { dirname } from "path";
 import { type Static, Type } from "typebox";

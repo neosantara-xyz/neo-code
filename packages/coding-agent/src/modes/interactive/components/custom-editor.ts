@@ -1,4 +1,4 @@
-import { Editor, type EditorOptions, type EditorTheme, type TUI } from "@neosantara/tui";
+import { Editor, type EditorOptions, type EditorTheme, type TUI } from "@neosantara-xyz/tui";
 import type { AppKeybinding, KeybindingsManager } from "../../../core/keybindings.js";
 
 /**

@@ -15,8 +15,8 @@
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
-import type { Agent, AgentEvent, AgentMessage, AgentState, AgentTool, ThinkingLevel } from "@neosantara/agent-core";
-import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@neosantara/ai";
+import type { Agent, AgentEvent, AgentMessage, AgentState, AgentTool, ThinkingLevel } from "@neosantara-xyz/agent-core";
+import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@neosantara-xyz/ai";
 import {
 	clampThinkingLevel,
 	cleanupSessionResources,
@@ -25,7 +25,7 @@ import {
 	isContextOverflow,
 	modelsAreEqual,
 	resetApiProviders,
-} from "@neosantara/ai";
+} from "@neosantara-xyz/ai";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { sleep } from "../utils/sleep.js";
 import { uuidv7 } from "../utils/uuid.js";

@@ -1,4 +1,4 @@
-import { Container, Text } from "@neosantara/tui";
+import { Container, Text } from "@neosantara-xyz/tui";
 
 export class NeosantaraAnnouncementComponent extends Container {
 	constructor() {

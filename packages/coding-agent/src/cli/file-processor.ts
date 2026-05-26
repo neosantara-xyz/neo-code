@@ -3,7 +3,7 @@
  */
 
 import { access, readFile, stat } from "node:fs/promises";
-import type { ImageContent } from "@neosantara/ai";
+import type { ImageContent } from "@neosantara-xyz/ai";
 import chalk from "chalk";
 import { resolve } from "path";
 import { exitAfterCleanup } from "../core/process-lifecycle.js";

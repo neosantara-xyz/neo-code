@@ -1,5 +1,5 @@
 {
-	"name": "@neosantara/ai",
+	"name": "@neosantara-xyz/ai",
 	"version": "0.76.76",
 	"description": "Neosantara OpenAI-compatible AI provider package",
 	"type": "module",

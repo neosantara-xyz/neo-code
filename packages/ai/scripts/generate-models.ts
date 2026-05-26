@@ -170,7 +170,7 @@ async function fetchModels(): Promise<unknown[]> {
 	const response = await fetch(MODELS_URL, {
 		headers: {
 			Accept: "application/json",
-			"User-Agent": "@neosantara/ai model registry generator",
+			"User-Agent": "@neosantara-xyz/ai model registry generator",
 		},
 	});
 	if (!response.ok) {
@@ -190,7 +190,7 @@ async function fetchUsdToIdrRate(): Promise<number> {
 		const response = await fetch(EXCHANGE_RATE_URL, {
 			headers: {
 				Accept: "application/json",
-				"User-Agent": "@neosantara/ai model registry generator",
+				"User-Agent": "@neosantara-xyz/ai model registry generator",
 			},
 		});
 		if (!response.ok) {

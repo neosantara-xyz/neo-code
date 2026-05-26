@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import { Agent, type AgentMessage, type ThinkingLevel } from "@neosantara/agent-core";
-import { clampThinkingLevel, type Message, type Model, streamSimple } from "@neosantara/ai";
+import { Agent, type AgentMessage, type ThinkingLevel } from "@neosantara-xyz/agent-core";
+import { clampThinkingLevel, type Message, type Model, streamSimple } from "@neosantara-xyz/ai";
 import { getAgentDir } from "../config.js";
 import type { AgentWorkMode } from "./agent-mode.js";
 import { AgentSession } from "./agent-session.js";
@@ -143,7 +143,7 @@ function getAttributionHeaders(
  * const { session } = await createAgentSession();
  *
  * // With explicit model
- * import { getModel } from '@neosantara/ai';
+ * import { getModel } from '@neosantara-xyz/ai';
  * const { session } = await createAgentSession({
  *   model: getModel('neosantara', 'grok-4.1-fast-non-reasoning'),
  *   thinkingLevel: 'high',
