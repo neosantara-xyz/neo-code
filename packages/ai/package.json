@@ -56,7 +56,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/neosantara/neo-code.git",
+		"url": "https://github.com/neosantara-xyz/neo-code.git",
 		"directory": "packages/ai"
 	},
 	"engines": {
@@ -65,5 +65,8 @@
 	"devDependencies": {
 		"@types/node": "^24.3.0",
 		"vitest": "^3.2.4"
+	},
+	"publishConfig": {
+		"registry": "https://npm.pkg.github.com"
 	}
 }
