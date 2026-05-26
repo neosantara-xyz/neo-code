@@ -122,6 +122,22 @@ export class ToolActivityGroupComponent extends Container {
 		return canMergeToolIntoActivityGroup(snapshots, toolName, args);
 	}
 
+	getItems(): Array<{
+		id: string;
+		toolName: string;
+		args: any;
+		result?: { content?: Array<{ type: string; text?: string }>; details?: unknown };
+		isPartial?: boolean;
+	}> {
+		return Array.from(this.items.values()).map((item) => ({
+			id: item.id,
+			toolName: item.toolName,
+			args: item.args,
+			result: item.result,
+			isPartial: item.isPartial,
+		}));
+	}
+
 	addTool(toolName: string, toolCallId: string, args: any, component: ToolExecutionComponent): void {
 		const existing = this.items.get(toolCallId);
 		if (existing) {

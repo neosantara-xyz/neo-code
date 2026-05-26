@@ -189,6 +189,7 @@ import { StatuslineSelectorComponent } from "./components/statusline-selector.js
 import { ToolActivityGroupComponent } from "./components/tool-activity-group.js";
 import { ToolApprovalRequestComponent } from "./components/tool-approval-request.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
+import { TranscriptPagerComponent } from "./components/transcript-pager.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UsageScreenComponent } from "./components/usage-screen.js";
 import { UserMessageComponent } from "./components/user-message.js";
@@ -626,6 +627,11 @@ export class InteractiveMode {
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
+
+	// Transcript pager state
+	private transcriptPagerHandle: OverlayHandle | undefined;
+	private transcriptPagerLines: string[] = [];
+	private transcriptPagerToolCallId: string | undefined;
 
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
@@ -3089,7 +3095,7 @@ export class InteractiveMode {
 		this.ui.onFocusLost = () => this.handleTerminalBlur();
 		this.ui.onFocusGained = () => this.handleTerminalFocus();
 		this.defaultEditor.onAction("app.model.select", () => this.showModelSelector());
-		this.defaultEditor.onAction("app.transcript.view", () => this.toggleToolOutputExpansion());
+		this.defaultEditor.onAction("app.transcript.view", () => this.openTranscriptPager());
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
 		this.defaultEditor.onAction("app.task.background", () => this.handleBackgroundCurrentTask());
 		this.defaultEditor.onAction("app.tasks.open", () => this.handleTasksCommand("/tasks"));
@@ -3899,6 +3905,14 @@ export class InteractiveMode {
 					else component.updateResult(result, true);
 					this.ui.requestRender();
 				}
+				if (this.transcriptPagerHandle && this.transcriptPagerToolCallId === event.toolCallId) {
+					const rawText = event.partialResult.content
+						.filter((c: { type: string }) => c.type === "text")
+						.map((c: { type: string; text?: string }) => c.text ?? "")
+						.join("\n");
+					this.transcriptPagerLines = rawText.split("\n");
+					this.ui.requestRender();
+				}
 				break;
 			}
 
@@ -3915,6 +3929,15 @@ export class InteractiveMode {
 					this.pendingToolGroups.delete(event.toolCallId);
 					if (this.pendingTools.size === 0) this.restoreDefaultWorkingMessage();
 					this.updateWorkingStalledState();
+					this.ui.requestRender();
+				}
+				if (this.transcriptPagerHandle && this.transcriptPagerToolCallId === event.toolCallId) {
+					const rawText = event.result.content
+						.filter((c: { type: string }) => c.type === "text")
+						.map((c: { type: string; text?: string }) => c.text ?? "")
+						.join("\n");
+					this.transcriptPagerLines = rawText.split("\n");
+					this.transcriptPagerToolCallId = undefined;
 					this.ui.requestRender();
 				}
 				break;
@@ -4625,6 +4648,95 @@ export class InteractiveMode {
 
 	private toggleToolOutputExpansion(): void {
 		this.setToolsExpanded(!this.toolOutputExpanded);
+	}
+
+	private openTranscriptPager(): void {
+		// Close existing pager if open
+		if (this.transcriptPagerHandle) {
+			this.transcriptPagerHandle.hide();
+			this.transcriptPagerHandle = undefined;
+			this.transcriptPagerToolCallId = undefined;
+			this.transcriptPagerLines = [];
+		}
+
+		let rawText: string | undefined;
+		let title = "Tool Output";
+
+		if (this.activeToolExecutionIds.size > 0) {
+			// Tool is currently running - get partial output
+			const toolCallId = this.activeToolExecutionIds.values().next().value;
+			if (toolCallId) {
+				this.transcriptPagerToolCallId = toolCallId;
+				const group = this.pendingToolGroups.get(toolCallId);
+				if (group) {
+					const items = group.getItems();
+					const item = items.find((i) => i.id === toolCallId);
+					if (item?.result?.content) {
+						rawText = item.result.content
+							.filter((c) => c.type === "text")
+							.map((c) => c.text ?? "")
+							.join("\n");
+						title = this.buildPagerTitle(item.toolName, item.args);
+					}
+				}
+			}
+		} else {
+			// Idle - find the last tool activity group with results
+			const children = this.chatContainer.children;
+			for (let i = children.length - 1; i >= 0; i--) {
+				const child = children[i];
+				if (child instanceof ToolActivityGroupComponent) {
+					const items = child.getItems();
+					for (let j = items.length - 1; j >= 0; j--) {
+						const item = items[j];
+						if (item.result?.content) {
+							rawText = item.result.content
+								.filter((c) => c.type === "text")
+								.map((c) => c.text ?? "")
+								.join("\n");
+							title = this.buildPagerTitle(item.toolName, item.args);
+							break;
+						}
+					}
+					if (rawText !== undefined) break;
+				}
+			}
+		}
+
+		if (!rawText) {
+			this.showStatus("No tool output available");
+			return;
+		}
+
+		this.transcriptPagerLines = rawText.split("\n");
+
+		const component = new TranscriptPagerComponent(
+			title,
+			() => this.transcriptPagerLines,
+			() => this.ui.terminal.rows,
+			() => {
+				this.transcriptPagerHandle?.hide();
+				this.transcriptPagerHandle = undefined;
+				this.transcriptPagerToolCallId = undefined;
+				this.transcriptPagerLines = [];
+			},
+		);
+
+		this.transcriptPagerHandle = this.ui.showOverlay(component, {
+			anchor: "top-center",
+			row: 0,
+			width: this.ui.terminal.columns,
+			maxHeight: "100%",
+		});
+	}
+
+	private buildPagerTitle(toolName: string, args: any): string {
+		if (toolName === "bash" && args?.command) {
+			const cmd = String(args.command);
+			const short = cmd.length > 60 ? `${cmd.slice(0, 57)}...` : cmd;
+			return `bash: ${short}`;
+		}
+		return toolName;
 	}
 
 	private setToolsExpanded(expanded: boolean): void {
