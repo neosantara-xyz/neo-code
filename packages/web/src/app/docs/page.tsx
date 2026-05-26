@@ -28,7 +28,7 @@ function extractDescription(content: string): string {
 function loadDocs(): DocEntry[] {
   const docsDir = path.resolve(process.cwd(), "../../docs");
   if (!fs.existsSync(docsDir)) return [];
-  const order = ["getting-started", "configuration", "tools", "sessions", "subagents", "extensions", "themes", "memory", "skills", "lsp", "termux", "env"];
+  const order = ["getting-started", "configuration", "tools", "sessions", "compaction", "subagents", "extensions", "themes", "memory", "skills", "lsp", "termux", "env"];
   const files = fs.readdirSync(docsDir).filter((f) => f.endsWith(".md"));
   const docs = files.map((f) => {
     const content = fs.readFileSync(path.join(docsDir, f), "utf-8");

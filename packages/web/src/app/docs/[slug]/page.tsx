@@ -5,7 +5,7 @@ import { DocsContent } from "../content";
 import { SiteFooter } from "@/components/site-footer";
 
 const DOCS_DIR = path.resolve(process.cwd(), "../../docs");
-const ORDER = ["getting-started", "configuration", "tools", "sessions", "subagents", "extensions", "themes", "memory", "skills", "lsp", "termux", "env"];
+const ORDER = ["getting-started", "configuration", "tools", "sessions", "compaction", "subagents", "extensions", "themes", "memory", "skills", "lsp", "termux", "env"];
 
 function getAllSlugs(): string[] {
   if (!fs.existsSync(DOCS_DIR)) return [];
