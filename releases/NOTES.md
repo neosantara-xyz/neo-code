@@ -494,3 +494,7 @@
 ## v0.76.80 (2026-05-27)
 - mode: patch
 - notes: feat(web): render landing releases from release notes
+## v0.76.81 (2026-05-27)
+- mode: patch
+- notes: fix(web): unbreak /docs/[slug] under next 16 and refine landing copy
+
