@@ -475,3 +475,7 @@
 - mode: patch
 - notes: fix(tui): fully suppress thinking from conversation when hidden — only show in loading indicator
 
+## v0.76.76 (2026-05-26)
+- mode: patch
+- notes: feat(web): pricing page, 8bitcn skeleton/table, docs expansion (12 pages), deploy workflow, repo transfer to neosantara-xyz
+

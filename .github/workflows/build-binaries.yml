@@ -39,6 +39,9 @@ jobs:
       - name: Build binaries
         run: ./scripts/build-binaries.sh
 
+      - name: Build Termux bundle
+        run: npm run build:termux-bundle
+
       - name: Smoke test Linux x64 binary
         run: packages/coding-agent/binaries/linux-x64/neo --help
 
@@ -73,6 +76,7 @@ jobs:
             neo-linux-arm64.tar.gz \
             neo-windows-x64.zip \
             ../../../install.sh \
+            ../../../dist/install/neo-termux-npm-bundle.tar.gz \
             2>/dev/null || \
           gh release upload "${RELEASE_TAG}" \
             neo-darwin-arm64.tar.gz \
@@ -81,4 +85,5 @@ jobs:
             neo-linux-arm64.tar.gz \
             neo-windows-x64.zip \
             ../../../install.sh \
+            ../../../dist/install/neo-termux-npm-bundle.tar.gz \
             --clobber
