@@ -81,7 +81,7 @@ Add a manifest to `package.json`:
 {
   "name": "my-neo-package",
   "keywords": ["neo-code-package"],
-  "neo-code": {
+  "neosantara": {
     "extensions": ["./extensions"],
     "skills": ["./skills"],
     "prompts": ["./prompts"],
