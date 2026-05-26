@@ -1,0 +1,118 @@
+@import "nes.css/css/nes.min.css";
+
+:root {
+  --bg: #000000;
+  --text: #ffffff;
+  --accent: #00ff41;
+  --accent-dim: #00cc33;
+  --container-bg: #111111;
+  --border-color: #333333;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  background-color: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  scroll-behavior: smooth;
+}
+
+/* Override NES.css dark theme */
+.nes-container.is-dark {
+  background-color: var(--container-bg);
+  border-color: var(--border-color);
+  color: var(--text);
+}
+
+.nes-container.is-dark::after {
+  background-color: var(--container-bg);
+}
+
+.nes-container.is-dark.with-title > .title {
+  background-color: var(--bg);
+  color: var(--accent);
+}
+
+.nes-btn {
+  color: var(--bg);
+  background-color: var(--accent);
+  border-image-color: var(--accent-dim);
+}
+
+.nes-btn:hover {
+  color: var(--bg);
+  background-color: var(--accent-dim);
+}
+
+.nes-btn.is-primary {
+  color: var(--bg);
+  background-color: var(--accent);
+}
+
+.nes-text.is-success {
+  color: var(--accent);
+}
+
+/* Cursor blink animation */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.cursor-blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 0;
+}
+
+/* Responsive */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+@media (max-width: 768px) {
+  .nes-container {
+    padding: 1rem;
+    margin: 0.5rem 0;
+  }
+}
+
+/* Section spacing */
+section {
+  padding: 4rem 0;
+}
+
+@media (max-width: 768px) {
+  section {
+    padding: 2rem 0;
+  }
+}
+
+/* Links */
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
