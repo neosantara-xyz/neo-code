@@ -43,7 +43,7 @@ minimum duration. Configure in `settings.json`:
 | Key | Default | Description |
 | --- | --- | --- |
 | `notifications.termux.enabled` | false | Enable Termux notifications |
-| `notifications.termux.minDurationMs` | 5000 | Min turn duration to trigger |
+| `notifications.termux.minDurationMs` | 30000 | Min turn duration to trigger |
 | `notifications.termux.vibrate` | true | Vibrate on notification |
 | `notifications.termux.sound` | false | Play sound on notification |
 

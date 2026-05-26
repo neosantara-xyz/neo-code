@@ -26,8 +26,8 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, etc.
 | `tui.editor.cursorDown` | `down` | Move cursor down |
 | `tui.editor.cursorLeft` | `left`, `ctrl+b` | Move cursor left |
 | `tui.editor.cursorRight` | `right`, `ctrl+f` | Move cursor right |
-| `tui.editor.cursorWordLeft` | `alt+left`, `ctrl+left` | Move word left |
-| `tui.editor.cursorWordRight` | `alt+right`, `ctrl+right` | Move word right |
+| `tui.editor.cursorWordLeft` | `alt+left`, `ctrl+left`, `alt+b` | Move word left |
+| `tui.editor.cursorWordRight` | `alt+right`, `ctrl+right`, `alt+f` | Move word right |
 | `tui.editor.cursorLineStart` | `home`, `ctrl+a` | Move to line start |
 | `tui.editor.cursorLineEnd` | `end`, `ctrl+e` | Move to line end |
 | `tui.editor.jumpForward` | `ctrl+]` | Jump forward to character |

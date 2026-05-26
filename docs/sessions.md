@@ -55,7 +55,7 @@ Configure what happens when you press Escape twice quickly:
 
 | Value | Action |
 | --- | --- |
-| `fork` | Fork session (default) |
+| `tree` | Open tree navigator (default) |
 | `tree` | Open tree navigator |
 | `none` | Do nothing |
 

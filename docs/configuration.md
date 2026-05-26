@@ -46,7 +46,7 @@ Access via `/settings` in the TUI, or `/config` to view effective values.
 | --- | --- | --- |
 | `defaultProvider` | string | Provider to use (default: neosantara) |
 | `defaultModel` | string | Model ID to use |
-| `transport` | string | auto, openai-responses, openai-completions, websocket, sse |
+| `transport` | string | auto, sse, websocket, websocket-cached |
 | `defaultThinkingLevel` | string | off, minimal, low, medium, high, xhigh |
 | `thinkingBudgets` | object | Custom token budgets per thinking level |
 | `enabledModels` | string[] | Model patterns enabled for Shift+M cycling |
@@ -102,7 +102,7 @@ Access via `/settings` in the TUI, or `/config` to view effective values.
 | Key | Type | Description |
 | --- | --- | --- |
 | `theme` | string | TUI color theme |
-| `showTerminalProgress` | boolean | Show progress in terminal title |
+| `terminal.showTerminalProgress` | boolean | Show progress in terminal title |
 | `collapseChangelog` | boolean | Auto-collapse changelog on startup |
 | `spinnerTipsEnabled` | boolean | Show tips during loading |
 | `statusline.items` | array | Configure footer status line items |

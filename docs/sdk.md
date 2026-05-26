@@ -97,7 +97,7 @@ import { SessionManager } from "@neosantara/code";
 const sm = SessionManager.inMemory();
 
 // File-based (standard JSONL persistence)
-const sm = await SessionManager.create(cwd);
+const sm = SessionManager.create(cwd);
 
 // List existing sessions
 const sessions = await SessionManager.list(cwd);
@@ -113,8 +113,8 @@ import { AuthStorage, ModelRegistry } from "@neosantara/code";
 const authStorage = AuthStorage.create();
 const modelRegistry = ModelRegistry.create(authStorage);
 
-// Get available models
-const models = modelRegistry.getModels();
+// Get all registered models
+const models = modelRegistry.getAll();
 
 // Find a specific model
 const model = modelRegistry.find("neosantara", "deepseek-v4-0324");
@@ -127,12 +127,10 @@ const { session } = await createAgentSession({
   // Model
   model: myModel,
   thinkingLevel: "medium",
-  scopedModels: ["deepseek-*"],
 
   // Tools
   tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
   customTools: [myCustomTool],
-  noTools: false, // "all" | "builtin" | false
 
   // Session
   sessionManager: SessionManager.inMemory(),

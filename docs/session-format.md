@@ -66,13 +66,13 @@ Message roles: `user`, `assistant`, `toolResult`, `bashExecution`, `custom`,
 ### Thinking Level Change
 
 ```json
-{"type":"thinking_level_change","id":"...","parentId":"...","timestamp":"2026-05-27T01:00:00.000Z","level":"high"}
+{"type":"thinking_level_change","id":"...","parentId":"...","timestamp":"2026-05-27T01:00:00.000Z","thinkingLevel":"high"}
 ```
 
 ### Model Change
 
 ```json
-{"type":"model_change","id":"...","parentId":"...","timestamp":"2026-05-27T01:00:00.000Z","model":{"id":"...","provider":"neosantara"}}
+{"type":"model_change","id":"...","parentId":"...","timestamp":"2026-05-27T01:00:00.000Z","provider":"neosantara","modelId":"deepseek-v4-0324"}
 ```
 
 ### Session Info

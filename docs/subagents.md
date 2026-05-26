@@ -9,8 +9,8 @@ context window, keeping the main conversation focused.
 | --- | --- | --- |
 | general-purpose | Default delegation | read, grep, find, ls, lsp |
 | explore | Codebase exploration | read, grep, find, ls, lsp |
-| plan | Planning and analysis | read, grep, find, ls, lsp, todo |
-| verification | Verify changes work | read, grep, find, ls, lsp, bash |
+| plan | Planning and analysis | read, grep, find, ls, lsp |
+| verification | Verify changes work | read, grep, find, ls, lsp |
 | reviewer | Code review | read, grep, find, ls, lsp |
 
 ## Custom Subagents
@@ -26,7 +26,7 @@ tools:
   - read
   - grep
   - find
-  - bash
+  - ls
 model: deepseek-v4-0324
 maxTurns: 10
 mcpServers:

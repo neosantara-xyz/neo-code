@@ -157,7 +157,7 @@ Extensions can intercept both compaction and branch summarization.
 Fired before auto-compaction or `/compact`. Can cancel or provide custom summary:
 
 ```typescript
-pi.on("session_before_compact", async (event, ctx) => {
+neo.on("session_before_compact", async (event, ctx) => {
   const { preparation, signal } = event;
 
   // Cancel:
@@ -180,7 +180,7 @@ pi.on("session_before_compact", async (event, ctx) => {
 Fired before `/tree` navigation. Can cancel or provide custom summary:
 
 ```typescript
-pi.on("session_before_tree", async (event, ctx) => {
+neo.on("session_before_tree", async (event, ctx) => {
   const { preparation, signal } = event;
 
   if (preparation.userWantsSummary) {
@@ -216,6 +216,6 @@ pi.on("session_before_tree", async (event, ctx) => {
 | `compaction.reserveTokens` | 16384 | Tokens to reserve for LLM response |
 | `compaction.keepRecentTokens` | 20000 | Recent tokens to keep (not summarized) |
 | `branchSummary.skipPrompt` | false | Skip "Summarize branch?" confirmation |
-| `branchSummary.reserveTokens` | 8192 | Token budget for branch summary generation |
+| `branchSummary.reserveTokens` | 16384 | Token budget for branch summary generation |
 
 Disable auto-compaction with `"enabled": false`. Manual `/compact` still works.
