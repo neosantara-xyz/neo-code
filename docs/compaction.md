@@ -19,10 +19,12 @@ Both use the same structured summary format and track file operations cumulative
 Auto-compaction triggers when:
 
 ```
-contextTokens > contextWindow - reserveTokens
+contextTokens >= contextWindow - effectiveReserve
+effectiveReserve = max(reserveTokens, min(maxOutputTokens, 20000) + 13000)
 ```
 
-Default `reserveTokens` is 16384 tokens. This leaves room for the LLM response.
+Default `reserveTokens` is 16384 tokens. The effective reserve may be higher
+when the selected model advertises a large output budget.
 
 Manual: `/compact [instructions]` where optional instructions focus the summary.
 
@@ -205,7 +207,7 @@ neo.on("session_before_tree", async (event, ctx) => {
   },
   "branchSummary": {
     "skipPrompt": false,
-    "reserveTokens": 8192
+    "reserveTokens": 16384
   }
 }
 ```
@@ -215,7 +217,7 @@ neo.on("session_before_tree", async (event, ctx) => {
 | `compaction.enabled` | true | Enable auto-compaction |
 | `compaction.reserveTokens` | 16384 | Tokens to reserve for LLM response |
 | `compaction.keepRecentTokens` | 20000 | Recent tokens to keep (not summarized) |
-| `branchSummary.skipPrompt` | false | Skip "Summarize branch?" confirmation |
+| `branchSummary.skipPrompt` | false | Skip the confirmation prompt and do not generate a branch summary |
 | `branchSummary.reserveTokens` | 16384 | Token budget for branch summary generation |
 
 Disable auto-compaction with `"enabled": false`. Manual `/compact` still works.

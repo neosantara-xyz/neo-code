@@ -53,6 +53,18 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, etc.
 | `tui.input.newLine` | `shift+enter` | Insert new line |
 | `tui.input.submit` | `enter` | Submit input |
 | `tui.input.tab` | `tab` | Tab / autocomplete |
+| `tui.input.copy` | `ctrl+c` | Copy selection |
+
+### Selection Lists
+
+| ID | Default | Description |
+|----|---------|-------------|
+| `tui.select.up` | `up` | Move selection up |
+| `tui.select.down` | `down` | Move selection down |
+| `tui.select.pageUp` | `pageUp` | Page selection up |
+| `tui.select.pageDown` | `pageDown` | Page selection down |
+| `tui.select.confirm` | `enter` | Confirm selection |
+| `tui.select.cancel` | `escape`, `ctrl+c` | Cancel selection |
 
 ### Kill Ring
 
@@ -77,6 +89,7 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, etc.
 | `app.thinking.toggle` | *(none)* | Toggle thinking blocks |
 | `app.transcript.view` | `ctrl+t` | View transcript/tool output |
 | `app.task.background` | `ctrl+b` | Background current shell task |
+| `app.tasks.open` | *(none)* | Show background tasks |
 | `app.model.select` | `ctrl+l` | Open model selector |
 | `app.model.cycleForward` | `ctrl+p` | Cycle model forward |
 | `app.model.cycleBackward` | `shift+ctrl+p` | Cycle model backward |
@@ -94,6 +107,7 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, etc.
 | `app.session.resume` | *(none)* | Open resume picker |
 | `app.session.rename` | `ctrl+r` | Rename session |
 | `app.session.delete` | `ctrl+d` | Delete session |
+| `app.session.deleteNoninvasive` | `ctrl+backspace` | Delete session when query is empty |
 | `app.session.togglePath` | `ctrl+p` | Toggle path display |
 | `app.session.toggleSort` | `ctrl+s` | Toggle sort mode |
 | `app.session.toggleNamedFilter` | `ctrl+n` | Toggle named filter |

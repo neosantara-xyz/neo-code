@@ -12,21 +12,35 @@ import { Kbd } from "@/components/ui/8bit/kbd";
 export default function Home() {
   return (
     <PageSkeleton>
-    <main className="crt-on mx-auto max-w-2xl px-4 py-12">
+    <main className="crt-on mx-auto max-w-3xl px-4 py-12">
       {/* Hero */}
       <Hero1
         title="NEO CODE"
-        subtitle="NEOSANTARA-FIRST AI CODING AGENT"
-        description="Cross-session memory, code intelligence, subagents, and 12+ built-in capabilities. Built for your terminal."
-        badges={[{ label: "v0.76", variant: "secondary" }, { label: "Open Source", variant: "outline" }]}
+        subtitle="NEOSANTARA-FIRST TERMINAL CODING AGENT"
+        description="OpenAI-compatible transport, Neosantara identity, IDR billing, memory, LSP, sessions, subagents, and Termux-ready workflows in one keyboard-driven CLI."
+        badges={[{ label: "v0.76", variant: "secondary" }, { label: "OpenAI SDK", variant: "outline" }, { label: "Termux Ready", variant: "outline" }]}
         actions={[
           { href: "#install", label: "INSTALL", variant: "default" },
           { href: "/docs", label: "DOCS", variant: "outline" },
+          { href: "/pricing", label: "PRICING", variant: "outline" },
         ]}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/mascot.svg" alt="Neo Kanci" className="mx-auto mt-8 h-28 w-28 pixel-lift" />
       </Hero1>
+
+      <section className="mb-16 grid gap-3 border-y-2 border-border py-6 text-center sm:grid-cols-3">
+        {[
+          ["neosantara", "Built-in provider identity"],
+          ["IDR", "Model pricing follows Neosantara billing"],
+          ["openai", "Responses and completions transports"],
+        ].map(([label, text]) => (
+          <div key={label}>
+            <div className="retro mb-1 text-xs font-bold text-foreground">{label}</div>
+            <p className="text-xs leading-5 text-muted-foreground">{text}</p>
+          </div>
+        ))}
+      </section>
 
       {/* Install */}
       <Separator className="mb-16" />
@@ -34,20 +48,19 @@ export default function Home() {
       <Advanced1
         title="neo-code"
         lines={[
-          { type: "comment", text: "# Install Neo Code" },
+          { type: "comment", text: "# Install" },
           { type: "input", text: "curl -fsSL https://code.neosantara.xyz/install.sh | sh" },
-          { type: "output", text: "Downloading neo-code v0.76..." },
-          { type: "output", text: "Installing to ~/.local/bin/neo" },
-          { type: "output", text: "Done in 3.2s" },
+          { type: "output", text: "neo installed to ~/.local/bin/neo" },
           { type: "comment", text: "" },
-          { type: "comment", text: "# Login with your Neosantara account" },
+          { type: "comment", text: "# Authenticate" },
           { type: "input", text: "neo login" },
-          { type: "output", text: "Opening browser for device auth..." },
-          { type: "output", text: "Authenticated as user@neosantara.xyz" },
+          { type: "output", text: "device authorization complete" },
           { type: "comment", text: "" },
-          { type: "comment", text: "# Start coding" },
+          { type: "comment", text: "# Or use an API key" },
+          { type: "input", text: "export NEOSANTARA_API_KEY=nsk_..." },
+          { type: "comment", text: "" },
           { type: "input", text: "neo" },
-          { type: "output", text: "Neo Code v0.76 ready. Model: deepseek-v4-0324" },
+          { type: "output", text: "ready: neosantara provider, OpenAI-compatible transport" },
         ]}
       />
       </div>
@@ -57,59 +70,56 @@ export default function Home() {
 
       {/* Shortcuts */}
       <section className="mb-16 text-center">
-        <h2 className="retro mb-6 text-sm font-bold">KEYBOARD DRIVEN</h2>
+        <h2 className="retro mb-3 text-sm font-bold">KEYBOARD DRIVEN</h2>
+        <p className="mx-auto mb-6 max-w-xl text-xs leading-5 text-muted-foreground">
+          Defaults are terminal-safe and configurable in <code className="border border-border bg-background px-1">keybindings.json</code>.
+        </p>
         <div className="flex flex-wrap justify-center gap-4 text-xs text-muted-foreground">
           <span><Kbd>Shift+Tab</Kbd> cycle mode</span>
           <span><Kbd>Esc</Kbd> interrupt</span>
           <span><Kbd>Ctrl+T</Kbd> transcript</span>
-          <span><Kbd>Ctrl+E</Kbd> expand output</span>
-          <span><Kbd>Ctrl+J</Kbd> new session</span>
-          <span><Kbd>Ctrl+R</Kbd> resume</span>
+          <span><Kbd>Ctrl+O</Kbd> expand output</span>
+          <span><Kbd>Alt+Enter</Kbd> follow-up</span>
+          <span><Kbd>Ctrl+L</Kbd> model selector</span>
         </div>
       </section>
 
       <Feature2
-        title="FEATURES"
-        description="Everything you need in a coding agent"
+        title="WHAT SHIPS TODAY"
+        description="Focused capabilities for real coding sessions"
         items={[
-          { icon: "01", title: "Memory System", description: "Persistent context across sessions. Remembers project patterns, decisions, and conventions automatically." },
-          { icon: "02", title: "Code Intelligence", description: "LSP integration for symbol search, go-to-definition, and find-references across TypeScript, Python, Rust, Go, and more.", badge: "NEW" },
-          { icon: "03", title: "Skills", description: "Installable skill packages that teach the agent specialized workflows, tools, and domain knowledge." },
-          { icon: "04", title: "Subagents", description: "Dispatch parallel agents for complex tasks. Each subagent runs with isolated context and reports back." },
-          { icon: "05", title: "Code Review", description: "Review uncommitted changes, branches, commits, or pull requests with structured feedback." },
-          { icon: "06", title: "MCP Servers", description: "Connect external tools via Model Context Protocol. Extend capabilities without writing extensions." },
-          { icon: "07", title: "Auto-Compaction", description: "Intelligent context management with branch summarization. Long sessions stay fast and focused." },
-          { icon: "08", title: "Background Tasks", description: "Run long shell commands in background. Get notified on completion while continuing to work." },
-          { icon: "09", title: "Session Export", description: "Export conversations to HTML or JSONL. Share sessions via gist or local share sheet." },
-          { icon: "10", title: "Apply-Patch", description: "Efficient code modifications using unified diff patches instead of full file rewrites." },
-          { icon: "11", title: "Extensions", description: "Custom tools, slash commands, event hooks, and autocomplete providers via JavaScript extensions." },
-          { icon: "12", title: "Termux:API", description: "Native Android integration — notifications, vibration, clipboard, and touch keyboard configuration." },
+          { icon: "01", title: "Neosantara Runtime", description: "Built-in provider identity is neosantara, with OpenAI-compatible responses and completions transports." },
+          { icon: "02", title: "Code Intelligence", description: "LSP-backed symbol lookup, definitions, references, and diagnostics for common project stacks.", badge: "CORE" },
+          { icon: "03", title: "Session Trees", description: "Resume, fork, clone, name, export, and navigate conversation history with branch summaries." },
+          { icon: "04", title: "Memory + Skills", description: "Project memory and installable skills preserve conventions without stuffing every prompt manually." },
+          { icon: "05", title: "Subagents + Review", description: "Dispatch specialized agents, inspect diffs, and review uncommitted changes, branches, commits, or PRs." },
+          { icon: "06", title: "Termux Integration", description: "Android-friendly install path, touch-key helpers, notifications, clipboard image paste, and mobile TUI defaults." },
         ]}
       />
 
       {/* Footer */}
       <Separator className="mb-16" />
       <Timeline3
-        title="ROADMAP"
-        description="Building the Neosantara-first coding agent"
+        title="WORKFLOW"
+        description="A coding loop designed for long terminal sessions"
         events={[
-          { icon: "01", title: "Core Agent", description: "OpenAI-compatible transport, tool system, TUI with shimmer animations.", badge: "DONE" },
-          { icon: "02", title: "Memory + LSP", description: "Cross-session memory persistence and Language Server Protocol integration.", badge: "DONE" },
-          { icon: "03", title: "Skills System", description: "Installable skill packages with progressive disclosure and token budgets.", badge: "NOW" },
-          { icon: "04", title: "Extensions", description: "Custom tools, MCP servers, and community plugin ecosystem." },
-          { icon: "05", title: "Multi-Agent", description: "Parallel subagents for complex tasks with isolated contexts." },
+          { icon: "01", title: "Start With Context", description: "AGENTS.md, memories, prompt templates, and selected files shape the first request.", badge: "INPUT" },
+          { icon: "02", title: "Work In The TUI", description: "Stream edits, inspect tools, queue follow-ups, background shell tasks, and switch modes from the keyboard." },
+          { icon: "03", title: "Keep Context Healthy", description: "Auto-compaction and branch summaries preserve the useful trail when sessions get long." },
+          { icon: "04", title: "Scale The Task", description: "Use skills, extensions, MCP servers, and subagents when a single chat turn is not enough.", badge: "EXTEND" },
+          { icon: "05", title: "Export Or Share", description: "Export sessions to HTML or JSONL, share through gist or local OS share sheet, then resume later." },
         ]}
       />
 
       <Separator className="mb-16" />
       <Team2
-        title="CHANGELOG"
-        description="Recent updates and releases"
+        title="RECENT RELEASES"
+        description="Recent user-facing changes"
         entries={[
-          { date: "May 2026", title: "v0.76 — Skills + Tree UI", description: "Token-budgeted skill system, shimmer animations, directory detail rows, streaming-aware tool activity groups.", badge: "LATEST" },
-          { date: "May 2026", title: "v0.75 — Memory System", description: "Cross-session memory extraction, consolidation, and injection. Automatic pruning and search." },
-          { date: "Apr 2026", title: "v0.74 — LSP Integration", description: "Language Server Protocol support for TypeScript, Python, Rust, Go, C/C++, Java, and Ruby." },
-          { date: "Mar 2026", title: "v0.73 — Termux Support", description: "First-class Android/Termux installer, touch keyboard configuration, and mobile-optimized TUI." },
+          { date: "May 2026", title: "v0.76 - Docs, Skills, Tree UI", description: "Expanded documentation, token-budgeted skills, session tree polish, and streaming-aware tool activity.", badge: "LATEST" },
+          { date: "May 2026", title: "Memory System", description: "Cross-session memory extraction, consolidation, injection, pruning, and search." },
+          { date: "Apr 2026", title: "LSP Integration", description: "Language Server Protocol support for TypeScript, Python, Rust, Go, C/C++, Java, and Ruby." },
+          { date: "Mar 2026", title: "Termux Support", description: "Android install path, touch keyboard configuration, notifications, and mobile-friendly terminal behavior." },
         ]}
       />
 
@@ -118,13 +128,26 @@ export default function Home() {
         title="FAQ"
         description="Common questions about Neo Code"
         items={[
-          { question: "What models does Neo Code support?", answer: "Neo Code uses the Neosantara API which provides access to various models. It's OpenAI-SDK compatible, so any model available through the Neosantara platform works out of the box." },
-          { question: "Is it free?", answer: "Neo Code CLI is open source and free. You need a Neosantara API key for the AI features — pricing is based on token usage in IDR." },
-          { question: "Does it work on Termux/Android?", answer: "Yes! Neo Code has first-class Termux support. The installer detects Termux and builds from source with Node.js. Touch keyboard extra keys are configurable via /termux-keys." },
-          { question: "How is it different from Claude Code?", answer: "Neo Code is Neosantara-first — built for the Indonesian developer ecosystem with IDR billing, local API endpoints, and Termux-optimized TUI. It shares architectural patterns but is independently maintained." },
-          { question: "Can I use my own API key?", answer: "Yes. Set NEOSANTARA_API_KEY in your environment or run neo login for device authentication." },
+          { question: "What provider does Neo Code use?", answer: "This build is Neosantara-first. The built-in provider identity is neosantara and credentials prefer NEOSANTARA_API_KEY or neo login." },
+          { question: "Does it add vendor SDK providers?", answer: "No. The built-in runtime stays OpenAI-SDK compatible through openai-responses and openai-completions transports." },
+          { question: "How is pricing shown?", answer: "CLI model prices follow Neosantara billing and are represented in IDR." },
+          { question: "Does it work on Termux/Android?", answer: "Yes. The installer and TUI include Termux-oriented paths, touch keyboard helpers, notifications, and clipboard support." },
+          { question: "Can I use a normal API key?", answer: "Yes. Set NEOSANTARA_API_KEY in your environment, or run neo login for device authorization." },
         ]}
       />
+
+      <Separator className="mb-16" />
+      <section className="mb-16 border-2 border-border bg-card p-6 text-center">
+        <h2 className="retro mb-3 text-sm font-bold">START WITH NEO CODE</h2>
+        <p className="mx-auto mb-5 max-w-xl text-xs leading-6 text-muted-foreground">
+          Install the CLI, authenticate with Neosantara, then open a project and run <code className="border border-border bg-background px-1">neo</code>.
+        </p>
+        <div className="flex flex-wrap justify-center gap-3 text-xs">
+          <a href="#install" className="border-2 border-border bg-background px-4 py-2 text-foreground hover:border-primary">Install</a>
+          <a href="/docs/getting-started" className="border-2 border-border bg-background px-4 py-2 text-muted-foreground hover:border-primary hover:text-foreground">Getting Started</a>
+          <a href="/pricing" className="border-2 border-border bg-background px-4 py-2 text-muted-foreground hover:border-primary hover:text-foreground">Pricing</a>
+        </div>
+      </section>
 
       <SiteFooter />
     </main>

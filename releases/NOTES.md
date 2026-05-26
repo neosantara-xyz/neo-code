@@ -479,3 +479,14 @@
 - mode: patch
 - notes: feat(web): pricing page, 8bitcn skeleton/table, docs expansion (12 pages), deploy workflow, repo transfer to neosantara-xyz
 
+## v0.76.77 (2026-05-27)
+- mode: patch
+- notes: feat(web): add rendered table of contents to documentation pages
+
+## v0.76.78 (2026-05-27)
+- mode: patch
+- notes: feat(web): refine documentation navigation and table of contents
+
+## v0.76.79 (2026-05-27)
+- mode: patch
+- notes: feat(web): refine landing page copy and structure

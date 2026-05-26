@@ -60,10 +60,12 @@ Access via `/settings` in the TUI, or `/config` to view effective values.
 | `followUpMode` | string | Follow-up message delivery: all or one-at-a-time |
 | `hideThinkingBlock` | boolean | Hide thinking blocks in conversation (default: true) |
 | `quietStartup` | boolean | Suppress startup messages |
+| `enableInstallTelemetry` | boolean | Send anonymous version/update ping after changelog-detected updates |
 | `shellPath` | string | Custom shell path for bash tool |
 | `shellCommandPrefix` | string | Prefix prepended to all shell commands |
 | `npmCommand` | string[] | Custom npm command (e.g. ["pnpm"]) |
 | `doubleEscapeAction` | string | Double-Escape behavior: fork, tree, or none |
+| `treeFilterMode` | string | Default `/tree` filter: default, no-tools, user-only, labeled-only, or all |
 
 ### Compaction
 
@@ -73,7 +75,7 @@ Access via `/settings` in the TUI, or `/config` to view effective values.
 | `compaction.reserveTokens` | number | Tokens to reserve for response |
 | `compaction.keepRecentTokens` | number | Recent tokens to preserve during compaction |
 | `branchSummary.reserveTokens` | number | Tokens reserved for branch summary |
-| `branchSummary.skipPrompt` | boolean | Skip "Summarize branch?" prompt |
+| `branchSummary.skipPrompt` | boolean | Skip the prompt and do not generate a branch summary |
 
 ### Memory
 
@@ -102,9 +104,13 @@ Access via `/settings` in the TUI, or `/config` to view effective values.
 | Key | Type | Description |
 | --- | --- | --- |
 | `theme` | string | TUI color theme |
+| `terminal.showImages` | boolean | Show inline images when the terminal supports them |
+| `terminal.imageWidthCells` | number | Preferred inline image width in terminal cells |
+| `terminal.clearOnShrink` | boolean | Clear empty rows when content shrinks |
 | `terminal.showTerminalProgress` | boolean | Show progress in terminal title |
 | `collapseChangelog` | boolean | Auto-collapse changelog on startup |
 | `spinnerTipsEnabled` | boolean | Show tips during loading |
+| `spinnerTipsOverride` | object | Replace or supplement built-in spinner tips |
 | `statusline.items` | array | Configure footer status line items |
 | `editorPaddingX` | number | Horizontal padding for input editor |
 | `autocompleteMaxVisible` | number | Max visible autocomplete items |

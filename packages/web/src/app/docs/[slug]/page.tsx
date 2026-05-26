@@ -1,34 +1,25 @@
-import fs from "node:fs";
-import path from "node:path";
 import { notFound } from "next/navigation";
 import { DocsContent } from "../content";
+import { DocsMobileNav, DocsSideNav } from "../docs-shell";
+import { DocsTableOfContents } from "../docs-toc";
+import { getAllSlugs, loadDoc, loadDocs } from "../data";
+import { extractTableOfContents } from "../toc";
 import { SiteFooter } from "@/components/site-footer";
-
-const DOCS_DIR = path.resolve(process.cwd(), "../../docs");
-const ORDER = ["getting-started", "configuration", "tools", "sessions", "compaction", "subagents", "extensions", "themes", "memory", "skills", "lsp", "termux", "env"];
-
-function getAllSlugs(): string[] {
-  if (!fs.existsSync(DOCS_DIR)) return [];
-  return fs.readdirSync(DOCS_DIR).filter((f) => f.endsWith(".md")).map((f) => f.replace(/\.md$/, ""));
-}
 
 export async function generateStaticParams() {
   return getAllSlugs().map((slug) => ({ slug }));
 }
 
 export default function DocPage({ params }: { params: { slug: string } }) {
-  const filePath = path.join(DOCS_DIR, `${params.slug}.md`);
-  if (!fs.existsSync(filePath)) notFound();
+  const current = loadDoc(params.slug);
+  if (!current) notFound();
 
-  const content = fs.readFileSync(filePath, "utf-8");
-  const sorted = getAllSlugs().sort((a, b) => {
-    const ai = ORDER.indexOf(a);
-    const bi = ORDER.indexOf(b);
-    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
-  });
-  const currentIdx = sorted.indexOf(params.slug);
-  const prev = currentIdx > 0 ? sorted[currentIdx - 1] : null;
-  const next = currentIdx < sorted.length - 1 ? sorted[currentIdx + 1] : null;
+  const { content } = current;
+  const toc = extractTableOfContents(content);
+  const docs = loadDocs();
+  const currentIdx = docs.findIndex((doc) => doc.slug === params.slug);
+  const prev = currentIdx > 0 ? docs[currentIdx - 1] : null;
+  const next = currentIdx >= 0 && currentIdx < docs.length - 1 ? docs[currentIdx + 1] : null;
 
   return (
     <main className="py-4">
@@ -38,16 +29,40 @@ export default function DocPage({ params }: { params: { slug: string } }) {
         </a>
       </div>
 
-      <article className="mb-12 border-2 border-border bg-card p-6">
-        <DocsContent content={content} />
-      </article>
+      <div className="mb-12 grid gap-6 xl:grid-cols-[13rem_minmax(0,1fr)_14rem] xl:items-start">
+        <aside className="sticky top-6 hidden max-h-[calc(100vh-3rem)] overflow-y-auto xl:block">
+          <DocsSideNav docs={docs} currentSlug={params.slug} />
+        </aside>
 
-      <div className="mb-16 flex justify-between text-sm">
+        <div className="xl:hidden">
+          <DocsMobileNav docs={docs} currentSlug={params.slug} />
+        </div>
+
+        <div className="lg:hidden">
+          <DocsTableOfContents items={toc} variant="mobile" />
+        </div>
+
+        <article className="border-2 border-border bg-card px-4 py-6 sm:px-6 lg:px-8">
+          <DocsContent content={content} />
+        </article>
+
+        <aside className="sticky top-6 hidden max-h-[calc(100vh-3rem)] overflow-y-auto lg:block">
+          <DocsTableOfContents items={toc} />
+        </aside>
+      </div>
+
+      <div className="mb-16 grid gap-3 text-sm sm:grid-cols-2">
         {prev ? (
-          <a href={`/docs/${prev}`} className="text-muted-foreground hover:text-foreground">&larr; {prev}</a>
+          <a href={`/docs/${prev.slug}`} className="border-2 border-border bg-card p-4 text-muted-foreground hover:text-foreground">
+            <span className="block text-xs">Previous</span>
+            <span className="retro mt-1 block text-[10px] text-foreground">&larr; {prev.title}</span>
+          </a>
         ) : <span />}
         {next ? (
-          <a href={`/docs/${next}`} className="text-muted-foreground hover:text-foreground">{next} &rarr;</a>
+          <a href={`/docs/${next.slug}`} className="border-2 border-border bg-card p-4 text-right text-muted-foreground hover:text-foreground">
+            <span className="block text-xs">Next</span>
+            <span className="retro mt-1 block text-[10px] text-foreground">{next.title} &rarr;</span>
+          </a>
         ) : <span />}
       </div>
 
