@@ -10,7 +10,7 @@ Neo Code uses JSON settings files and a directory structure for configuration.
 │   ├── auth.json           Credentials from neo login
 │   ├── settings.json       Global settings
 │   ├── keybindings.json    Custom keybindings
-│   ├── models.json         Model registry cache
+│   ├── models.json         Custom provider/model configuration
 │   ├── bin/                Managed binaries (fd, rg)
 │   ├── memories/           Memory entries (markdown files)
 │   ├── sessions/           Session history per workspace
@@ -79,12 +79,12 @@ Access via `/settings` in the TUI, or `/config` to view effective values.
 
 | Key | Type | Description |
 | --- | --- | --- |
-| `memory.enabled` | boolean | Enable memory injection (default: true) |
-| `memory.autoExtract` | boolean | Auto-extract memories from conversation (default: true) |
-| `memory.maxStored` | number | Maximum memories to keep |
-| `memory.maxInjected` | number | Max memories injected per session (default: 10) |
-| `memory.maxInjectionChars` | number | Max chars injected per session (default: 4000) |
-| `memory.pruneAfterDays` | number | Auto-prune memories older than N days (default: 90) |
+| `memories.enabled` | boolean | Enable memory injection (default: true) |
+| `memories.autoExtract` | boolean | Auto-extract memories from conversation (default: true) |
+| `memories.maxStored` | number | Maximum memories to keep |
+| `memories.maxInjected` | number | Max memories injected per session (default: 10) |
+| `memories.maxInjectionChars` | number | Max chars injected per session (default: 4000) |
+| `memories.pruneAfterDays` | number | Auto-prune memories older than N days (default: 90) |
 
 ### Retry
 
@@ -104,7 +104,7 @@ Access via `/settings` in the TUI, or `/config` to view effective values.
 | `theme` | string | TUI color theme |
 | `showTerminalProgress` | boolean | Show progress in terminal title |
 | `collapseChangelog` | boolean | Auto-collapse changelog on startup |
-| `spinnerTips.enabled` | boolean | Show tips during loading |
+| `spinnerTipsEnabled` | boolean | Show tips during loading |
 | `statusline.items` | array | Configure footer status line items |
 | `editorPaddingX` | number | Horizontal padding for input editor |
 | `autocompleteMaxVisible` | number | Max visible autocomplete items |

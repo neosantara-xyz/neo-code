@@ -36,12 +36,12 @@ Configure in `settings.json` or via `/settings`:
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `memory.enabled` | true | Enable memory injection into sessions |
-| `memory.autoExtract` | true | Auto-extract memories after sessions |
-| `memory.maxStored` | 100 | Maximum number of memories to keep |
-| `memory.maxInjected` | 10 | Max memories injected per session |
-| `memory.maxInjectionChars` | 4000 | Char budget for memory injection |
-| `memory.pruneAfterDays` | 90 | Auto-remove memories older than N days |
+| `memories.enabled` | true | Enable memory injection into sessions |
+| `memories.autoExtract` | true | Auto-extract memories after sessions |
+| `memories.maxStored` | 100 | Maximum number of memories to keep |
+| `memories.maxInjected` | 10 | Max memories injected per session |
+| `memories.maxInjectionChars` | 4000 | Char budget for memory injection |
+| `memories.pruneAfterDays` | 90 | Auto-remove memories older than N days |
 
 ## Extraction
 
