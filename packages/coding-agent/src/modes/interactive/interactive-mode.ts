@@ -3791,7 +3791,6 @@ export class InteractiveMode {
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
-					this.currentToolActivityGroup = undefined;
 					this.streamingComponent = new AssistantMessageComponent(
 						undefined,
 						this.hideThinkingBlock,
@@ -4660,59 +4659,66 @@ export class InteractiveMode {
 			this.transcriptPagerLines = [];
 		}
 
-		let rawText: string | undefined;
-		let title = "Tool Output";
+		const lines: string[] = [];
+		const messages = this.session.state.messages;
 
-		if (this.activeToolExecutionIds.size > 0) {
-			// Tool is currently running - get partial output
-			const toolCallId = this.activeToolExecutionIds.values().next().value;
-			if (toolCallId) {
-				this.transcriptPagerToolCallId = toolCallId;
-				const group = this.pendingToolGroups.get(toolCallId);
-				if (group) {
-					const items = group.getItems();
-					const item = items.find((i) => i.id === toolCallId);
-					if (item?.result?.content) {
-						rawText = item.result.content
-							.filter((c) => c.type === "text")
-							.map((c) => c.text ?? "")
-							.join("\n");
-						title = this.buildPagerTitle(item.toolName, item.args);
+		for (const message of messages) {
+			if (message.role === "user") {
+				const textContent =
+					typeof message.content === "string"
+						? message.content
+						: message.content
+								.filter((c: { type: string }) => c.type === "text")
+								.map((c) => (c as { text: string }).text)
+								.join("");
+				if (textContent) {
+					lines.push("[User]");
+					lines.push(...textContent.split("\n"));
+					lines.push("");
+				}
+			} else if (message.role === "assistant") {
+				const textParts: string[] = [];
+				for (const content of message.content) {
+					if (content.type === "text" && content.text.trim()) {
+						textParts.push(content.text.trim());
+					} else if (content.type === "toolCall") {
+						const argsStr = JSON.stringify(content.arguments ?? {});
+						lines.push(...(textParts.length > 0 ? ["[Assistant]", ...textParts.join("\n").split("\n"), ""] : []));
+						textParts.length = 0;
+						lines.push(`[Tool: ${content.name}]`);
+						lines.push(`Args: ${argsStr}`);
+						lines.push("");
 					}
 				}
-			}
-		} else {
-			// Idle - find the last tool activity group with results
-			const children = this.chatContainer.children;
-			for (let i = children.length - 1; i >= 0; i--) {
-				const child = children[i];
-				if (child instanceof ToolActivityGroupComponent) {
-					const items = child.getItems();
-					for (let j = items.length - 1; j >= 0; j--) {
-						const item = items[j];
-						if (item.result?.content) {
-							rawText = item.result.content
-								.filter((c) => c.type === "text")
-								.map((c) => c.text ?? "")
-								.join("\n");
-							title = this.buildPagerTitle(item.toolName, item.args);
-							break;
-						}
-					}
-					if (rawText !== undefined) break;
+				if (textParts.length > 0) {
+					lines.push("[Assistant]");
+					lines.push(...textParts.join("\n").split("\n"));
+					lines.push("");
 				}
+			} else if (message.role === "toolResult") {
+				const resultText = message.content
+					.filter((c: { type: string }) => c.type === "text")
+					.map((c) => (c as { text: string }).text ?? "")
+					.join("\n");
+				lines.push(`[Tool Result: ${message.toolName}]`);
+				if (resultText) {
+					lines.push(...resultText.split("\n"));
+				} else {
+					lines.push("(no text output)");
+				}
+				lines.push("");
 			}
 		}
 
-		if (!rawText) {
-			this.showStatus("No tool output available");
+		if (lines.length === 0) {
+			this.showStatus("No transcript available");
 			return;
 		}
 
-		this.transcriptPagerLines = rawText.split("\n");
+		this.transcriptPagerLines = lines;
 
 		const component = new TranscriptPagerComponent(
-			title,
+			"Transcript",
 			() => this.transcriptPagerLines,
 			() => this.ui.terminal.rows,
 			() => {
@@ -4729,15 +4735,6 @@ export class InteractiveMode {
 			width: this.ui.terminal.columns,
 			maxHeight: "100%",
 		});
-	}
-
-	private buildPagerTitle(toolName: string, args: any): string {
-		if (toolName === "bash" && args?.command) {
-			const cmd = String(args.command);
-			const short = cmd.length > 60 ? `${cmd.slice(0, 57)}...` : cmd;
-			return `bash: ${short}`;
-		}
-		return toolName;
 	}
 
 	private setToolsExpanded(expanded: boolean): void {
