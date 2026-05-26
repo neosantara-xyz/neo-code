@@ -4659,59 +4659,84 @@ export class InteractiveMode {
 			this.transcriptPagerLines = [];
 		}
 
-		let rawText: string | undefined;
-		let title = "Tool Output";
+		// Build full conversation transcript
+		const lines: string[] = [];
+		const messages = this.session.state.messages;
 
-		if (this.activeToolExecutionIds.size > 0) {
-			// Tool is currently running - get partial output
-			const toolCallId = this.activeToolExecutionIds.values().next().value;
-			if (toolCallId) {
-				this.transcriptPagerToolCallId = toolCallId;
-				const group = this.pendingToolGroups.get(toolCallId);
-				if (group) {
-					const items = group.getItems();
-					const item = items.find((i) => i.id === toolCallId);
-					if (item?.result?.content) {
-						rawText = item.result.content
-							.filter((c) => c.type === "text")
-							.map((c) => c.text ?? "")
-							.join("\n");
-						title = this.buildPagerTitle(item.toolName, item.args);
-					}
+		for (const msg of messages) {
+			if (msg.role === "user") {
+				const content =
+					typeof msg.content === "string"
+						? msg.content
+						: Array.isArray(msg.content)
+							? msg.content
+									.filter((c: any) => c.type === "text")
+									.map((c: any) => c.text)
+									.join("\n")
+							: "";
+				if (content) {
+					lines.push("");
+					lines.push(
+						"\u2501\u2501\u2501 User \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501",
+					);
+					lines.push(content);
 				}
-			}
-		} else {
-			// Idle - find the last tool activity group with results
-			const children = this.chatContainer.children;
-			for (let i = children.length - 1; i >= 0; i--) {
-				const child = children[i];
-				if (child instanceof ToolActivityGroupComponent) {
-					const items = child.getItems();
-					for (let j = items.length - 1; j >= 0; j--) {
-						const item = items[j];
-						if (item.result?.content) {
-							rawText = item.result.content
-								.filter((c) => c.type === "text")
-								.map((c) => c.text ?? "")
-								.join("\n");
-							title = this.buildPagerTitle(item.toolName, item.args);
-							break;
+			} else if (msg.role === "assistant" && Array.isArray(msg.content)) {
+				const textParts = msg.content
+					.filter((c: any) => c.type === "text")
+					.map((c: any) => c.text ?? "")
+					.join("\n");
+				if (textParts) {
+					lines.push("");
+					lines.push(
+						"\u2501\u2501\u2501 Assistant \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501",
+					);
+					lines.push(textParts);
+				}
+				// Show tool calls
+				const toolCalls = msg.content.filter((c: any) => c.type === "toolCall");
+				for (const tc of toolCalls) {
+					lines.push("");
+					lines.push(`  \u250C\u2500 Tool: ${(tc as any).name}`);
+					if ((tc as any).name === "bash" && (tc as any).arguments?.command) {
+						lines.push(`  \u2502 $ ${(tc as any).arguments.command}`);
+					} else {
+						const argsStr = JSON.stringify((tc as any).arguments, null, 2);
+						for (const argLine of argsStr.split("\n").slice(0, 10)) {
+							lines.push(`  \u2502 ${argLine}`);
 						}
 					}
-					if (rawText !== undefined) break;
+				}
+			} else if (msg.role === "toolResult") {
+				const output = Array.isArray(msg.content)
+					? msg.content
+							.filter((c: any) => c.type === "text")
+							.map((c: any) => c.text ?? "")
+							.join("\n")
+					: "";
+				if (output) {
+					const outputLines = output.split("\n");
+					for (const line of outputLines) {
+						lines.push(`  \u2502 ${line}`);
+					}
+					lines.push(
+						"  \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+					);
+				} else {
+					lines.push("  \u2514\u2500 (no output)");
 				}
 			}
 		}
 
-		if (!rawText) {
-			this.showStatus("No tool output available");
+		if (lines.length === 0) {
+			this.showStatus("No transcript available");
 			return;
 		}
 
-		this.transcriptPagerLines = rawText.split("\n");
+		this.transcriptPagerLines = lines;
 
 		const component = new TranscriptPagerComponent(
-			title,
+			"Session Transcript",
 			() => this.transcriptPagerLines,
 			() => this.ui.terminal.rows,
 			() => {
@@ -4728,15 +4753,6 @@ export class InteractiveMode {
 			width: this.ui.terminal.columns,
 			maxHeight: "100%",
 		});
-	}
-
-	private buildPagerTitle(toolName: string, args: any): string {
-		if (toolName === "bash" && args?.command) {
-			const cmd = String(args.command);
-			const short = cmd.length > 60 ? `${cmd.slice(0, 57)}...` : cmd;
-			return `bash: ${short}`;
-		}
-		return toolName;
 	}
 
 	private setToolsExpanded(expanded: boolean): void {
