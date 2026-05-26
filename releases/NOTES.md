@@ -490,3 +490,7 @@
 ## v0.76.79 (2026-05-27)
 - mode: patch
 - notes: feat(web): refine landing page copy and structure
+
+## v0.76.80 (2026-05-27)
+- mode: patch
+- notes: feat(web): render landing releases from release notes

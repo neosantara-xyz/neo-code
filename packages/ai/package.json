@@ -1,6 +1,6 @@
 {
 	"name": "@neosantara/ai",
-	"version": "0.76.79",
+	"version": "0.76.80",
 	"description": "Neosantara OpenAI-compatible AI provider package",
 	"type": "module",
 	"main": "./dist/index.js",

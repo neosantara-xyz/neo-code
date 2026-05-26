@@ -8,8 +8,11 @@ import Team2 from "@/components/ui/8bit/blocks/team2";
 import Advanced1 from "@/components/ui/8bit/blocks/advanced1";
 import Feature2 from "@/components/ui/8bit/blocks/feature2";
 import { Kbd } from "@/components/ui/8bit/kbd";
+import { loadLatestReleaseEntries } from "./releases";
 
 export default function Home() {
+  const releaseEntries = loadLatestReleaseEntries(4);
+
   return (
     <PageSkeleton>
     <main className="crt-on mx-auto max-w-3xl px-4 py-12">
@@ -115,12 +118,7 @@ export default function Home() {
       <Team2
         title="RECENT RELEASES"
         description="Recent user-facing changes"
-        entries={[
-          { date: "May 2026", title: "v0.76 - Docs, Skills, Tree UI", description: "Expanded documentation, token-budgeted skills, session tree polish, and streaming-aware tool activity.", badge: "LATEST" },
-          { date: "May 2026", title: "Memory System", description: "Cross-session memory extraction, consolidation, injection, pruning, and search." },
-          { date: "Apr 2026", title: "LSP Integration", description: "Language Server Protocol support for TypeScript, Python, Rust, Go, C/C++, Java, and Ruby." },
-          { date: "Mar 2026", title: "Termux Support", description: "Android install path, touch keyboard configuration, notifications, and mobile-friendly terminal behavior." },
-        ]}
+        entries={releaseEntries}
       />
 
       <Separator className="mb-16" />

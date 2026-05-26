@@ -1,6 +1,6 @@
 {
 	"name": "@neosantara/agent-core",
-	"version": "0.76.79",
+	"version": "0.76.80",
 	"description": "Neo Code agent runtime primitives",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -20,7 +20,7 @@
 		"ignore": "^7.0.5",
 		"typebox": "^1.1.24",
 		"yaml": "^2.8.2",
-		"@neosantara/ai": "^0.76.79"
+		"@neosantara/ai": "^0.76.80"
 	},
 	"keywords": [
 		"ai",
