@@ -14,7 +14,7 @@ This repository is intentionally scoped to a Neosantara-first, OpenAI-SDK-only b
 - Do not add vendor SDK providers.
 - Keep built-in runtime transport to `openai-responses` and `openai-completions`.
 - Keep built-in provider identity as `neosantara`.
-- Prefer `NEOSANTARA_API_KEY` or `NEOSANTARA_API_KEY` for credentials.
+- Prefer `NEOSANTARA_API_KEY` for credentials.
 - Use `https://api.neosantara.xyz/v1` as the default API base URL.
 - Model prices shown by the CLI should follow Neosantara billing and be represented in IDR.
 
@@ -32,12 +32,10 @@ This repository is intentionally scoped to a Neosantara-first, OpenAI-SDK-only b
 
 ## Commands
 
-- Use a repo-local npm cache for install-like commands in this environment: `npm_config_cache=.npm-cache <command>`.
-- Prefer `npm_config_cache=.npm-cache npm run bump -- <patch|minor|major> --notes "<notes>"` for version bumps so npm does not write to `/root/.npm`.
 - After code changes, run `npm run check` and read the full output. Fix all errors, warnings, and infos before committing.
 - Documentation-only changes do not require `npm run check`.
 - Note: `npm run check` does not run tests.
-- After non-doc fixes/features are complete and verified, run `npm run bump -- <patch|minor|major> --notes "<human-readable semantic notes>"` unless the user explicitly asks not to bump.
+- After non-doc fixes/features are complete and verified, run `npm run bump -- <patch|minor> --notes "<human-readable semantic notes>"` unless the user explicitly asks not to bump.
 - Use semantic, human-readable notes that describe user-facing impact and scope. Prefer format: `<type>(<area>): <what changed and why>`.
 - Examples:
   - `fix(session): restore resume tree visibility for termux cwd scope`
@@ -45,7 +43,6 @@ This repository is intentionally scoped to a Neosantara-first, OpenAI-SDK-only b
 - NEVER run `npm run dev`.
 - NEVER run full `npm run build` or `npm test` unless the user explicitly instructs it.
 - For Termux installer artifacts, run `npm run build:termux-bundle` only when the user asks to build or refresh install assets.
-- After install.sh changes or version bumps, run `npm run build:install-assets` to build, bundle, and sync assets (install.sh + Termux bundle + releases) to the server via `~/nusantaraai/scripts/sync-neo-code-install-assets.sh`.
 - Only run specific tests when they are relevant or the user instructs it. Prefer package-root commands such as `npx tsx ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`.
 - Run tests from the package root, not the repo root, unless the user explicitly asks for workspace-wide verification.
 - If you create or modify a test file, you MUST run that test file and iterate until it passes.
@@ -136,8 +133,8 @@ Use these sections under `## [Unreleased]`:
 
 ### Attribution
 
-- Internal changes from issues: `Fixed foo bar ([#123](https://github.com/neosantara/neo-code/issues/123))`.
-- External contributions: `Added feature X ([#456](https://github.com/neosantara/neo-code/pull/456) by [@username](https://github.com/username))`.
+- Internal changes from issues: `Fixed foo bar ([#123](https://github.com/neosantara-xyz/neo-code/issues/123))`.
+- External contributions: `Added feature X ([#456](https://github.com/neosantara-xyz/neo-code/pull/456) by [@username](https://github.com/username))`.
 
 ## Adding a New LLM Provider
 
