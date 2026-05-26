@@ -4659,54 +4659,72 @@ export class InteractiveMode {
 			this.transcriptPagerLines = [];
 		}
 
+		// Build full conversation transcript
 		const lines: string[] = [];
 		const messages = this.session.state.messages;
 
-		for (const message of messages) {
-			if (message.role === "user") {
-				const textContent =
-					typeof message.content === "string"
-						? message.content
-						: message.content
-								.filter((c: { type: string }) => c.type === "text")
-								.map((c) => (c as { text: string }).text)
-								.join("");
-				if (textContent) {
-					lines.push("[User]");
-					lines.push(...textContent.split("\n"));
+		for (const msg of messages) {
+			if (msg.role === "user") {
+				const content =
+					typeof msg.content === "string"
+						? msg.content
+						: Array.isArray(msg.content)
+							? msg.content
+									.filter((c: any) => c.type === "text")
+									.map((c: any) => c.text)
+									.join("\n")
+							: "";
+				if (content) {
 					lines.push("");
+					lines.push(
+						"\u2501\u2501\u2501 User \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501",
+					);
+					lines.push(content);
 				}
-			} else if (message.role === "assistant") {
-				const textParts: string[] = [];
-				for (const content of message.content) {
-					if (content.type === "text" && content.text.trim()) {
-						textParts.push(content.text.trim());
-					} else if (content.type === "toolCall") {
-						const argsStr = JSON.stringify(content.arguments ?? {});
-						lines.push(...(textParts.length > 0 ? ["[Assistant]", ...textParts.join("\n").split("\n"), ""] : []));
-						textParts.length = 0;
-						lines.push(`[Tool: ${content.name}]`);
-						lines.push(`Args: ${argsStr}`);
-						lines.push("");
+			} else if (msg.role === "assistant" && Array.isArray(msg.content)) {
+				const textParts = msg.content
+					.filter((c: any) => c.type === "text")
+					.map((c: any) => c.text ?? "")
+					.join("\n");
+				if (textParts) {
+					lines.push("");
+					lines.push(
+						"\u2501\u2501\u2501 Assistant \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501",
+					);
+					lines.push(textParts);
+				}
+				// Show tool calls
+				const toolCalls = msg.content.filter((c: any) => c.type === "toolCall");
+				for (const tc of toolCalls) {
+					lines.push("");
+					lines.push(`  \u250C\u2500 Tool: ${(tc as any).name}`);
+					if ((tc as any).name === "bash" && (tc as any).arguments?.command) {
+						lines.push(`  \u2502 $ ${(tc as any).arguments.command}`);
+					} else {
+						const argsStr = JSON.stringify((tc as any).arguments, null, 2);
+						for (const argLine of argsStr.split("\n").slice(0, 10)) {
+							lines.push(`  \u2502 ${argLine}`);
+						}
 					}
 				}
-				if (textParts.length > 0) {
-					lines.push("[Assistant]");
-					lines.push(...textParts.join("\n").split("\n"));
-					lines.push("");
-				}
-			} else if (message.role === "toolResult") {
-				const resultText = message.content
-					.filter((c: { type: string }) => c.type === "text")
-					.map((c) => (c as { text: string }).text ?? "")
-					.join("\n");
-				lines.push(`[Tool Result: ${message.toolName}]`);
-				if (resultText) {
-					lines.push(...resultText.split("\n"));
+			} else if (msg.role === "toolResult") {
+				const output = Array.isArray(msg.content)
+					? msg.content
+							.filter((c: any) => c.type === "text")
+							.map((c: any) => c.text ?? "")
+							.join("\n")
+					: "";
+				if (output) {
+					const outputLines = output.split("\n");
+					for (const line of outputLines) {
+						lines.push(`  \u2502 ${line}`);
+					}
+					lines.push(
+						"  \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+					);
 				} else {
-					lines.push("(no text output)");
+					lines.push("  \u2514\u2500 (no output)");
 				}
-				lines.push("");
 			}
 		}
 
@@ -4718,7 +4736,7 @@ export class InteractiveMode {
 		this.transcriptPagerLines = lines;
 
 		const component = new TranscriptPagerComponent(
-			"Transcript",
+			"Session Transcript",
 			() => this.transcriptPagerLines,
 			() => this.ui.terminal.rows,
 			() => {
