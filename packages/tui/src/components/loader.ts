@@ -14,12 +14,20 @@ export interface LoaderIndicatorOptions {
 	shimmer?: boolean;
 	/** Direction of the glimmer sweep. Claude Code uses right-to-left while responding/tool-use, left-to-right while requesting/tool-input. */
 	shimmerDirection?: LoaderShimmerDirection;
-	/** Frame interval in milliseconds for the glimmer sweep. */
+	/** Frame interval in milliseconds for the glimmer sweep. Used as the redraw cadence. */
 	shimmerIntervalMs?: number;
 	/** Number of terminal cells highlighted by the glimmer sweep. */
 	shimmerWidth?: number;
+	/**
+	 * Continuous sweep period in milliseconds. The shimmer band travels from
+	 * one edge to the other once per period. When omitted, defaults to 2000ms,
+	 * matching the tool-activity tree shimmer.
+	 */
+	shimmerSweepMs?: number;
 	/** Color used for the glimmer segment. Falls back to the message color when omitted. */
 	shimmerColorFn?: (str: string) => string;
+	/** Bold the center of the band when true. Defaults to true for parity with the tree shimmer. */
+	shimmerBoldCenter?: boolean;
 	/** Maximum visible cells used for the message before coloring. Prevents long rotating labels from wrapping. */
 	maxMessageWidth?: number;
 	/** Claude Code-like message mode. Tool-use pulses the whole message; responding/tool-input/requesting use travelling glimmer when enabled. */
@@ -42,14 +50,22 @@ export interface LoaderIndicatorOptions {
 	tokensAfterMs?: number;
 	/** Color used for the status byline. Falls back to the message color when omitted. */
 	statusColorFn?: (str: string) => string;
+	/**
+	 * Force animations on/off. When undefined (default), the loader auto-detects
+	 * whether animations make sense (TTY, no NO_COLOR, no CI, TERM != dumb).
+	 * Tests use the auto-detect path because they exercise both shimmer math
+	 * and stall detection without depending on real env state.
+	 */
+	animationsEnabled?: boolean;
 }
 
 const GLYPH_CHARS = ["·", "✢", "✳", "✶", "✻", "✽"];
 const DEFAULT_FRAMES = [...GLYPH_CHARS, ...[...GLYPH_CHARS].reverse()];
 const DEFAULT_INTERVAL_MS = 80;
-const DEFAULT_RESPONSE_SHIMMER_INTERVAL_MS = 200;
+const DEFAULT_RESPONSE_SHIMMER_INTERVAL_MS = 50;
 const DEFAULT_REQUEST_SHIMMER_INTERVAL_MS = 50;
-const DEFAULT_SHIMMER_WIDTH = 5;
+const DEFAULT_SHIMMER_WIDTH = 7;
+const DEFAULT_SHIMMER_SWEEP_MS = 2000;
 const SHIMMER_TRAIL_PADDING = 20;
 const DEFAULT_STALLED_AFTER_MS = 3000;
 const DEFAULT_STALLED_FADE_MS = 2000;
@@ -64,6 +80,29 @@ interface MessageSegment {
 }
 
 /**
+ * Decide whether the loader should run any animation timers at all. We treat
+ * the following as "no-anim" environments because shimmer there either looks
+ * broken or pollutes captured output:
+ *
+ *  - non-TTY stdout (pipes, file redirects, captured CI logs)
+ *  - explicit `NO_COLOR` opt-out
+ *  - `CI=true` (most CI runners log to a file)
+ *  - `TERM=dumb` or empty TERM
+ *
+ * The detection is intentionally conservative: when we can't tell, we keep
+ * animation enabled so interactive sessions stay lively.
+ */
+function detectAnimationsEnabled(): boolean {
+	const stdout = process.stdout as { isTTY?: boolean } | undefined;
+	if (stdout && stdout.isTTY === false) return false;
+	if (process.env.NO_COLOR && process.env.NO_COLOR !== "0") return false;
+	if (process.env.CI && process.env.CI !== "0" && process.env.CI !== "false") return false;
+	const term = process.env.TERM ?? "";
+	if (term === "dumb" || term === "") return false;
+	return true;
+}
+
+/**
  * Loader component that updates with an optional spinning animation.
  */
 export class Loader extends Text {
@@ -75,11 +114,14 @@ export class Loader extends Text {
 	private shimmer = false;
 	private shimmerDirection: LoaderShimmerDirection = "right-to-left";
 	private shimmerIntervalMs = DEFAULT_RESPONSE_SHIMMER_INTERVAL_MS;
+	private shimmerSweepMs = DEFAULT_SHIMMER_SWEEP_MS;
 	private shimmerWidth = DEFAULT_SHIMMER_WIDTH;
 	private shimmerColorFn: ((str: string) => string) | undefined;
+	private shimmerBoldCenter = true;
 	private maxMessageWidth: number | undefined;
 	private mode: LoaderMessageMode = "responding";
 	private animationStartMs = Date.now();
+	private animationsEnabled = true;
 	private stalledDetection = false;
 	private stalledAfterMs = DEFAULT_STALLED_AFTER_MS;
 	private stalledFadeMs = DEFAULT_STALLED_FADE_MS;
@@ -92,6 +134,7 @@ export class Loader extends Text {
 	private lastProgressValue = 0;
 	private lastProgressAtMs = Date.now();
 	private hasActiveTools = false;
+	private lastRendered = "";
 
 	constructor(
 		ui: TUI,
@@ -145,9 +188,14 @@ export class Loader extends Text {
 				: mode === "requesting" || mode === "tool-input"
 					? DEFAULT_REQUEST_SHIMMER_INTERVAL_MS
 					: DEFAULT_RESPONSE_SHIMMER_INTERVAL_MS;
+		this.shimmerSweepMs =
+			indicator?.shimmerSweepMs && indicator.shimmerSweepMs > 0
+				? indicator.shimmerSweepMs
+				: DEFAULT_SHIMMER_SWEEP_MS;
 		this.shimmerWidth =
 			indicator?.shimmerWidth && indicator.shimmerWidth > 0 ? indicator.shimmerWidth : DEFAULT_SHIMMER_WIDTH;
 		this.shimmerColorFn = indicator?.shimmerColorFn;
+		this.shimmerBoldCenter = indicator?.shimmerBoldCenter ?? true;
 		this.maxMessageWidth =
 			indicator?.maxMessageWidth && indicator.maxMessageWidth > 0 ? indicator.maxMessageWidth : undefined;
 		this.mode = mode;
@@ -170,6 +218,7 @@ export class Loader extends Text {
 				? indicator.tokensAfterMs
 				: DEFAULT_STATUS_AFTER_MS;
 		this.statusColorFn = indicator?.statusColorFn;
+		this.animationsEnabled = indicator?.animationsEnabled ?? detectAnimationsEnabled();
 		this.animationStartMs = Date.now();
 		this.resetStalledDetection();
 		this.start();
@@ -177,6 +226,11 @@ export class Loader extends Text {
 
 	private restartAnimation(): void {
 		this.stop();
+		// In no-animation environments (CI, NO_COLOR, non-TTY) we render the
+		// message statically. setText is still called once via updateDisplay().
+		if (!this.animationsEnabled) {
+			return;
+		}
 		if (this.frames.length <= 1 && !this.shimmer && this.mode !== "tool-use" && !this.stalledDetection) {
 			return;
 		}
@@ -248,6 +302,9 @@ export class Loader extends Text {
 		if (this.frames.length === 0) {
 			return "";
 		}
+		if (!this.animationsEnabled) {
+			return this.frames[0] ?? "";
+		}
 		const frameIndex = Math.floor(this.getElapsedMs() / this.intervalMs) % this.frames.length;
 		return this.frames[frameIndex] ?? "";
 	}
@@ -272,6 +329,9 @@ export class Loader extends Text {
 
 	private renderToolUseMessage(): string {
 		const messageColorFn = this.getStatusColorFn(this.messageColorFn);
+		if (!this.animationsEnabled) {
+			return messageColorFn(this.getDisplayMessage());
+		}
 		const shimmerColorFn = this.getStatusColorFn(this.shimmerColorFn ?? this.messageColorFn);
 		const flashOpacity = (Math.sin((this.getElapsedMs() / 1000) * Math.PI) + 1) / 2;
 		const colorFn = flashOpacity > 0.5 ? shimmerColorFn : messageColorFn;
@@ -281,44 +341,45 @@ export class Loader extends Text {
 	private renderShimmerMessage(): string {
 		const messageColorFn = this.getStatusColorFn(this.messageColorFn);
 		const displayMessage = this.getDisplayMessage();
-		if (!this.shimmer || !displayMessage || displayMessage.trim() === "") {
+		if (!this.shimmer || !this.animationsEnabled || !displayMessage || displayMessage.trim() === "") {
 			return messageColorFn(displayMessage);
 		}
 
 		const shimmerColorFn = this.getStatusColorFn(this.shimmerColorFn ?? this.messageColorFn);
 		const segments = this.getMessageSegments();
 		const messageWidth = this.getMessageWidth(segments);
-		const shimmerTick = Math.floor(this.getElapsedMs() / this.shimmerIntervalMs);
-		const cycleLength = Math.max(1, messageWidth + SHIMMER_TRAIL_PADDING);
-		const glimmerIndex =
+
+		// Continuous sweep parity with the tool-activity tree: phase ranges
+		// 0..1 over `shimmerSweepMs`, the band travels across the message
+		// padded by SHIMMER_TRAIL_PADDING on both sides so the entry/exit feels
+		// smooth rather than warping.
+		const elapsed = Math.max(0, this.getElapsedMs());
+		const phase = (elapsed % this.shimmerSweepMs) / this.shimmerSweepMs;
+		const travelWidth = messageWidth + SHIMMER_TRAIL_PADDING;
+		const center =
 			this.shimmerDirection === "left-to-right"
-				? (shimmerTick % cycleLength) - SHIMMER_TRAIL_PADDING / 2
-				: messageWidth + SHIMMER_TRAIL_PADDING / 2 - (shimmerTick % cycleLength);
-		const shimmerStart = glimmerIndex - Math.floor(this.shimmerWidth / 2);
-		const shimmerEnd = shimmerStart + this.shimmerWidth - 1;
+				? phase * travelWidth - SHIMMER_TRAIL_PADDING / 2
+				: messageWidth + SHIMMER_TRAIL_PADDING / 2 - phase * travelWidth;
+		const halfWidth = Math.max(0, Math.floor((this.shimmerWidth - 1) / 2));
 
-		if (shimmerStart >= messageWidth || shimmerEnd < 0) {
-			return messageColorFn(displayMessage);
-		}
-
-		const clampedStart = Math.max(0, shimmerStart);
+		let rendered = "";
 		let column = 0;
-		let before = "";
-		let shimmer = "";
-		let after = "";
 		for (const { segment, width } of segments) {
-			const nextColumn = column + width;
-			if (nextColumn <= clampedStart) {
-				before += segment;
-			} else if (column > shimmerEnd) {
-				after += segment;
+			const segmentCenter = column + width / 2;
+			const distance = Math.abs(segmentCenter - center);
+			let cell: string;
+			if (distance <= halfWidth) {
+				cell = shimmerColorFn(segment);
+				if (this.shimmerBoldCenter && distance <= 1) {
+					cell = `\x1b[1m${cell}\x1b[22m`;
+				}
 			} else {
-				shimmer += segment;
+				cell = messageColorFn(segment);
 			}
-			column = nextColumn;
+			rendered += cell;
+			column += width;
 		}
-
-		return `${before ? messageColorFn(before) : ""}${shimmerColorFn(shimmer)}${after ? messageColorFn(after) : ""}`;
+		return rendered;
 	}
 
 	private renderMessage(): string {
@@ -366,7 +427,14 @@ export class Loader extends Text {
 		const spinnerColorFn = this.getStatusColorFn(this.spinnerColorFn);
 		const renderedFrame = this.renderIndicatorVerbatim ? frame : spinnerColorFn(frame);
 		const indicator = frame.length > 0 ? `${renderedFrame} ` : "";
-		this.setText(`${indicator}${this.renderMessage()}${this.renderStatusSuffix()}`);
+		const next = `${indicator}${this.renderMessage()}${this.renderStatusSuffix()}`;
+		// Skip when the rendered output is byte-for-byte identical: the band
+		// often overshoots the message edges and the indicator frame is
+		// stable for tens of milliseconds. Diff-aware redraw keeps Termux/SSH
+		// CPU usage low without losing animation fidelity.
+		if (next === this.lastRendered) return;
+		this.lastRendered = next;
+		this.setText(next);
 		if (this.ui) {
 			this.ui.requestRender();
 		}

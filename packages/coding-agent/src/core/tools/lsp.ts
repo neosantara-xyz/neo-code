@@ -3,7 +3,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { AgentToolResult } from "@neosantara/agent-core";
 import { type Static, Type } from "typebox";
 import type { ToolDefinition } from "../extensions/types.js";
-import { lspLocationToString, lspSymbolKindName, lspUriToPath } from "../lsp/client.js";
+import { lspLocationToString, lspSymbolKindName } from "../lsp/client.js";
 import { getLspManager } from "../lsp/manager.js";
 import { findLspForFile, LSP_REGISTRY } from "../lsp/registry.js";
 import { DEFAULT_MAX_LINES, type TruncationResult, truncateHead } from "./truncate.js";
@@ -195,8 +195,7 @@ export function createLspToolDefinition(cwd: string): ToolDefinition<typeof lspS
 					: await client.references(filePath, position.line, position.character);
 
 			const lines = locations.slice(0, limit).map((location) => {
-				const display = lspLocationToString(location, workspace);
-				return `${display}: ${lspUriToPath(location.uri)}`;
+				return lspLocationToString(location, workspace);
 			});
 			const output =
 				lines.length > 0

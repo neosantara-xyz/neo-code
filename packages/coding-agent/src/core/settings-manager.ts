@@ -39,6 +39,21 @@ export interface TerminalSettings {
 	showTerminalProgress?: boolean; // default: false (OSC 9;4 terminal progress indicators)
 }
 
+export interface MemorySettings {
+	/** default: true. When true, memories are injected into session start. */
+	enabled?: boolean;
+	/** default: true. Automatically extract memories at session end. */
+	autoExtract?: boolean;
+	/** default: 50. Maximum memories to store before pruning oldest unused. */
+	maxStored?: number;
+	/** default: 10. Maximum memories injected per session. */
+	maxInjected?: number;
+	/** default: 4000. Max characters for memory injection block. */
+	maxInjectionChars?: number;
+	/** default: 90. Delete unused memories older than this many days. */
+	pruneAfterDays?: number;
+}
+
 export interface ImageSettings {
 	autoResize?: boolean; // default: true (resize images to 2000x2000 max for better model compatibility)
 	blockImages?: boolean; // default: false - when true, prevents all images from being sent to LLM providers
@@ -155,6 +170,7 @@ export interface Settings {
 		items: StatuslineItemConfig[];
 	}; // Configurable status line items (order + on/off). When omitted, defaults from `core/statusline.ts` are used.
 	notifications?: NotificationSettings; // Opt-in OS notifications (Termux:API). Off by default.
+	memories?: MemorySettings; // Cross-session memory persistence settings.
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -1139,6 +1155,36 @@ export class SettingsManager {
 		}
 		this.globalSettings.notifications.termux.enabled = enabled;
 		this.markModified("notifications", "termux");
+		this.save();
+	}
+
+	getMemorySettings(): Required<MemorySettings> {
+		const cfg = this.settings.memories;
+		return {
+			enabled: cfg?.enabled ?? true,
+			autoExtract: cfg?.autoExtract ?? true,
+			maxStored: cfg?.maxStored ?? 50,
+			maxInjected: cfg?.maxInjected ?? 10,
+			maxInjectionChars: cfg?.maxInjectionChars ?? 4000,
+			pruneAfterDays: cfg?.pruneAfterDays ?? 90,
+		};
+	}
+
+	setMemoryEnabled(enabled: boolean): void {
+		if (!this.globalSettings.memories) {
+			this.globalSettings.memories = {};
+		}
+		this.globalSettings.memories.enabled = enabled;
+		this.markModified("memories", "enabled");
+		this.save();
+	}
+
+	setMemoryAutoExtract(enabled: boolean): void {
+		if (!this.globalSettings.memories) {
+			this.globalSettings.memories = {};
+		}
+		this.globalSettings.memories.autoExtract = enabled;
+		this.markModified("memories", "autoExtract");
 		this.save();
 	}
 

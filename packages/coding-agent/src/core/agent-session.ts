@@ -20,6 +20,7 @@ import type { AssistantMessage, ImageContent, Message, Model, TextContent } from
 import {
 	clampThinkingLevel,
 	cleanupSessionResources,
+	completeSimple,
 	getSupportedThinkingLevels,
 	isContextOverflow,
 	modelsAreEqual,
@@ -27,6 +28,7 @@ import {
 } from "@neosantara/ai";
 import { theme } from "../modes/interactive/theme/theme.js";
 import { sleep } from "../utils/sleep.js";
+import { uuidv7 } from "../utils/uuid.js";
 import {
 	type AgentWorkMode,
 	getAgentModePromptAppend,
@@ -76,6 +78,22 @@ import {
 	wrapRegisteredTools,
 } from "./extensions/index.js";
 import { emitSessionShutdownEvent } from "./extensions/runner.js";
+import {
+	addMemory,
+	buildConsolidationPrompt,
+	buildExtractionPrompt,
+	deleteMemory,
+	enforceMaxStored,
+	loadConsolidationState,
+	loadMemoryIndex,
+	parseConsolidationResponse,
+	parseExtractionResponse,
+	redactSecrets,
+	saveConsolidationState,
+	shouldConsolidate,
+	shouldExtractMemories,
+	writeMemoryMd,
+} from "./memories/index.js";
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
@@ -771,6 +789,9 @@ export class AgentSession {
 
 			this._resolveRetry();
 			await this._checkCompaction(msg);
+
+			// Extract memories in background (fire-and-forget, non-blocking)
+			void this._extractMemoriesIfNeeded();
 		}
 	}
 
@@ -2474,6 +2495,189 @@ export class AgentSession {
 	}
 
 	/**
+	 * Extract memories from the session if auto-extraction is enabled.
+	 * Runs asynchronously after agent_end without blocking the user.
+	 */
+	private async _extractMemoriesIfNeeded(): Promise<void> {
+		try {
+			const memorySettings = this.settingsManager.getMemorySettings();
+			if (!memorySettings.enabled || !memorySettings.autoExtract) return;
+
+			const messages = this.agent.state.messages;
+
+			// Check if the session has enough content for extraction
+			const messageCount = messages.filter((m) => m.role === "user" || m.role === "assistant").length;
+			const hasToolCalls = messages.some(
+				(m) => m.role === "assistant" && Array.isArray(m.content) && m.content.some((c) => c.type === "toolCall"),
+			);
+			if (!shouldExtractMemories(messageCount, hasToolCalls)) return;
+
+			// Get model and auth
+			const model = this.model;
+			if (!model) return;
+			const authResult = await this._modelRegistry.getApiKeyAndHeaders(model);
+			if (!authResult.ok || !authResult.apiKey) return;
+
+			// Build extraction prompt from conversation messages
+			const conversationMessages: Array<{ role: string; content: string }> = [];
+			for (const msg of messages) {
+				if (msg.role === "user") {
+					const content =
+						typeof msg.content === "string"
+							? msg.content
+							: Array.isArray(msg.content)
+								? msg.content
+										.filter((c): c is TextContent => c.type === "text")
+										.map((c) => c.text)
+										.join("\n")
+								: "";
+					if (content) conversationMessages.push({ role: "user", content });
+				} else if (msg.role === "assistant" && Array.isArray(msg.content)) {
+					const textParts = msg.content.filter((c): c is TextContent => c.type === "text");
+					const content = textParts.map((c) => c.text).join("\n");
+					if (content) conversationMessages.push({ role: "assistant", content });
+				}
+			}
+
+			if (conversationMessages.length < 4) return;
+
+			const extractionPrompt = buildExtractionPrompt(conversationMessages, this._cwd);
+
+			// Call the model for extraction
+			const result = await completeSimple(
+				model,
+				{
+					messages: [{ role: "user", content: extractionPrompt, timestamp: Date.now() }],
+				},
+				{
+					apiKey: authResult.apiKey,
+					headers: authResult.headers,
+				},
+			);
+
+			// Parse the response
+			const textContent = result.content
+				.filter((c): c is TextContent => c.type === "text")
+				.map((c) => c.text)
+				.join("");
+
+			if (!textContent) return;
+
+			const extractionResult = parseExtractionResponse(textContent);
+			if (extractionResult.skipped || extractionResult.memories.length === 0) return;
+
+			// Store extracted memories
+			const sessionId = this.sessionId;
+			for (const memory of extractionResult.memories) {
+				addMemory({
+					id: uuidv7(),
+					createdAt: new Date().toISOString(),
+					workspace: this._cwd,
+					title: redactSecrets(memory.title),
+					content: redactSecrets(memory.content),
+					tags: memory.tags,
+					usageCount: 0,
+					lastUsedAt: null,
+					sourceSessionId: sessionId,
+				});
+			}
+
+			// Enforce max stored limit
+			enforceMaxStored(memorySettings.maxStored);
+		} catch {
+			// Memory extraction is best-effort - don't let failures affect session
+		}
+	}
+
+	/**
+	 * Consolidate memories if enough new ones have accumulated.
+	 * Runs asynchronously at session start without blocking the user.
+	 */
+	private async _consolidateMemoriesIfNeeded(): Promise<void> {
+		try {
+			const memorySettings = this.settingsManager.getMemorySettings();
+			if (!memorySettings.enabled) return;
+
+			let state = loadConsolidationState();
+			const allEntries = loadMemoryIndex();
+			const entries = allEntries.filter(
+				(e) => e.workspace === this._cwd || e.workspace.startsWith(this._cwd) || this._cwd.startsWith(e.workspace),
+			);
+
+			// Reset watermark if memories were manually deleted (prevents permanent suppression)
+			if (entries.length < state.memoryCountAtLastConsolidation) {
+				state = { ...state, memoryCountAtLastConsolidation: entries.length };
+				saveConsolidationState(state);
+			}
+
+			if (!shouldConsolidate(entries, state)) return;
+
+			// Get model and auth
+			const model = this.model;
+			if (!model) return;
+			const authResult = await this._modelRegistry.getApiKeyAndHeaders(model);
+			if (!authResult.ok || !authResult.apiKey) return;
+
+			const consolidationPrompt = buildConsolidationPrompt(entries);
+
+			// Call the model for consolidation
+			const result = await completeSimple(
+				model,
+				{
+					messages: [{ role: "user", content: consolidationPrompt, timestamp: Date.now() }],
+				},
+				{
+					apiKey: authResult.apiKey,
+					headers: authResult.headers,
+				},
+			);
+
+			// Parse the response
+			const textContent = result.content
+				.filter((c): c is TextContent => c.type === "text")
+				.map((c) => c.text)
+				.join("");
+
+			if (!textContent) return;
+
+			const consolidationResult = parseConsolidationResponse(textContent);
+			if (consolidationResult.skipped || consolidationResult.entries.length === 0) return;
+
+			// Delete all existing memories
+			for (const entry of entries) {
+				deleteMemory(entry.id);
+			}
+
+			// Store consolidated memories
+			for (const memory of consolidationResult.entries) {
+				addMemory({
+					id: uuidv7(),
+					createdAt: new Date().toISOString(),
+					workspace: this._cwd,
+					title: redactSecrets(memory.title),
+					content: redactSecrets(memory.content),
+					tags: memory.tags,
+					usageCount: 0,
+					lastUsedAt: null,
+					sourceSessionId: null,
+				});
+			}
+
+			// Write MEMORY.md summary
+			writeMemoryMd(consolidationResult.memorySummary);
+
+			// Save consolidation state
+			saveConsolidationState({
+				lastConsolidatedAt: new Date().toISOString(),
+				memoryCountAtLastConsolidation: consolidationResult.entries.length,
+				version: 1,
+			});
+		} catch {
+			// Memory consolidation is best-effort - don't let failures affect session
+		}
+	}
+
+	/**
 	 * Toggle auto-compaction setting.
 	 */
 	setAutoCompactionEnabled(enabled: boolean): void {
@@ -2501,6 +2705,10 @@ export class AgentSession {
 
 		this._applyExtensionBindings(this._extensionRunner);
 		await this._extensionRunner.emit(this._sessionStartEvent);
+
+		// Consolidate memories in background (fire-and-forget, non-blocking)
+		void this._consolidateMemoriesIfNeeded();
+
 		await this.extendResourcesFromExtensions(this._sessionStartEvent.reason === "reload" ? "reload" : "startup");
 	}
 

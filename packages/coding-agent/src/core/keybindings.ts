@@ -187,7 +187,7 @@ export const KEYBINDINGS = {
 		description: "Tree filter: default view",
 	},
 	"app.tree.filter.noTools": {
-		defaultKeys: "ctrl+t",
+		defaultKeys: "ctrl+h",
 		description: "Tree filter: hide tool results",
 	},
 	"app.tree.filter.userOnly": {

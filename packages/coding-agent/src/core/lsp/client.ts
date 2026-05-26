@@ -307,7 +307,11 @@ export class LspClient {
 		if (child && !child.killed) {
 			child.kill("SIGTERM");
 			setTimeout(() => {
-				if (!child.killed) child.kill("SIGKILL");
+				try {
+					child.kill("SIGKILL");
+				} catch {
+					// Process already exited — ignore.
+				}
 			}, 1500).unref();
 		}
 	}

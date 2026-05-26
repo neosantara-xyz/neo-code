@@ -1,5 +1,10 @@
 export { type AgentToolDetails, type AgentToolInput, createAgentToolDefinition } from "./agent.js";
 export {
+	type ApplyPatchToolDetails,
+	type ApplyPatchToolInput,
+	createApplyPatchToolDefinition,
+} from "./apply-patch-tool.js";
+export {
 	type BashOperations,
 	type BashSpawnContext,
 	type BashSpawnHook,
@@ -82,6 +87,7 @@ export {
 import type { AgentTool } from "@neosantara/agent-core";
 import type { ToolDefinition } from "../extensions/types.js";
 import { createAgentToolDefinition } from "./agent.js";
+import { createApplyPatchToolDefinition } from "./apply-patch-tool.js";
 import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.js";
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.js";
 import {
@@ -110,6 +116,7 @@ export type ToolName =
 	| "ls"
 	| "todo"
 	| "lsp"
+	| "apply_patch"
 	| "agent"
 	| "mcp"
 	| typeof EXIT_PLAN_MODE_TOOL_NAME;
@@ -123,6 +130,7 @@ export const allToolNames: Set<ToolName> = new Set([
 	"ls",
 	"todo",
 	"lsp",
+	"apply_patch",
 	"agent",
 	"mcp",
 	EXIT_PLAN_MODE_TOOL_NAME,
@@ -160,6 +168,8 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createTodoToolDefinition(cwd);
 		case "lsp":
 			return createLspToolDefinition(cwd);
+		case "apply_patch":
+			return createApplyPatchToolDefinition(cwd);
 		case "agent":
 			return createAgentToolDefinition(cwd, { getMcpServers: options?.mcp?.getServers });
 		case "mcp":
@@ -192,6 +202,8 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createTodoToolDefinition(cwd) as Tool;
 		case "lsp":
 			return createLspToolDefinition(cwd) as Tool;
+		case "apply_patch":
+			return createApplyPatchToolDefinition(cwd) as Tool;
 		case "agent":
 			return createAgentToolDefinition(cwd, { getMcpServers: options?.mcp?.getServers }) as Tool;
 		case "mcp":
@@ -210,6 +222,7 @@ export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions)
 		createBashToolDefinition(cwd, options?.bash),
 		createEditToolDefinition(cwd, options?.edit),
 		createWriteToolDefinition(cwd, options?.write),
+		createApplyPatchToolDefinition(cwd),
 	];
 }
 
@@ -233,6 +246,7 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		ls: createLsToolDefinition(cwd, options?.ls),
 		todo: createTodoToolDefinition(cwd),
 		lsp: createLspToolDefinition(cwd),
+		apply_patch: createApplyPatchToolDefinition(cwd),
 		agent: createAgentToolDefinition(cwd, { getMcpServers: options?.mcp?.getServers }),
 		mcp: createMcpToolDefinition(options?.mcp?.getServers ?? (() => ({}))),
 		[EXIT_PLAN_MODE_TOOL_NAME]: options?.exitPlanMode
@@ -273,6 +287,7 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		ls: createLsTool(cwd, options?.ls),
 		todo: createTodoToolDefinition(cwd) as Tool,
 		lsp: createLspToolDefinition(cwd) as Tool,
+		apply_patch: createApplyPatchToolDefinition(cwd) as Tool,
 		agent: createAgentToolDefinition(cwd, { getMcpServers: options?.mcp?.getServers }) as Tool,
 		mcp: createMcpToolDefinition(options?.mcp?.getServers ?? (() => ({}))) as Tool,
 		[EXIT_PLAN_MODE_TOOL_NAME]: options?.exitPlanMode

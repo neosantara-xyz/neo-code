@@ -189,6 +189,7 @@ import { StatuslineSelectorComponent } from "./components/statusline-selector.js
 import { ToolActivityGroupComponent } from "./components/tool-activity-group.js";
 import { ToolApprovalRequestComponent } from "./components/tool-approval-request.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
+import { TranscriptPagerComponent } from "./components/transcript-pager.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UsageScreenComponent } from "./components/usage-screen.js";
 import { UserMessageComponent } from "./components/user-message.js";
@@ -626,6 +627,11 @@ export class InteractiveMode {
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
+
+	// Transcript pager state
+	private transcriptPagerHandle: OverlayHandle | undefined;
+	private transcriptPagerLines: string[] = [];
+	private transcriptPagerToolCallId: string | undefined;
 
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
@@ -3089,7 +3095,7 @@ export class InteractiveMode {
 		this.ui.onFocusLost = () => this.handleTerminalBlur();
 		this.ui.onFocusGained = () => this.handleTerminalFocus();
 		this.defaultEditor.onAction("app.model.select", () => this.showModelSelector());
-		this.defaultEditor.onAction("app.transcript.view", () => this.toggleToolOutputExpansion());
+		this.defaultEditor.onAction("app.transcript.view", () => this.openTranscriptPager());
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
 		this.defaultEditor.onAction("app.task.background", () => this.handleBackgroundCurrentTask());
 		this.defaultEditor.onAction("app.tasks.open", () => this.handleTasksCommand("/tasks"));
@@ -3899,6 +3905,14 @@ export class InteractiveMode {
 					else component.updateResult(result, true);
 					this.ui.requestRender();
 				}
+				if (this.transcriptPagerHandle && this.transcriptPagerToolCallId === event.toolCallId) {
+					const rawText = event.partialResult.content
+						.filter((c: { type: string }) => c.type === "text")
+						.map((c: { type: string; text?: string }) => c.text ?? "")
+						.join("\n");
+					this.transcriptPagerLines = rawText.split("\n");
+					this.ui.requestRender();
+				}
 				break;
 			}
 
@@ -3917,6 +3931,15 @@ export class InteractiveMode {
 					this.updateWorkingStalledState();
 					this.ui.requestRender();
 				}
+				if (this.transcriptPagerHandle && this.transcriptPagerToolCallId === event.toolCallId) {
+					const rawText = event.result.content
+						.filter((c: { type: string }) => c.type === "text")
+						.map((c: { type: string; text?: string }) => c.text ?? "")
+						.join("\n");
+					this.transcriptPagerLines = rawText.split("\n");
+					this.transcriptPagerToolCallId = undefined;
+					this.ui.requestRender();
+				}
 				break;
 			}
 
@@ -3929,6 +3952,7 @@ export class InteractiveMode {
 				}
 				this.setToolActivityAnimationPaused(false);
 				this.activeToolExecutionIds.clear();
+				this.transcriptPagerToolCallId = undefined;
 				if (this.terminalBlurredAt) {
 					this.workCompletedWhileAway = true;
 				}
@@ -4625,6 +4649,95 @@ export class InteractiveMode {
 
 	private toggleToolOutputExpansion(): void {
 		this.setToolsExpanded(!this.toolOutputExpanded);
+	}
+
+	private openTranscriptPager(): void {
+		// Close existing pager if open
+		if (this.transcriptPagerHandle) {
+			this.transcriptPagerHandle.hide();
+			this.transcriptPagerHandle = undefined;
+			this.transcriptPagerToolCallId = undefined;
+			this.transcriptPagerLines = [];
+		}
+
+		let rawText: string | undefined;
+		let title = "Tool Output";
+
+		if (this.activeToolExecutionIds.size > 0) {
+			// Tool is currently running - get partial output
+			const toolCallId = this.activeToolExecutionIds.values().next().value;
+			if (toolCallId) {
+				this.transcriptPagerToolCallId = toolCallId;
+				const group = this.pendingToolGroups.get(toolCallId);
+				if (group) {
+					const items = group.getItems();
+					const item = items.find((i) => i.id === toolCallId);
+					if (item?.result?.content) {
+						rawText = item.result.content
+							.filter((c) => c.type === "text")
+							.map((c) => c.text ?? "")
+							.join("\n");
+						title = this.buildPagerTitle(item.toolName, item.args);
+					}
+				}
+			}
+		} else {
+			// Idle - find the last tool activity group with results
+			const children = this.chatContainer.children;
+			for (let i = children.length - 1; i >= 0; i--) {
+				const child = children[i];
+				if (child instanceof ToolActivityGroupComponent) {
+					const items = child.getItems();
+					for (let j = items.length - 1; j >= 0; j--) {
+						const item = items[j];
+						if (item.result?.content) {
+							rawText = item.result.content
+								.filter((c) => c.type === "text")
+								.map((c) => c.text ?? "")
+								.join("\n");
+							title = this.buildPagerTitle(item.toolName, item.args);
+							break;
+						}
+					}
+					if (rawText !== undefined) break;
+				}
+			}
+		}
+
+		if (!rawText) {
+			this.showStatus("No tool output available");
+			return;
+		}
+
+		this.transcriptPagerLines = rawText.split("\n");
+
+		const component = new TranscriptPagerComponent(
+			title,
+			() => this.transcriptPagerLines,
+			() => this.ui.terminal.rows,
+			() => {
+				this.transcriptPagerHandle?.hide();
+				this.transcriptPagerHandle = undefined;
+				this.transcriptPagerToolCallId = undefined;
+				this.transcriptPagerLines = [];
+			},
+		);
+
+		this.transcriptPagerHandle = this.ui.showOverlay(component, {
+			anchor: "top-center",
+			row: 0,
+			width: this.ui.terminal.columns,
+			maxHeight: "100%",
+		});
+	}
+
+	private buildPagerTitle(toolName: string, args: any): string {
+		if (toolName === "bash" && args?.command) {
+			const cmd = String(args.command);
+			const short = cmd.length > 60 ? `${cmd.slice(0, 57)}...` : cmd;
+			return `bash: ${short}`;
+		}
+		return toolName;
 	}
 
 	private setToolsExpanded(expanded: boolean): void {
@@ -6887,15 +7000,200 @@ ${theme.fg("dim", "Hint:")} on Termux run \`pkg install termux-api\` and grant t
 
 	private async handleMemoryCommand(text: string): Promise<void> {
 		const args = text.slice("/memory".length).trim();
-		if (args === "init") {
-			await this.handleAgentsCommand("/agents init");
+		const subcommand = args.split(/\s+/)[0] ?? "";
+
+		if (subcommand === "" || subcommand === "list") {
+			this.handleMemoryList();
 			return;
 		}
-		if (args === "show") {
-			await this.handleAgentsCommand("/agents show");
+		if (subcommand === "search") {
+			const query = args.slice("search".length).trim();
+			this.handleMemorySearch(query);
 			return;
 		}
-		await this.handleAgentsCommand("/agents");
+		if (subcommand === "add") {
+			const rest = args.slice("add".length).trim();
+			this.handleMemoryAdd(rest);
+			return;
+		}
+		if (subcommand === "delete" || subcommand === "rm") {
+			const id = args.slice(subcommand.length).trim();
+			this.handleMemoryDelete(id);
+			return;
+		}
+		if (subcommand === "clear") {
+			this.handleMemoryClear();
+			return;
+		}
+		if (subcommand === "prune") {
+			this.handleMemoryPrune();
+			return;
+		}
+		if (subcommand === "help") {
+			this.handleMemoryHelp();
+			return;
+		}
+		// Unknown subcommand — show help
+		this.handleMemoryHelp();
+	}
+
+	private handleMemoryList(): void {
+		const { loadMemoryIndex } =
+			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
+		const memories = loadMemoryIndex();
+		if (memories.length === 0) {
+			this.addPlainInfoBlock(`${theme.bold("Memories")}
+
+${theme.fg("muted", "No memories stored yet.")}
+${theme.fg("dim", "Memories are extracted automatically from completed sessions.")}`);
+			return;
+		}
+		let info = `${theme.bold("Memories")} ${theme.fg("dim", `(${memories.length} total)`)}\n`;
+		for (const mem of memories.slice(0, 20)) {
+			const date = mem.createdAt.slice(0, 10);
+			const tags = mem.tags.length > 0 ? theme.fg("dim", ` [${mem.tags.join(", ")}]`) : "";
+			const usage = mem.usageCount > 0 ? theme.fg("dim", ` ×${mem.usageCount}`) : "";
+			info += `\n${theme.fg("dim", date)} ${mem.title}${tags}${usage}`;
+			info += `\n  ${theme.fg("dim", mem.id.slice(0, 8))} ${theme.fg("muted", mem.content.slice(0, 80).replace(/\n/g, " "))}`;
+		}
+		if (memories.length > 20) {
+			info += `\n\n${theme.fg("dim", `… and ${memories.length - 20} more. Use /memory search <query> to filter.`)}`;
+		}
+		info += `\n\n${theme.fg("dim", "Commands: /memory list | search <query> | delete <id> | clear | help")}`;
+		this.addPlainInfoBlock(info);
+	}
+
+	private handleMemorySearch(query: string): void {
+		if (!query) {
+			this.showError("Usage: /memory search <query>");
+			return;
+		}
+		const { searchMemories } =
+			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
+		const results = searchMemories({ query, limit: 15 });
+		if (results.length === 0) {
+			this.addPlainInfoBlock(`${theme.bold("Memory Search")}
+
+${theme.fg("muted", `No memories matching "${query}".`)}`);
+			return;
+		}
+		let info = `${theme.bold("Memory Search")} ${theme.fg("dim", `"${query}" — ${results.length} result${results.length !== 1 ? "s" : ""}`)}\n`;
+		for (const mem of results) {
+			const date = mem.createdAt.slice(0, 10);
+			info += `\n${theme.fg("dim", date)} ${mem.title}`;
+			info += `\n  ${theme.fg("dim", mem.id.slice(0, 8))} ${theme.fg("muted", mem.content.slice(0, 100).replace(/\n/g, " "))}`;
+		}
+		this.addPlainInfoBlock(info);
+	}
+
+	private handleMemoryDelete(id: string): void {
+		if (!id) {
+			this.showError("Usage: /memory delete <id-prefix>");
+			return;
+		}
+		const { loadMemoryIndex, deleteMemory } =
+			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
+		const memories = loadMemoryIndex();
+		const match = memories.find((m) => m.id.startsWith(id));
+		if (!match) {
+			this.showError(`No memory found with ID prefix "${id}".`);
+			return;
+		}
+		deleteMemory(match.id);
+		this.addPlainInfoBlock(`${theme.fg("success", "✓")} Deleted memory: ${match.title}`);
+	}
+
+	private handleMemoryClear(): void {
+		const { loadMemoryIndex, deleteMemory } =
+			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
+		const memories = loadMemoryIndex();
+		if (memories.length === 0) {
+			this.addPlainInfoBlock(`${theme.fg("muted", "No memories to clear.")}`);
+			return;
+		}
+		for (const mem of memories) {
+			deleteMemory(mem.id);
+		}
+		this.addPlainInfoBlock(`${theme.fg("success", "✓")} Cleared ${memories.length} memories.`);
+	}
+
+	private handleMemoryHelp(): void {
+		this.addPlainInfoBlock(`${theme.bold("Memory Commands")}
+
+${theme.fg("dim", "/memory")}              List all stored memories
+${theme.fg("dim", "/memory list")}         Same as above
+${theme.fg("dim", "/memory search")} <q>   Search memories by keyword
+${theme.fg("dim", "/memory add")} <t> <c>  Add a memory manually (title | content)
+${theme.fg("dim", "/memory delete")} <id>  Delete a memory by ID prefix
+${theme.fg("dim", "/memory clear")}        Delete all memories
+${theme.fg("dim", "/memory prune")}        Remove stale unused memories
+${theme.fg("dim", "/memory help")}         Show this help
+
+Memories are automatically extracted from completed sessions and injected
+into future sessions that work in the same workspace.
+
+${theme.fg("dim", "Settings:")} memories.enabled, memories.autoExtract, memories.maxStored
+${theme.fg("dim", "Storage:")} ~/.neo-code/memories/`);
+	}
+
+	private handleMemoryAdd(input: string): void {
+		if (!input) {
+			this.showError("Usage: /memory add title | content");
+			return;
+		}
+		const { addMemory, redactSecrets, enforceMaxStored } =
+			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
+
+		// Parse: title | content
+		let title: string;
+		let content: string;
+
+		const pipeIdx = input.indexOf("|");
+		if (pipeIdx !== -1) {
+			title = input.slice(0, pipeIdx).trim();
+			content = input.slice(pipeIdx + 1).trim();
+		} else {
+			// Single string = title, content same as title
+			title = input.slice(0, 80);
+			content = input;
+		}
+
+		if (!title || !content) {
+			this.showError("Usage: /memory add title | content");
+			return;
+		}
+
+		const memSettings = this.settingsManager.getMemorySettings();
+		const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+		addMemory({
+			id,
+			createdAt: new Date().toISOString(),
+			workspace: this.sessionManager.getCwd(),
+			title: title.slice(0, 120),
+			content: redactSecrets(content.slice(0, 2000)),
+			tags: ["manual"],
+			usageCount: 0,
+			lastUsedAt: null,
+			sourceSessionId: null,
+		});
+		enforceMaxStored(memSettings.maxStored);
+		this.addPlainInfoBlock(`${theme.fg("success", "✓")} Added memory: ${title}`);
+	}
+
+	private handleMemoryPrune(): void {
+		const { pruneStaleMemories, enforceMaxStored } =
+			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
+		const memSettings = this.settingsManager.getMemorySettings();
+		const stalePruned = pruneStaleMemories(memSettings.pruneAfterDays);
+		const overflowPruned = enforceMaxStored(memSettings.maxStored);
+		const total = stalePruned + overflowPruned;
+		if (total === 0) {
+			this.addPlainInfoBlock(`${theme.fg("muted", "No memories to prune. All are within limits.")}`);
+		} else {
+			this.addPlainInfoBlock(
+				`${theme.fg("success", "✓")} Pruned ${total} memories (${stalePruned} stale, ${overflowPruned} over limit).`,
+			);
+		}
 	}
 
 	private handleMcpCommand(): void {

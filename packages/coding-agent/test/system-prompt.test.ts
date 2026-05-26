@@ -23,7 +23,7 @@ describe("system prompt", () => {
 		expect(prompt).toContain("The conversation may be compacted with /compact");
 		expect(prompt).toContain("Always check for existing functions, utilities, components");
 		expect(prompt).toContain("Use dedicated read-only tools for project inspection instead of bash");
-		expect(prompt).toContain("Use edit for precise modifications to existing files. Read the file first");
+		expect(prompt).toContain("Use edit for precise single-site modifications to existing files. Read the file first");
 		expect(prompt).toContain("Use write for new files or complete rewrites");
 		expect(prompt).toContain("Do not create README, documentation, changelog, or other markdown files");
 		expect(prompt).toContain("Use edit for precise changes.");

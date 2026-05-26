@@ -3,6 +3,7 @@
  */
 
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.js";
+import { buildMemoryInjection } from "./memories/index.js";
 import { formatSkillsForPrompt, type Skill } from "./skills.js";
 import { getTermuxApiCapabilities } from "./termux-api.js";
 import { isTermuxEnvironment } from "./termux-touch-keyboard.js";
@@ -125,6 +126,7 @@ function formatUsingToolsSection(tools: Set<string>, promptGuidelines: string[])
 	const hasBash = tools.has("bash");
 	const hasEdit = tools.has("edit");
 	const hasWrite = tools.has("write");
+	const hasApplyPatch = tools.has("apply_patch");
 	const hasExitPlan = tools.has("ExitPlanMode");
 	const hasDedicatedInspection = hasRead || hasGrep || hasFind || hasLs;
 	const toolLines = [
@@ -138,16 +140,19 @@ function formatUsingToolsSection(tools: Set<string>, promptGuidelines: string[])
 		hasBash
 			? "Reserve bash for tests, builds, package scripts, git commands, and terminal operations that cannot be represented by dedicated tools. Include a concise description for non-obvious commands because Neo shows it in the activity UI."
 			: undefined,
+		hasApplyPatch
+			? "Prefer apply_patch over edit/write when making changes to multiple files, or when making several edits in a single file. It is more token-efficient. Use the *** Begin Patch format with 3 lines of context around each change. Use @@ class/function headers for disambiguation when context lines alone are ambiguous."
+			: undefined,
 		hasEdit
-			? "Use edit for precise modifications to existing files. Read the file first, preserve exact indentation, keep oldText small but unique, and combine multiple disjoint edits in one edit call for the same file."
+			? "Use edit for precise single-site modifications to existing files. Read the file first, preserve exact indentation, keep oldText small but unique, and combine multiple disjoint edits in one edit call for the same file."
 			: undefined,
 		hasWrite
-			? "Use write for new files or complete rewrites. Before overwriting an existing file, read it first unless the user provided the full exact content to write. Prefer edit for normal modifications."
+			? "Use write for new files or complete rewrites. Before overwriting an existing file, read it first unless the user provided the full exact content to write. Prefer edit or apply_patch for normal modifications."
 			: undefined,
 		hasExitPlan
 			? "In plan mode, inspect safely and call ExitPlanMode only when the final implementation plan is ready. Do not ask for plan approval in normal text."
 			: undefined,
-		"Parallelize independent read-only inspection tools (read, grep, find, ls) in a single turn whenever possible. Do not batch dependent operations. Never execute shell commands (bash) or mutating tools (edit, write) in parallel; treat them as strictly sequential.",
+		"Parallelize independent read-only inspection tools (read, grep, find, ls) in a single turn whenever possible. Do not batch dependent operations. Never execute shell commands (bash) or mutating tools (edit, write, apply_patch) in parallel; treat them as strictly sequential.",
 		"After tool calls, summarize what was found or changed in normal assistant text.",
 		"Show file paths clearly when working with files. When referencing specific code, prefer file_path:line_number where line numbers are known.",
 		...promptGuidelines,
@@ -266,6 +271,12 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	if (toolSet.has("read") && skills.length > 0) {
 		prompt += formatSkillsForPrompt(skills);
+	}
+
+	// Inject relevant memories before environment section
+	const memorySection = buildMemoryInjection({ workspace: cwd, maxMemories: 10, maxChars: 4000 });
+	if (memorySection) {
+		prompt += `\n\n${memorySection}`;
 	}
 
 	prompt += `\n\n${formatEnvironmentSection(date, promptCwd)}`;

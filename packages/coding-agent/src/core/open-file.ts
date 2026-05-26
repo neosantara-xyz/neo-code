@@ -89,7 +89,7 @@ export function openLocal(filePath: string, options: OpenStrategyOptions = {}): 
 	if (!cmd) return { ok: false, resolution, error: "no command resolved" };
 	try {
 		if (resolution.strategy === "xdg-open") {
-			const commandProbe = spawnSync("sh", ["-c", `command -v ${cmd}`], {
+			const commandProbe = spawnSync("sh", ["-c", 'command -v "$1"', "--", cmd], {
 				stdio: "ignore",
 				timeout: 1500,
 			});
@@ -100,6 +100,11 @@ export function openLocal(filePath: string, options: OpenStrategyOptions = {}): 
 				detached: true,
 				stdio: "ignore",
 			});
+			// Listen for spawn-time errors (e.g. EACCES) that fire synchronously
+			// on nextTick. If spawn itself succeeded the pid is set immediately.
+			if (child.pid === undefined) {
+				return { ok: false, resolution, error: `failed to launch ${cmd}` };
+			}
 			child.unref();
 			return { ok: true, resolution };
 		}

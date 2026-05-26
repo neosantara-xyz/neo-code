@@ -20,11 +20,22 @@ function withMockedDateNow<T>(value: { now: number }, run: () => T): T {
 	}
 }
 
+// Strip ANSI SGR sequences for assertions about plain-text content of the
+// loader output. Loader v2 may wrap individual graphemes in bold escapes when
+// `shimmerBoldCenter` is enabled, which would otherwise break naive substring
+// matches in tests.
+function stripAnsi(value: string): string {
+	return value.replace(/\u001b\[[0-9;]*[A-Za-z]/g, "");
+}
+
 describe("Loader", () => {
-	it("renders a Claude-style right-to-left glimmer independent from spinner frames", () => {
+	it("renders a Claude-style right-to-left glimmer with continuous phase math", () => {
 		const clock = { now: 0 };
 		withMockedDateNow(clock, () => {
 			const tui = new FakeTui();
+			// At t=880ms with sweepMs=2000 the right-to-left phase places the
+			// shimmer band over the trailing characters of the 5-cell message
+			// (band center ≈ 4, halfWidth=1 → covers indices 3 and 4).
 			const loader = new Loader(
 				tui as unknown as TUI,
 				(text) => `[${text}]`,
@@ -35,14 +46,17 @@ describe("Loader", () => {
 					intervalMs: 120,
 					shimmer: true,
 					shimmerColorFn: (text) => text.toUpperCase(),
-					shimmerIntervalMs: 200,
+					shimmerWidth: 3,
+					shimmerSweepMs: 2000,
+					shimmerBoldCenter: false,
+					animationsEnabled: true,
 				},
 			);
 
 			try {
-				clock.now = 2000;
+				clock.now = 880;
 				loader.setMessage("abcde");
-				const line = loader.render(40).join("\n");
+				const line = stripAnsi(loader.render(40).join("\n"));
 
 				assert.match(line, /abcDE/);
 				assert.ok(tui.renderRequests > 0);
@@ -52,7 +66,7 @@ describe("Loader", () => {
 		});
 	});
 
-	it("uses the slower Claude-style response glimmer timing by default", () => {
+	it("uses the slower Claude-style response sweep period by default", () => {
 		const clock = { now: 0 };
 		withMockedDateNow(clock, () => {
 			const tui = new FakeTui();
@@ -65,13 +79,16 @@ describe("Loader", () => {
 					frames: ["·"],
 					shimmer: true,
 					shimmerColorFn: (text) => text.toUpperCase(),
+					shimmerWidth: 3,
+					shimmerBoldCenter: false,
+					animationsEnabled: true,
 				},
 			);
 
 			try {
-				clock.now = 2000;
+				clock.now = 880;
 				loader.setMessage("abcde");
-				const line = loader.render(40).join("\n");
+				const line = stripAnsi(loader.render(40).join("\n"));
 
 				assert.match(line, /abcDE/);
 			} finally {
@@ -94,14 +111,16 @@ describe("Loader", () => {
 					mode: "tool-input",
 					shimmer: true,
 					shimmerColorFn: (text) => text.toUpperCase(),
-					shimmerIntervalMs: 200,
+					shimmerWidth: 3,
+					shimmerBoldCenter: false,
+					animationsEnabled: true,
 				},
 			);
 
 			try {
-				clock.now = 2000;
+				clock.now = 800;
 				loader.setMessage("preparing tool…");
-				const line = loader.render(40).join("\n");
+				const line = stripAnsi(loader.render(40).join("\n"));
 
 				assert.match(line, /[A-Z]/);
 				assert.doesNotMatch(line, /✦/);
@@ -125,6 +144,7 @@ describe("Loader", () => {
 					mode: "tool-use",
 					shimmer: true,
 					shimmerColorFn: (text) => text.toUpperCase(),
+					animationsEnabled: true,
 				},
 			);
 
@@ -154,8 +174,8 @@ describe("Loader", () => {
 					frames: ["·"],
 					shimmer: true,
 					shimmerColorFn: (text) => text.toUpperCase(),
-					shimmerIntervalMs: 200,
 					maxMessageWidth: 18,
+					animationsEnabled: true,
 				},
 			);
 
@@ -188,6 +208,7 @@ describe("Loader", () => {
 					elapsedAfterMs: 0,
 					tokensAfterMs: 0,
 					statusColorFn: (text) => `DIM(${text})`,
+					animationsEnabled: true,
 				},
 			);
 
@@ -219,6 +240,7 @@ describe("Loader", () => {
 					stalledFadeMs: 2000,
 					stalledWarningColorFn: (text) => `WARN(${text})`,
 					stalledColorFn: (text) => `ERR(${text})`,
+					animationsEnabled: true,
 				},
 			);
 
@@ -236,6 +258,71 @@ describe("Loader", () => {
 				const activeToolLine = loader.render(40).join("\n");
 				assert.doesNotMatch(activeToolLine, /ERR\(/);
 				assert.doesNotMatch(activeToolLine, /WARN\(/);
+			} finally {
+				loader.stop();
+			}
+		});
+	});
+
+	it("disables shimmer animation when stdout is not a TTY (NO_COLOR / CI / piped)", () => {
+		const clock = { now: 0 };
+		withMockedDateNow(clock, () => {
+			const tui = new FakeTui();
+			const loader = new Loader(
+				tui as unknown as TUI,
+				(text) => `[${text}]`,
+				(text) => text,
+				"abcde",
+				{
+					frames: [],
+					shimmer: true,
+					shimmerColorFn: (text) => text.toUpperCase(),
+					shimmerBoldCenter: false,
+					animationsEnabled: false,
+				},
+			);
+
+			try {
+				clock.now = 880;
+				loader.setMessage("abcde");
+				const line = stripAnsi(loader.render(40).join("\n"));
+
+				// No characters should be uppercased: the band never travels.
+				assert.match(line, /abcde/);
+				assert.doesNotMatch(line, /[A-Z]/);
+			} finally {
+				loader.stop();
+			}
+		});
+	});
+
+	it("skips redraws when the rendered output is byte-for-byte identical", () => {
+		const clock = { now: 0 };
+		withMockedDateNow(clock, () => {
+			const tui = new FakeTui();
+			const loader = new Loader(
+				tui as unknown as TUI,
+				(text) => `[${text}]`,
+				(text) => text,
+				"abcde",
+				{
+					frames: [],
+					shimmer: false,
+					animationsEnabled: false,
+				},
+			);
+
+			try {
+				clock.now = 1000;
+				loader.setMessage("abcde");
+				const initialRequests = tui.renderRequests;
+
+				// Manually trigger another updateDisplay-equivalent path by
+				// re-applying the same message; the diff guard should skip the
+				// requestRender call because nothing visible changed.
+				loader.setMessage("abcde");
+
+				assert.equal(tui.renderRequests, initialRequests);
 			} finally {
 				loader.stop();
 			}
