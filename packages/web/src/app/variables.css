@@ -1,0 +1,39 @@
+:root {
+  --bg: hsl(0 0% 3%);
+  --bg-100: hsl(0 0% 5%);
+  --bg-200: hsl(0 0% 7%);
+  --bg-300: hsl(0 0% 9%);
+  --bg-400: hsl(0 0% 11%);
+  --bg-500: hsl(0 0% 13%);
+
+  --fg: hsl(0 0% 98%);
+  --fg-100: hsl(0 0% 90%);
+  --fg-200: hsl(0 0% 82%);
+  --fg-300: hsl(0 0% 74%);
+  --fg-400: hsl(0 0% 66%);
+  --fg-500: hsl(0 0% 60%);
+
+  --accent: hsl(32 100% 45%);
+  --accent-100: hsl(32 100% 40%);
+  --accent-200: hsl(32 100% 30%);
+  --accent-300: hsl(32 100% 20%);
+  --accent-400: hsl(32 100% 10%);
+  --accent-500: hsl(32 100% 5%);
+
+  --accent-fg: hsl(0 0% 100%);
+
+  --border: hsl(0 0% 10%);
+  --border-100: hsl(0 0% 13%);
+  --border-200: hsl(0 0% 16%);
+  --border-300: hsl(0 0% 19%);
+  --border-400: hsl(0 0% 22%);
+  --border-500: hsl(0 0% 25%);
+
+  --ring: hsl(32 85% 45%);
+
+  --error: hsl(0 75% 50%);
+  --success: hsl(140 95% 30%);
+  --warning: hsl(35 100% 45%);
+
+  --radius: 0.375rem;
+}

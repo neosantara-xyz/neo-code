@@ -27,6 +27,10 @@
 - Simplified `/usage` overlay: removed the ASCII mascot header and the per-model quota rows so the screen reflects PAYG billing only (balance, period spend, current session).
 - Updated the default Termux touch-keyboard layout to follow community conventions: arrow keys on the right (inverted-T), modifiers (`TAB`, `CTRL`, `ALT`) on the left of row 2, and 7 keys per row.
 
+### Fixed
+
+- Hid raw assistant thinking blocks by default and kept completed inspection file details visible on standard 77-column terminals.
+
 ## [0.76.6] - 2026-05-21
 
 ### Added

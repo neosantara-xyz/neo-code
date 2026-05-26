@@ -87,6 +87,15 @@ import type {
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.js";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.js";
 import { getLspManager } from "../../core/lsp/manager.js";
+import {
+	addMemory,
+	deleteMemory,
+	enforceMaxStored,
+	loadMemoryIndex,
+	pruneStaleMemories,
+	redactSecrets,
+	searchMemories,
+} from "../../core/memories/index.js";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.js";
 import { loginWithNeosantaraDeviceAuth } from "../../core/neosantara-device-auth.js";
 import { openLocal } from "../../core/open-file.js";
@@ -634,7 +643,7 @@ export class InteractiveMode {
 	private transcriptPagerToolCallId: string | undefined;
 
 	// Thinking block visibility state
-	private hideThinkingBlock = false;
+	private hideThinkingBlock = true;
 
 	// Skill commands: command name -> skill file path
 	private skillCommands = new Map<string, string>();
@@ -3675,12 +3684,17 @@ export class InteractiveMode {
 	}
 
 	private createToolActivityGroup(): ToolActivityGroupComponent {
+		// Mark previous group as no longer streaming since a new group takes over
+		this.currentToolActivityGroup?.setStreaming(false);
 		const group = new ToolActivityGroupComponent(this.toolOutputExpanded, {
 			gradualReveal: true,
 			ui: this.ui,
 		});
 		if (this.pendingToolApproval) {
 			group.setAnimationPaused(true);
+		}
+		if (this.session.isStreaming) {
+			group.setStreaming(true);
 		}
 		this.chatContainer.addChild(group);
 		return group;
@@ -3811,6 +3825,20 @@ export class InteractiveMode {
 					this.streamingMessage = streamingMessage;
 					this.streamingComponent.updateContent(streamingMessage);
 					this.updateWorkingStalledState(streamingMessage);
+
+					// Show "Thinking..." in loading indicator when model is producing thinking content
+					const hasThinking = streamingMessage.content.some(
+						(c: { type: string; thinking?: string }) => c.type === "thinking" && c.thinking,
+					);
+					const hasText = streamingMessage.content.some(
+						(c: { type: string; text?: string }) => c.type === "text" && c.text?.trim(),
+					);
+					if (hasThinking && !hasText && this.loadingAnimation && this.pendingTools.size === 0) {
+						this.loadingAnimation.setMessage(
+							`Thinking... (${keyText("app.interrupt")} to interrupt)`,
+							this.getWorkingIndicatorOptions(),
+						);
+					}
 
 					for (const content of streamingMessage.content) {
 						if (content.type === "toolCall") {
@@ -3974,6 +4002,7 @@ export class InteractiveMode {
 				}
 				this.pendingTools.clear();
 				this.pendingToolGroups.clear();
+				this.currentToolActivityGroup?.setStreaming(false);
 				this.currentToolActivityGroup = undefined;
 
 				await this.checkShutdownRequested();
@@ -7053,8 +7082,6 @@ ${theme.fg("dim", "Hint:")} on Termux run \`pkg install termux-api\` and grant t
 	}
 
 	private handleMemoryList(): void {
-		const { loadMemoryIndex } =
-			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
 		const memories = loadMemoryIndex();
 		if (memories.length === 0) {
 			this.addPlainInfoBlock(`${theme.bold("Memories")}
@@ -7083,8 +7110,6 @@ ${theme.fg("dim", "Memories are extracted automatically from completed sessions.
 			this.showError("Usage: /memory search <query>");
 			return;
 		}
-		const { searchMemories } =
-			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
 		const results = searchMemories({ query, limit: 15 });
 		if (results.length === 0) {
 			this.addPlainInfoBlock(`${theme.bold("Memory Search")}
@@ -7106,8 +7131,6 @@ ${theme.fg("muted", `No memories matching "${query}".`)}`);
 			this.showError("Usage: /memory delete <id-prefix>");
 			return;
 		}
-		const { loadMemoryIndex, deleteMemory } =
-			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
 		const memories = loadMemoryIndex();
 		const match = memories.find((m) => m.id.startsWith(id));
 		if (!match) {
@@ -7119,8 +7142,6 @@ ${theme.fg("muted", `No memories matching "${query}".`)}`);
 	}
 
 	private handleMemoryClear(): void {
-		const { loadMemoryIndex, deleteMemory } =
-			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
 		const memories = loadMemoryIndex();
 		if (memories.length === 0) {
 			this.addPlainInfoBlock(`${theme.fg("muted", "No memories to clear.")}`);
@@ -7156,8 +7177,6 @@ ${theme.fg("dim", "Storage:")} ~/.neo-code/memories/`);
 			this.showError("Usage: /memory add title | content");
 			return;
 		}
-		const { addMemory, redactSecrets, enforceMaxStored } =
-			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
 
 		// Parse: title | content
 		let title: string;
@@ -7196,8 +7215,6 @@ ${theme.fg("dim", "Storage:")} ~/.neo-code/memories/`);
 	}
 
 	private handleMemoryPrune(): void {
-		const { pruneStaleMemories, enforceMaxStored } =
-			require("../../core/memories/index.js") as typeof import("../../core/memories/index.js");
 		const memSettings = this.settingsManager.getMemorySettings();
 		const stalePruned = pruneStaleMemories(memSettings.pruneAfterDays);
 		const overflowPruned = enforceMaxStored(memSettings.maxStored);

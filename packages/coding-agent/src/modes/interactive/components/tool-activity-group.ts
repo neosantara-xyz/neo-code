@@ -38,18 +38,18 @@ interface ToolActivityGroupOptions {
 const MIN_HINT_DISPLAY_MS = 450;
 const DEFAULT_TOOL_REVEAL_DELAY_MS = 120;
 const SHIMMER_FRAME_MS = 50;
-const SHIMMER_SWEEP_MS = 2000;
+const SHIMMER_SWEEP_MS = 1400;
 const SHIMMER_TRAIL_PADDING = 20;
-const SHIMMER_BAND_HALF_WIDTH = 3;
+const SHIMMER_BAND_HALF_WIDTH = 6;
 
 /**
  * Width thresholds for responsive tree layout. Mirrors the footer's compact
  * threshold so narrow Termux/SSH sessions get a coherent compact UI.
  *
- * - >= TIGHT_TREE_WIDTH (50) ... < COMPACT_TREE_WIDTH (80): drop file detail rows.
+ * - >= TIGHT_TREE_WIDTH (50) ... < COMPACT_TREE_WIDTH (72): drop file detail rows.
  * - < TIGHT_TREE_WIDTH (50): collapse to a single summary line.
  */
-export const COMPACT_TREE_WIDTH = 80;
+export const COMPACT_TREE_WIDTH = 72;
 export const TIGHT_TREE_WIDTH = 50;
 
 const graphemeSegmenter =
@@ -97,6 +97,7 @@ export class ToolActivityGroupComponent extends Container {
 	private lastRenderWidth: number | undefined;
 	private currentLayout: "full" | "compact" | "tight" = "full";
 	private readonly icons: Partial<Record<ToolActivityKind, string>> | undefined;
+	private streaming = false;
 
 	constructor(expanded = false, options: ToolActivityGroupOptions = {}) {
 		super();
@@ -291,6 +292,14 @@ export class ToolActivityGroupComponent extends Container {
 		}
 	}
 
+	setStreaming(streaming: boolean): void {
+		if (this.streaming === streaming) return;
+		this.streaming = streaming;
+		this.invalidateCache();
+		this.syncShimmerTimer();
+		this.updateDisplay();
+	}
+
 	setAnimationPaused(paused: boolean): void {
 		if (this.animationPaused === paused) return;
 		this.animationPaused = paused;
@@ -314,7 +323,7 @@ export class ToolActivityGroupComponent extends Container {
 	}
 
 	private syncShimmerTimer(): void {
-		const shouldAnimate = this.hasRunningItems() && !this.animationPaused;
+		const shouldAnimate = (this.hasRunningItems() || this.streaming) && !this.animationPaused;
 		if (shouldAnimate && !this.shimmerTimer) {
 			this.shimmerStartMs = Date.now();
 			this.shimmerTimer = setInterval(() => {
@@ -434,8 +443,16 @@ export class ToolActivityGroupComponent extends Container {
 			const segmentWidth = visibleWidth(segment);
 			const segmentCenter = column + segmentWidth / 2;
 			const distance = Math.abs(segmentCenter - center);
-			const color = distance <= SHIMMER_BAND_HALF_WIDTH ? shimmerColor : baseColor;
-			rendered += distance <= 1 ? theme.bold(theme.fg(color, segment)) : theme.fg(color, segment);
+			if (distance <= 1) {
+				rendered += theme.bold(theme.fg(shimmerColor, segment));
+			} else if (distance <= SHIMMER_BAND_HALF_WIDTH) {
+				// Gradient: inner band is shimmer color, outer fades to base
+				const intensity = 1 - distance / SHIMMER_BAND_HALF_WIDTH;
+				const color = intensity > 0.5 ? shimmerColor : baseColor;
+				rendered += intensity > 0.5 ? theme.fg(color, segment) : theme.fg(color, segment);
+			} else {
+				rendered += theme.fg(baseColor, segment);
+			}
 			column += segmentWidth;
 		}
 		return rendered;
@@ -481,6 +498,7 @@ export class ToolActivityGroupComponent extends Container {
 			layout,
 			inlineSingleTool: layout !== "tight",
 			icons: this.icons,
+			forceRunning: this.streaming,
 		};
 
 		const probe = buildRender(visibleItems, formatOptions);
@@ -568,7 +586,7 @@ export class ToolActivityGroupComponent extends Container {
 
 	private renderHeaderLine(line: string, state: ToolActivityRowState, shouldShimmer: boolean): string {
 		if (state === "error") return theme.fg("error", theme.bold(line));
-		if (state === "running" && shouldShimmer) return this.shimmerLine(line, "muted", "accent");
+		if (state === "running" && shouldShimmer) return this.shimmerLine(line, "dim", "accent");
 		return theme.fg("accent", theme.bold(line));
 	}
 
@@ -582,7 +600,12 @@ export class ToolActivityGroupComponent extends Container {
 			if (row.state === "running" && shouldShimmer) return this.shimmerLine(line, "muted", "accent");
 			return theme.fg("accent", theme.bold(line));
 		}
+		// Running branches shimmer to show active work
 		if (animated && shouldShimmer) return this.shimmerLine(line, base, "accent");
+		// Completed branches use accent color for tree connectors to show progress
+		if (row.state === "done" && (row.kind === "branch" || row.kind === "detail")) {
+			return theme.fg("dim", line);
+		}
 		return theme.fg(base, line);
 	}
 

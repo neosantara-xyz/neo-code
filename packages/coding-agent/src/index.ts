@@ -239,6 +239,7 @@ export {
 	loadSkillsFromDir,
 	type Skill,
 	type SkillFrontmatter,
+	type SkillPolicy,
 } from "./core/skills.js";
 export { createSyntheticSourceInfo } from "./core/source-info.js";
 // Tools

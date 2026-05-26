@@ -10,6 +10,7 @@ PACKED_TARBALLS=(
   neosantara-agent-core-*.tgz
   neosantara-code-*.tgz
   neosantara-tui-*.tgz
+  neosantara-web-*.tgz
 )
 
 cleanup() {

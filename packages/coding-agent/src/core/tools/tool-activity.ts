@@ -41,6 +41,12 @@ export interface ToolActivityGroupFormatOptions {
 	 * same line instead of two rows. Defaults to false to keep stable layout.
 	 */
 	inlineSingleTool?: boolean;
+	/**
+	 * When true, the group stays in "running" state even if all tool items
+	 * have completed. Use this when the model is still streaming/thinking
+	 * after tools finish, so the header shows "Exploring" instead of "Explored".
+	 */
+	forceRunning?: boolean;
 }
 
 type TextBlock = {
@@ -759,11 +765,20 @@ function compactTargetForActivity(item: ToolActivityGroupItem): string {
 	const activity = summarizeToolCall(item.toolName, item.args);
 	const compact = activity.compact;
 	switch (activity.kind) {
-		case "list":
+		case "list": {
+			const rawPath = typeof item.args?.path === "string" ? item.args.path : undefined;
+			if (rawPath) {
+				const label = displayPath(rawPath, ".");
+				return compactText(label === "." ? "." : label.includes("/") ? basename(label) : label, 28) || ".";
+			}
 			return compactText(compact.replace(/^list\s+/i, ""), 28) || ".";
+		}
 		case "read": {
 			const rawPath = typeof item.args?.file_path === "string" ? item.args.file_path : item.args?.path;
-			const label = typeof rawPath === "string" ? displayPath(rawPath, "file") : compact.replace(/^read\s+/i, "");
+			if (typeof rawPath !== "string") return compactText(compact.replace(/^read\s+/i, ""), 28) || "file";
+			const label = displayPath(rawPath, "file");
+			// Avoid showing bare "." — use the last path segment or the original basename
+			if (label === "." || label === "./") return basename(rawPath) || "file";
 			return compactText(label.includes("/") ? basename(label) : label, 28) || "file";
 		}
 		case "search":
@@ -1031,7 +1046,7 @@ function shouldShowTargetDetails(
 	if (!usePhaseLayout || items.length === 0) return false;
 	// Only show file targets after all items in this kind are complete
 	if (items.some((item) => item.isPartial || !item.result)) return false;
-	return kind === "read" || kind === "write" || kind === "edit";
+	return kind === "read" || kind === "write" || kind === "edit" || kind === "list";
 }
 
 function targetDetailSuffix(item: ToolActivityGroupItem): string | undefined {
@@ -1040,6 +1055,10 @@ function targetDetailSuffix(item: ToolActivityGroupItem): string | undefined {
 	const details = knownDetails(item.result);
 	const output = getTextOutput(item.result).trim();
 	switch (activity.kind) {
+		case "list": {
+			const entries = details?.entryCount ?? countListedEntriesFromOutput(output).total;
+			return entries > 0 ? `(${plural(entries, "entry", "entries")})` : undefined;
+		}
 		case "read": {
 			const lines = details?.lineCount ?? countOutputDisplayLines(output);
 			return lines > 0 ? `(${plural(lines, "line")})` : undefined;
@@ -1219,7 +1238,7 @@ function buildSignature(items: ToolActivityGroupItem[], options: ToolActivityGro
 				.sort()
 				.join(",")
 		: "";
-	return `${parts.join(";")}#${counts}#${options.layout ?? "full"}#${options.inlineSingleTool ? "1" : "0"}`;
+	return `${parts.join(";")}#${counts}#${options.layout ?? "full"}#${options.inlineSingleTool ? "1" : "0"}#${options.forceRunning ? "r" : ""}`;
 }
 
 function appendStructuredPhaseRows(
@@ -1384,7 +1403,7 @@ export function buildToolActivityGroupRender(
 		};
 	}
 
-	const completed = !hasIncompleteItems(visibleItems);
+	const completed = !hasIncompleteItems(visibleItems) && !options.forceRunning;
 	const hasError = visibleItems.some((item) => item.isError === true);
 	const allErrored = visibleItems.every((item) => item.isError === true);
 	const { glyph, state } = deriveGroupState(!completed, hasError, allErrored);

@@ -195,6 +195,10 @@ function graphemeWidth(segment: string): number {
 	return width;
 }
 
+function terminalSegmentWidth(segment: string): number {
+	return segment === "\t" ? 3 : graphemeWidth(segment);
+}
+
 /**
  * Calculate the visible width of a string in terminal columns.
  */
@@ -1038,7 +1042,7 @@ export function sliceWithWidth(
 		while (textEnd < line.length && !extractAnsiCode(line, textEnd)) textEnd++;
 
 		for (const { segment } of segmenter.segment(line.slice(i, textEnd))) {
-			const w = graphemeWidth(segment);
+			const w = terminalSegmentWidth(segment);
 			const inRange = currentCol >= startCol && currentCol < endCol;
 			const fits = !strict || currentCol + w <= endCol;
 			if (inRange && fits) {
@@ -1106,7 +1110,7 @@ export function extractSegments(
 		while (textEnd < line.length && !extractAnsiCode(line, textEnd)) textEnd++;
 
 		for (const { segment } of segmenter.segment(line.slice(i, textEnd))) {
-			const w = graphemeWidth(segment);
+			const w = terminalSegmentWidth(segment);
 
 			if (currentCol < beforeEnd) {
 				if (pendingAnsiBefore) {

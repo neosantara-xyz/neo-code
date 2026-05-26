@@ -9,7 +9,7 @@ function getEnv(): NodeJS.ProcessEnv {
 	}
 	try {
 		const data = readFileSync("/proc/self/environ", "utf-8");
-		const env: NodeJS.ProcessEnv = {};
+		const env: NodeJS.ProcessEnv = { NODE_ENV: process.env.NODE_ENV ?? "" };
 		for (const entry of data.split("\0")) {
 			const idx = entry.indexOf("=");
 			if (idx > 0) {

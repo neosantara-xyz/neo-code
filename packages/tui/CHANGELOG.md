@@ -7,6 +7,10 @@
 - Keep this package changelog in sync with `releases/NOTES.md` before each release.
 - Smoothed loader glimmer defaults with Claude-style response/request timing and a wider shimmer band.
 
+### Fixed
+
+- Fixed tabbed overlay slicing so transcript and raw-output panes cannot exceed terminal width.
+
 ## [0.76.6] - 2026-05-21
 
 ### Changed

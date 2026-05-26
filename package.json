@@ -7,7 +7,7 @@
 	],
 	"scripts": {
 		"clean": "npm run clean --workspaces && npm run clean:termux-tarballs",
-		"clean:termux-tarballs": "shx rm -f neosantara-ai-*.tgz neosantara-agent-core-*.tgz neosantara-code-*.tgz neosantara-tui-*.tgz",
+		"clean:termux-tarballs": "shx rm -f neosantara-ai-*.tgz neosantara-agent-core-*.tgz neosantara-code-*.tgz neosantara-tui-*.tgz neosantara-web-*.tgz",
 		"build": "npm run build -w @neosantara/tui && npm run build -w @neosantara/ai && npm run build -w @neosantara/agent-core && npm run build -w @neosantara/code",
 		"dev": "concurrently --names \"ai,agent,coding-agent,tui\" --prefix-colors \"cyan,yellow,red,magenta\" \"npm run dev -w @neosantara/ai\" \"npm run dev -w @neosantara/agent-core\" \"npm run dev -w @neosantara/code\" \"npm run dev -w @neosantara/tui\"",
 		"dev:tsc": "npm run dev -w @neosantara/ai",

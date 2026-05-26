@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import { normalizeTerminalOutput, truncateToWidth, visibleWidth } from "../src/utils.js";
+import { normalizeTerminalOutput, sliceByColumn, sliceWithWidth, truncateToWidth, visibleWidth } from "../src/utils.js";
 
 describe("truncateToWidth", () => {
 	it("keeps output within width for very large unicode input", () => {
@@ -72,5 +72,18 @@ describe("visibleWidth", () => {
 		assert.strictEqual(normalizeTerminalOutput("ຳ"), "ໍາ");
 		assert.strictEqual(visibleWidth(normalizeTerminalOutput("ำabc")), visibleWidth("ำabc"));
 		assert.strictEqual(visibleWidth(normalizeTerminalOutput("ຳabc")), visibleWidth("ຳabc"));
+	});
+});
+
+describe("sliceByColumn", () => {
+	it("keeps tabbed overlay slices within the requested visible width", () => {
+		const line = '  │ \t\t\t"typebox": ['.padEnd(90, " ");
+
+		const sliced = sliceByColumn(line, 0, 77, true);
+		const slicedWithWidth = sliceWithWidth(line, 0, 77, true);
+
+		assert.ok(visibleWidth(sliced) <= 77);
+		assert.ok(visibleWidth(slicedWithWidth.text) <= 77);
+		assert.strictEqual(slicedWithWidth.width, visibleWidth(slicedWithWidth.text));
 	});
 });

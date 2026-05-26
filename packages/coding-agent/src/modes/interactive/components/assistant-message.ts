@@ -13,21 +13,19 @@ export class AssistantMessageComponent extends Container {
 	private contentContainer: Container;
 	private hideThinkingBlock: boolean;
 	private markdownTheme: MarkdownTheme;
-	private hiddenThinkingLabel: string;
 	private lastMessage?: AssistantMessage;
 	private hasToolCalls = false;
 
 	constructor(
 		message?: AssistantMessage,
-		hideThinkingBlock = false,
+		hideThinkingBlock = true,
 		markdownTheme: MarkdownTheme = getMarkdownTheme(),
-		hiddenThinkingLabel = "Thinking...",
+		_hiddenThinkingLabel = "Thinking...",
 	) {
 		super();
 
 		this.hideThinkingBlock = hideThinkingBlock;
 		this.markdownTheme = markdownTheme;
-		this.hiddenThinkingLabel = hiddenThinkingLabel;
 
 		// Container for text/thinking content
 		this.contentContainer = new Container();
@@ -52,8 +50,7 @@ export class AssistantMessageComponent extends Container {
 		}
 	}
 
-	setHiddenThinkingLabel(label: string): void {
-		this.hiddenThinkingLabel = label;
+	setHiddenThinkingLabel(_label: string): void {
 		if (this.lastMessage) {
 			this.updateContent(this.lastMessage);
 		}
@@ -99,13 +96,7 @@ export class AssistantMessageComponent extends Container {
 					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
 
 				if (this.hideThinkingBlock) {
-					// Show static thinking label when hidden
-					this.contentContainer.addChild(
-						new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), 1, 0),
-					);
-					if (hasVisibleContentAfter) {
-						this.contentContainer.addChild(new Spacer(1));
-					}
+					// Suppress thinking blocks entirely — activity shown in loading indicator only.
 				} else {
 					// Thinking traces in thinkingText color, italic
 					this.contentContainer.addChild(

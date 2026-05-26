@@ -431,3 +431,47 @@
 - mode: patch
 - notes: feat(lsp): real Language Server Protocol integration with /lsp command, lazy-spawn manager, and graceful fallback when no server is installed
 
+## v0.76.63 (2026-05-26)
+- mode: patch
+- notes: fix(tui): keep tabbed transcript overlays within terminal width
+
+## v0.76.64 (2026-05-26)
+- mode: patch
+- notes: fix(coding-agent): hide raw reasoning by default and keep inspection file trees visible
+
+## v0.76.65 (2026-05-26)
+- mode: patch
+- notes: fix(memory): replace require() with top-level ESM import to fix ReferenceError in /memory commands
+
+## v0.76.66 (2026-05-26)
+- mode: patch
+- notes: feat(skills): add token budget, priority ordering, policy support, and progressive disclosure instructions
+
+## v0.76.67 (2026-05-26)
+- mode: patch
+- notes: fix(tui): improve tool activity tree shimmer — wider band, faster sweep, better running/done contrast
+
+## v0.76.69 (2026-05-26)
+- mode: patch
+- notes: fix(tui): keep tool activity group in running state until agent turn ends, not just until tools finish
+
+## v0.76.70 (2026-05-26)
+- mode: patch
+- notes: fix(tui): show thinking status in loading indicator instead of conversation area during streaming
+
+## v0.76.71 (2026-05-26)
+- mode: patch
+- notes: fix(tui): show directory targets in tree detail rows and fix read paths resolving to dot
+
+## v0.76.72 (2026-05-26)
+- mode: patch
+- notes: fix(tui): keep shimmer animation running while model is still streaming after tools complete
+
+## v0.76.74 (2026-05-26)
+- mode: patch
+- notes: fix(tui): match Claude Code thinking UI — show thinking in spinner during streaming, collapsed label after completion
+
+## v0.76.75 (2026-05-26)
+- mode: patch
+- notes: fix(tui): fully suppress thinking from conversation when hidden — only show in loading indicator
+

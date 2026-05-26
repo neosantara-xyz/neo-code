@@ -1,6 +1,6 @@
 {
 	"name": "@neosantara/code",
-	"version": "0.76.62",
+	"version": "0.76.75",
 	"description": "Neo Code coding agent CLI",
 	"type": "module",
 	"bin": {
@@ -35,9 +35,9 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@neosantara/agent-core": "^0.76.62",
-		"@neosantara/ai": "^0.76.62",
-		"@neosantara/tui": "^0.76.62",
+		"@neosantara/agent-core": "^0.76.75",
+		"@neosantara/ai": "^0.76.75",
+		"@neosantara/tui": "^0.76.75",
 		"@silvia-odwyer/photon-node": "^0.3.4",
 		"chalk": "^5.5.0",
 		"diff": "^8.0.2",

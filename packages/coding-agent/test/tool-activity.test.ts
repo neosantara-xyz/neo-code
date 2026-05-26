@@ -46,6 +46,10 @@ function renderRaw(component: ToolActivityGroupComponent): string {
 	return component.render(100).join("\n");
 }
 
+function renderRawAt(component: ToolActivityGroupComponent, width: number): string {
+	return component.render(width).join("\n");
+}
+
 describe("tool activity summaries", () => {
 	beforeAll(() => {
 		initTheme("dark");
@@ -282,6 +286,24 @@ describe("tool activity summaries", () => {
 		group.dispose();
 	});
 
+	it("keeps completed read targets visible at standard 77-column terminal width", () => {
+		const group = new ToolActivityGroupComponent();
+
+		group.addTool("read", "read-1", { path: "src/one.ts" }, createStubToolExecutionComponent());
+		group.addTool("read", "read-2", { path: "src/two.ts" }, createStubToolExecutionComponent());
+		group.updateToolResult("read-1", { content: [{ type: "text", text: "line one" }], isError: false });
+		group.updateToolResult("read-2", { content: [{ type: "text", text: "line two" }], isError: false });
+
+		const rendered = stripAnsi(renderRawAt(group, 77));
+
+		expect(rendered).toContain("● Explored");
+		expect(rendered).toContain("read 2 files");
+		expect(rendered).toContain("one.ts");
+		expect(rendered).toContain("two.ts");
+
+		group.dispose();
+	});
+
 	it("keeps tool activity counts monotonic while a group is active", () => {
 		const group = new ToolActivityGroupComponent();
 
@@ -487,8 +509,9 @@ describe("tool activity grouping", () => {
 		]);
 
 		expect(text).toContain("● Explored");
-		expect(text).toContain("└─ listed 2 directories · docs");
-		expect(text).not.toContain("+1 more");
+		// Detail rows show unique targets with entry counts
+		expect(text).toContain("listed 1 directory");
+		expect(text).toContain("docs");
 		expect(text.match(/docs/g)?.length).toBe(1);
 	});
 
@@ -771,7 +794,7 @@ describe("tool activity tree v2 — structured rows and 3-state header", () => {
 		expect(render.rows[0]?.text).toContain("reading 1");
 	});
 
-	it("drops file detail rows at compact layout (50-79 cols)", () => {
+	it("drops file detail rows at explicit compact layout", () => {
 		const renderFull = buildToolActivityGroupRender(
 			[
 				{

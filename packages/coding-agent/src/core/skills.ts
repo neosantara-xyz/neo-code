@@ -80,6 +80,10 @@ export interface SkillFrontmatter {
 	[key: string]: unknown;
 }
 
+export interface SkillPolicy {
+	allowImplicitInvocation?: boolean;
+}
+
 export interface SkillInterfaceMetadata {
 	displayName?: string;
 	shortDescription?: string;
@@ -91,6 +95,7 @@ export interface Skill {
 	description: string;
 	shortDescription?: string;
 	interface?: SkillInterfaceMetadata;
+	policy?: SkillPolicy;
 	filePath: string;
 	baseDir: string;
 	sourceInfo: SourceInfo;
@@ -186,55 +191,69 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 	return value as Record<string, unknown>;
 }
 
-function loadSkillInterfaceMetadata(
+function loadSkillAgentsMetadata(
 	skillDir: string,
 	diagnostics: ResourceDiagnostic[],
-): SkillInterfaceMetadata | undefined {
+): { interface?: SkillInterfaceMetadata; policy?: SkillPolicy } {
 	const metadataPath = join(skillDir, METADATA_DIR_NAME, METADATA_FILE_NAME);
 	if (!existsSync(metadataPath)) {
-		return undefined;
+		return {};
 	}
 
 	try {
 		const raw = readFileSync(metadataPath, "utf-8");
 		const parsed = asRecord(parse(raw));
+
+		// Parse interface
+		let interfaceResult: SkillInterfaceMetadata | undefined;
 		const interfaceConfig = asRecord(parsed?.interface);
-		if (!interfaceConfig) {
-			return undefined;
+		if (interfaceConfig) {
+			const result: SkillInterfaceMetadata = {};
+			const displayName = readStringField(
+				interfaceConfig.display_name,
+				"interface.display_name",
+				MAX_NAME_LENGTH,
+				metadataPath,
+				diagnostics,
+			);
+			const shortDescription = readStringField(
+				interfaceConfig.short_description,
+				"interface.short_description",
+				MAX_DESCRIPTION_LENGTH,
+				metadataPath,
+				diagnostics,
+			);
+			const defaultPrompt = readStringField(
+				interfaceConfig.default_prompt,
+				"interface.default_prompt",
+				MAX_DESCRIPTION_LENGTH,
+				metadataPath,
+				diagnostics,
+			);
+
+			if (displayName) result.displayName = displayName;
+			if (shortDescription) result.shortDescription = shortDescription;
+			if (defaultPrompt) result.defaultPrompt = defaultPrompt;
+
+			if (Object.keys(result).length > 0) {
+				interfaceResult = result;
+			}
 		}
 
-		const result: SkillInterfaceMetadata = {};
-		const displayName = readStringField(
-			interfaceConfig.display_name,
-			"interface.display_name",
-			MAX_NAME_LENGTH,
-			metadataPath,
-			diagnostics,
-		);
-		const shortDescription = readStringField(
-			interfaceConfig.short_description,
-			"interface.short_description",
-			MAX_DESCRIPTION_LENGTH,
-			metadataPath,
-			diagnostics,
-		);
-		const defaultPrompt = readStringField(
-			interfaceConfig.default_prompt,
-			"interface.default_prompt",
-			MAX_DESCRIPTION_LENGTH,
-			metadataPath,
-			diagnostics,
-		);
+		// Parse policy
+		let policyResult: SkillPolicy | undefined;
+		const policyConfig = asRecord(parsed?.policy);
+		if (policyConfig) {
+			if (typeof policyConfig.allow_implicit_invocation === "boolean") {
+				policyResult = { allowImplicitInvocation: policyConfig.allow_implicit_invocation };
+			}
+		}
 
-		if (displayName) result.displayName = displayName;
-		if (shortDescription) result.shortDescription = shortDescription;
-		if (defaultPrompt) result.defaultPrompt = defaultPrompt;
-
-		return Object.keys(result).length > 0 ? result : undefined;
+		return { interface: interfaceResult, policy: policyResult };
 	} catch (error) {
 		const message = error instanceof Error ? error.message : `failed to parse ${METADATA_FILE_NAME}`;
 		diagnostics.push({ type: "warning", message, path: metadataPath });
-		return undefined;
+		return {};
 	}
 }
 
@@ -397,7 +416,7 @@ function loadSkillFromFile(
 		const { frontmatter } = parseFrontmatter<SkillFrontmatter>(rawContent);
 		const skillDir = dirname(filePath);
 		const parentDirName = basename(skillDir);
-		const interfaceMetadata = loadSkillInterfaceMetadata(skillDir, diagnostics);
+		const agentsMetadata = loadSkillAgentsMetadata(skillDir, diagnostics);
 
 		// Validate description
 		const descErrors = validateDescription(frontmatter.description);
@@ -427,7 +446,8 @@ function loadSkillFromFile(
 					typeof frontmatter.metadata?.["short-description"] === "string"
 						? sanitizeSingleLine(frontmatter.metadata["short-description"])
 						: undefined,
-				interface: interfaceMetadata,
+				interface: agentsMetadata.interface,
+				policy: agentsMetadata.policy,
 				filePath,
 				baseDir: skillDir,
 				sourceInfo: createSkillSourceInfo(filePath, skillDir, source),
@@ -500,38 +520,85 @@ export function getSkillDescription(skill: Skill): string {
 	return skill.interface?.shortDescription ?? skill.shortDescription ?? skill.description;
 }
 
+/** Default character budget for skill metadata in system prompt. */
+const DEFAULT_SKILL_METADATA_BUDGET = 8000;
+
+/** Approximate token count (chars / 4). */
+function approxTokens(text: string): number {
+	return Math.ceil(text.length / 4);
+}
+
+/** Scope priority: project skills first, then user, then path. */
+function skillScopePriority(skill: Skill): number {
+	const scope = skill.sourceInfo.scope;
+	if (scope === "project") return 0;
+	if (scope === "user") return 1;
+	return 2;
+}
+
 /**
  * Format skills for inclusion in a system prompt.
- * Uses XML format per Agent Skills standard.
- * See: https://agentskills.io/integrate-skills
+ * Applies token budget, priority ordering, and progressive disclosure instructions.
  *
- * Skills with disableModelInvocation=true are excluded from the prompt
- * (they can only be invoked explicitly via /skill:name commands).
+ * Skills with disableModelInvocation=true or policy.allowImplicitInvocation=false
+ * are excluded (they can only be invoked explicitly via /skill:name or $skill-name).
  */
-export function formatSkillsForPrompt(skills: Skill[]): string {
-	const visibleSkills = skills.filter((s) => !s.disableModelInvocation);
+export function formatSkillsForPrompt(skills: Skill[], contextWindowTokens?: number): string {
+	const visibleSkills = skills.filter((s) => !s.disableModelInvocation && s.policy?.allowImplicitInvocation !== false);
 
 	if (visibleSkills.length === 0) {
 		return "";
 	}
 
-	const lines = [
-		"\n\nThe following skills provide specialized instructions for specific tasks.",
-		"Use the read tool to load a skill's file when the task matches its description.",
-		"When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
-		"",
-		"<available_skills>",
-	];
+	// Sort by scope priority then name
+	const sorted = [...visibleSkills].sort(
+		(a, b) => skillScopePriority(a) - skillScopePriority(b) || a.name.localeCompare(b.name),
+	);
 
-	for (const skill of visibleSkills) {
-		lines.push("  <skill>");
-		lines.push(`    <name>${escapeXml(skill.name)}</name>`);
-		lines.push(`    <description>${escapeXml(skill.description)}</description>`);
-		lines.push(`    <location>${escapeXml(skill.filePath)}</location>`);
-		lines.push("  </skill>");
+	// Budget: 2% of context window tokens, or default char budget
+	const budget =
+		contextWindowTokens && contextWindowTokens > 0
+			? { type: "tokens" as const, limit: Math.max(1, Math.floor(contextWindowTokens * 0.02)) }
+			: { type: "chars" as const, limit: DEFAULT_SKILL_METADATA_BUDGET };
+
+	const cost = (text: string) => (budget.type === "tokens" ? approxTokens(text) : text.length);
+
+	// Render skill lines within budget
+	const skillLines: string[] = [];
+	let used = 0;
+	for (const skill of sorted) {
+		const line = `- ${escapeXml(skill.name)}: ${escapeXml(skill.description)} (file: ${escapeXml(skill.filePath)})`;
+		const lineCost = cost(`${line}\n`);
+		if (used + lineCost <= budget.limit) {
+			skillLines.push(line);
+			used += lineCost;
+		}
 	}
 
-	lines.push("</available_skills>");
+	if (skillLines.length === 0) {
+		return "";
+	}
+
+	const lines = [
+		"\n\n## Skills",
+		"A skill is a set of local instructions stored in a SKILL.md file. Each entry below includes a name, description, and file path.",
+		"",
+		"### Available skills",
+		...skillLines,
+		"",
+		"### How to use skills",
+		"- If the user names a skill (with $SkillName or /skill:name) OR the task clearly matches a skill's description, use that skill.",
+		"- To use a skill: open its SKILL.md with the read tool. Read only enough to follow the workflow.",
+		"- When SKILL.md references relative paths, resolve them relative to the skill directory (parent of SKILL.md).",
+		"- If SKILL.md points to references/, load only the specific files needed, not everything.",
+		"- If scripts/ exist, prefer running them over rewriting the same code.",
+		"- If a skill cannot be applied (missing files, unclear instructions), state the issue and continue with the best fallback.",
+		"- Keep context small: summarize long sections instead of pasting them.",
+	];
+
+	if (sorted.length > skillLines.length) {
+		lines.push(`\n(${sorted.length - skillLines.length} additional skill(s) omitted due to context budget)`);
+	}
 
 	return lines.join("\n");
 }
