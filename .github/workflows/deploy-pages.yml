@@ -3,14 +3,13 @@ name: Deploy Pages
 on:
   push:
     branches: [main]
-    paths:
-      - 'packages/web/**'
-      - 'docs/**'
-      - 'install.sh'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   deploy:
