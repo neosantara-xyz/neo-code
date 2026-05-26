@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-const INSTALL_COMMAND = "curl -fsSL https://neo.santara.id/install | bash";
+const INSTALL_COMMAND = "curl -fsSL https://code.neosantara.xyz/install.sh | sh";
 
 export default function Install() {
   const [copied, setCopied] = useState(false);

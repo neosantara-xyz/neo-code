@@ -18,14 +18,14 @@ export default function Footer() {
           }}
         >
           <a
-            href="https://github.com/neosantara/neo-code"
+            href="https://github.com/ErRickow/neo-code"
             target="_blank"
             rel="noopener noreferrer"
           >
             GitHub
           </a>
           <a
-            href="https://neo.santara.id/docs"
+            href="https://code.neosantara.xyz/docs"
             target="_blank"
             rel="noopener noreferrer"
           >
