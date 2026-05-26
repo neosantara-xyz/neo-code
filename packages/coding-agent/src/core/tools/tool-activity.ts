@@ -779,7 +779,7 @@ function compactTargetForActivity(item: ToolActivityGroupItem): string {
 	}
 }
 
-function uniqueCompactTargets(items: ToolActivityGroupItem[], maxItems = 3): string {
+function uniqueCompactTargets(items: ToolActivityGroupItem[], maxItems = Infinity): string {
 	const uniqueLabels: string[] = [];
 	const seen = new Set<string>();
 	for (const item of items) {
@@ -1059,7 +1059,7 @@ function targetDetailSuffix(item: ToolActivityGroupItem): string | undefined {
 	}
 }
 
-function targetDetailLabels(items: ToolActivityGroupItem[], maxItems = 3): string[] {
+function targetDetailLabels(items: ToolActivityGroupItem[], maxItems = Infinity): string[] {
 	const labels: string[] = [];
 	const seen = new Set<string>();
 	for (const item of items) {
