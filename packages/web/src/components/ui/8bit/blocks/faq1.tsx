@@ -81,7 +81,7 @@ export default function FAQ1({
               <AccordionTrigger className="retro text-left text-xs">
                 {item.question}
               </AccordionTrigger>
-              <AccordionContent className="retro text-[9px] leading-relaxed text-muted-foreground">
+              <AccordionContent className="retro text-[9px] leading-relaxed text-muted-foreground break-words [overflow-wrap:anywhere]">
                 {item.answer}
               </AccordionContent>
             </AccordionItem>

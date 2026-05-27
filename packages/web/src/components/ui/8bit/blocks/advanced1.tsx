@@ -78,8 +78,9 @@ export default function Advanced1({
             <div className="space-y-0.5">
               {lines.map((line, idx) => (
                 <p
-                  className={cn("retro text-[10px] leading-relaxed", lineClass(line.type))}
+                  className={cn("retro text-[10px] leading-relaxed animate-fade-in", lineClass(line.type))}
                   key={`${line.text}-${idx}`}
+                  style={{ animationDelay: `${idx * 150}ms`, animationFillMode: "both" }}
                 >
                   {linePrefix(line.type)}
                   {line.text}
