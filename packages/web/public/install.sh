@@ -83,9 +83,9 @@ bundle_install_url() {
   release_ref="$1"
   cache_buster="$(date +%s 2>/dev/null || printf '%s' "$release_ref")"
   if [ -n "$DOWNLOAD_BASE_URL" ]; then
-    printf '%s/releases/%s/neo-termux-npm-bundle.tar.gz?neo_code_cache=%s' "$DOWNLOAD_BASE_URL" "$release_ref" "$cache_buster"
+    printf '%s/releases/%s/neo-termux-bundle.tar.gz?neo_code_cache=%s' "$DOWNLOAD_BASE_URL" "$release_ref" "$cache_buster"
   else
-    printf 'https://github.com/%s/releases/download/%s/neo-termux-npm-bundle.tar.gz?neo_code_cache=%s' "$REPO" "$release_ref" "$cache_buster"
+    printf 'https://github.com/%s/releases/download/%s/neo-termux-bundle.tar.gz?neo_code_cache=%s' "$REPO" "$release_ref" "$cache_buster"
   fi
 }
 
