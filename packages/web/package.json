@@ -1,6 +1,6 @@
 {
   "name": "@neosantara/web",
-  "version": "0.76.81",
+  "version": "0.76.85",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -12,6 +12,7 @@
     "@radix-ui/react-separator": "^1.1.8",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "highlight.js": "^10.7.3",
     "lucide-react": "^1.16.0",
     "next": "^16.2.6",
     "radix-ui": "^1.4.3",

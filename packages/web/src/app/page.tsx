@@ -12,6 +12,39 @@ import Feature2 from "@/components/ui/8bit/blocks/feature2";
 import { Kbd } from "@/components/ui/8bit/kbd";
 import { loadLatestReleaseEntries } from "./releases";
 
+const FAQ_ITEMS = [
+  {
+    question: "How do I install Neo Code?",
+    answer:
+      "Run `curl -fsSL https://code.neosantara.xyz/install.sh | sh`, then start it with `neo`. The installer is self-hosted for this Neosantara build and supports macOS, Linux, and Termux.",
+  },
+  {
+    question: "Do I need a Neosantara account?",
+    answer:
+      "Use `neo login` for device authorization, or set `NEOSANTARA_API_KEY` when you want API-key based auth. Both paths talk to the same Neosantara OpenAI-compatible API.",
+  },
+  {
+    question: "How does pricing work?",
+    answer:
+      "Neo Code uses your Neosantara balance. Usage is billed per token in IDR, and cumulative top-ups unlock higher RPM, input-token, and output-token limits on the Pricing page.",
+  },
+  {
+    question: "Does it work on Termux/Android?",
+    answer:
+      "Yes. Termux is a first-class target with installer paths, touch keys, notifications, clipboard image paste, and mobile-friendly TUI defaults built in.",
+  },
+  {
+    question: "Can I use a custom endpoint?",
+    answer:
+      "Yes, through extensions or `~/.neo-code/agent/models.json` for OpenAI-compatible endpoints. The built-in runtime stays Neosantara-first and does not ship vendor SDK providers.",
+  },
+  {
+    question: "Where are docs, source, and updates?",
+    answer:
+      "Docs live on this site, source lives on GitHub, and updates come through the self-hosted installer. `neo update` checks the latest published Neo Code version explicitly.",
+  },
+];
+
 function readVersion(): string {
   try {
     const pkgPath = path.resolve(process.cwd(), "../coding-agent/package.json");
@@ -36,8 +69,11 @@ export default function Home() {
           description="Open a project, run neo, ship code. Keyboard-driven, OpenAI-compatible, billed in IDR, runs on macOS, Linux, and Termux."
           badges={[
             { label: `v${version}`, variant: "secondary" },
-            { label: "OPENAI", variant: "outline" },
-            { label: "TERMUX", variant: "outline" },
+            {
+              href: "https://github.com/neosantara-xyz/neo-code",
+              label: "OPEN SOURCE",
+              variant: "outline",
+            },
           ]}
           actions={[
             { href: "#install", label: "INSTALL", variant: "default" },
@@ -192,32 +228,7 @@ export default function Home() {
         <FAQ1
           title="FAQ"
           description="Common questions about Neo Code"
-          items={[
-            {
-              question: "What is Neo Code?",
-              answer: "A keyboard-driven coding agent that runs in your terminal. It edits files, runs tools, navigates code via LSP, and keeps long sessions usable through memory, skills, and auto-compaction.",
-            },
-            {
-              question: "What provider does it talk to?",
-              answer: "Neosantara, through OpenAI-compatible openai-responses and openai-completions transports. Credentials come from NEOSANTARA_API_KEY or `neo login` device authorization.",
-            },
-            {
-              question: "What languages does code intelligence cover?",
-              answer: "Out of the box: TypeScript/JavaScript, Python, Go, Rust, Java, Ruby, and C/C++. Each language uses its standard LSP server. Install the server you need and run `/lsp init` inside the TUI.",
-            },
-            {
-              question: "Does it work on Termux/Android?",
-              answer: "Yes. Termux is a first-class target — installer paths, touch keys, notifications, clipboard image paste, and mobile-friendly TUI defaults are built in.",
-            },
-            {
-              question: "Can I add a custom provider?",
-              answer: "Yes, through extensions or `~/.neo-code/agent/models.json`. The Neosantara-first build does not ship vendor SDKs, but custom OpenAI-compatible endpoints are supported.",
-            },
-            {
-              question: "Where is pricing and source?",
-              answer: "Pricing and tiers live on the Pricing page. Source is on GitHub under MIT — agent core, CLI, AI transport, TUI, and this site.",
-            },
-          ]}
+          items={FAQ_ITEMS}
         />
 
         {/* CTA */}

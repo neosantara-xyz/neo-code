@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/8bit/button";
 import "@/components/ui/8bit/styles/retro.css";
 
 interface HeroBadge {
+  href?: string;
   label: string;
   variant?: "default" | "destructive" | "outline" | "secondary";
 }
@@ -62,7 +63,13 @@ export default function Hero1({
           <div className="mb-6 flex flex-wrap justify-center gap-4">
             {badges.map((badge) => (
               <Badge key={badge.label} variant={badge.variant}>
-                {badge.label}
+                {badge.href ? (
+                  <Link href={badge.href} className="hover:underline">
+                    {badge.label}
+                  </Link>
+                ) : (
+                  badge.label
+                )}
               </Badge>
             ))}
           </div>

@@ -5,7 +5,7 @@ import type { TableOfContentsItem } from "./toc";
 
 function TocList({ items, activeId }: { items: TableOfContentsItem[]; activeId?: string }) {
   return (
-    <ol className="space-y-2">
+    <ol className="min-w-0 space-y-2">
       {items.map((item) => {
         const active = activeId === item.id;
         return (
@@ -13,7 +13,7 @@ function TocList({ items, activeId }: { items: TableOfContentsItem[]; activeId?:
             <a
               href={`#${item.id}`}
               className={[
-                "block border-l-2 py-0.5 pl-2 text-xs leading-relaxed transition-colors",
+                "block min-w-0 break-words border-l-2 py-0.5 pl-2 text-xs leading-relaxed transition-colors",
                 active
                   ? "border-primary text-foreground"
                   : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
@@ -65,7 +65,7 @@ export function DocsTableOfContents({
 
   if (variant === "mobile") {
     return (
-      <details className="border-2 border-border bg-card p-4" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <details className="min-w-0 border-2 border-border bg-card p-4" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
         <summary className="retro cursor-pointer text-[10px] font-bold text-foreground">ON THIS PAGE</summary>
         <div className="mt-3 border-t border-border pt-3">
           <TocList items={items} activeId={activeId} />
@@ -75,7 +75,7 @@ export function DocsTableOfContents({
   }
 
   return (
-    <nav aria-label="Table of contents" className="border-2 border-border bg-card p-4">
+    <nav aria-label="Table of contents" className="min-w-0 border-2 border-border bg-card p-4">
       <h2 className="retro mb-3 text-[10px] font-bold text-foreground">ON THIS PAGE</h2>
       <TocList items={items} activeId={activeId} />
     </nav>

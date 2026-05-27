@@ -1,5 +1,3 @@
-"use client";
-
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -8,23 +6,25 @@ import {
   TableCell,
   TableHead,
   TableHeader,
-  TableRow,
+	TableRow,
 } from "@/components/ui/8bit/table";
+import { cn } from "@/lib/utils";
+import { highlightCodeBlock } from "./syntax-highlight";
 import { createHeadingSlugger, reactNodeToText } from "./toc";
 
 export function DocsContent({ content }: { content: string }) {
   const headingId = createHeadingSlugger();
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto min-w-0 max-w-3xl overflow-hidden break-words">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          h1: ({ children }) => <h1 className="retro mb-5 mt-2 text-xl font-bold leading-relaxed text-foreground">{children}</h1>,
+          h1: ({ children }) => <h1 className="retro mb-5 mt-2 break-words text-xl font-bold leading-relaxed text-foreground">{children}</h1>,
           h2: ({ children }) => {
             const id = headingId(reactNodeToText(children));
             return (
-              <h2 id={id} className="retro group scroll-mt-6 mb-3 mt-10 text-sm font-bold leading-relaxed text-foreground">
+              <h2 id={id} className="retro group mb-3 mt-10 scroll-mt-6 break-words text-sm font-bold leading-relaxed text-foreground">
                 <a href={`#${id}`} aria-label={`Link to ${reactNodeToText(children)}`} className="mr-2 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
                   #
                 </a>
@@ -35,7 +35,7 @@ export function DocsContent({ content }: { content: string }) {
           h3: ({ children }) => {
             const id = headingId(reactNodeToText(children));
             return (
-              <h3 id={id} className="retro group scroll-mt-6 mb-2 mt-7 text-xs font-bold leading-relaxed text-foreground">
+              <h3 id={id} className="retro group mb-2 mt-7 scroll-mt-6 break-words text-xs font-bold leading-relaxed text-foreground">
                 <a href={`#${id}`} aria-label={`Link to ${reactNodeToText(children)}`} className="mr-2 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
                   #
                 </a>
@@ -43,19 +43,31 @@ export function DocsContent({ content }: { content: string }) {
               </h3>
             );
           },
-          p: ({ children }) => <p className="mb-4 text-sm leading-7 text-muted-foreground">{children}</p>,
+          p: ({ children }) => <p className="mb-4 min-w-0 break-words text-sm leading-7 text-muted-foreground">{children}</p>,
           a: ({ href, children }) => (
-            <a href={href} className="text-primary underline decoration-dotted underline-offset-4 hover:text-foreground">
+            <a href={href} className="break-words text-primary underline decoration-dotted underline-offset-4 hover:text-foreground">
               {children}
             </a>
           ),
           code: ({ className, children }) => {
             const isBlock = className?.includes("language-");
             if (isBlock) {
-              return <code className="block min-w-max text-xs leading-6 text-primary">{children}</code>;
+              const language = className?.match(/language-(\S+)/)?.[1];
+              const code = String(children).replace(/\n$/, "");
+              const highlighted = highlightCodeBlock(code, language);
+
+              return (
+                <code
+                  className={cn(
+                    "hljs block min-w-max text-xs leading-6",
+                    highlighted.language && `language-${highlighted.language}`,
+                  )}
+                  dangerouslySetInnerHTML={{ __html: highlighted.html }}
+                />
+              );
             }
             return (
-              <code className="border border-border bg-background px-1.5 py-0.5 text-xs text-primary">{children}</code>
+              <code className="break-words border border-border bg-background px-1.5 py-0.5 text-xs text-primary">{children}</code>
             );
           },
           pre: ({ children }) => (

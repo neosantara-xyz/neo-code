@@ -23,29 +23,29 @@ interface FAQ1Props {
 
 const defaultItems: FAQItem[] = [
   {
-    question: "What platforms do you support?",
+    question: "What is Neo Code?",
     answer:
-      "We support all major platforms: Windows, macOS, Linux, and even your grandma's old CRT monitor. If it has pixels, we got you.",
+      "Neo Code is a keyboard-driven coding agent that runs in your terminal and works with the Neosantara OpenAI-compatible API.",
   },
   {
-    question: "Is there a free tier?",
+    question: "How do I start?",
     answer:
-      "Yes! The Squire tier is completely free. You get 3 dungeon runs per day, basic gear, and access to community chat. No credit card required.",
+      "Install Neo Code, authenticate with `neo login` or `NEOSANTARA_API_KEY`, then run `neo` inside a project directory.",
   },
   {
-    question: "Can I cancel anytime?",
+    question: "Where do I find pricing?",
     answer:
-      "Absolutely. No contracts, no exit fees, no guilt trips. Cancel from your settings page and your subscription ends at the billing period.",
+      "Pricing is balance-based and shown in IDR on the Pricing page. Usage is deducted per token from your Neosantara balance.",
   },
   {
-    question: "Do you offer refunds?",
+    question: "Does it support Termux?",
     answer:
-      "We offer a 14-day money-back guarantee. If the game isn't for you, just reach out and we'll refund your gold — no questions asked.",
+      "Yes. Termux is supported as a first-class target, including install paths, touch keys, notifications, and mobile-friendly TUI defaults.",
   },
   {
-    question: "How do I upgrade my plan?",
+    question: "Can I customize models?",
     answer:
-      "Head to Settings and pick a new tier. The upgrade takes effect immediately and we'll prorate the difference. No downtime, no lost progress.",
+      "Yes. You can configure OpenAI-compatible endpoints through extensions or `~/.neo-code/agent/models.json` while the built-in provider remains Neosantara.",
   },
 ];
 

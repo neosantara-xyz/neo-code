@@ -148,6 +148,57 @@ img.pixelated {
   animation: glitch-img 4s steps(2) infinite;
 }
 
+.hljs {
+  color: var(--foreground);
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--muted-foreground);
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-name,
+.hljs-tag {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.hljs-string,
+.hljs-title,
+.hljs-section,
+.hljs-attribute,
+.hljs-literal,
+.hljs-template-tag,
+.hljs-template-variable {
+  color: var(--accent-300);
+}
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link,
+.hljs-meta {
+  color: var(--warning);
+}
+
+.hljs-type,
+.hljs-class .hljs-title,
+.hljs-variable,
+.hljs-params {
+  color: var(--success);
+}
+
+.hljs-deletion {
+  color: var(--error);
+}
+
+.hljs-addition {
+  color: var(--success);
+}
+
 ::-webkit-scrollbar {
   width: 8px;
 }

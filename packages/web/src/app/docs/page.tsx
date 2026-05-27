@@ -19,24 +19,24 @@ export default function DocsPage() {
         <p className="text-sm text-muted-foreground">Everything you need to use Neo Code</p>
       </div>
 
-      <div className="mb-16 space-y-10">
+      <div className="mb-16 min-w-0 space-y-10">
         {groups.map((group) => (
-          <section key={group.title}>
+          <section key={group.title} className="min-w-0">
             <div className="mb-3 flex items-end justify-between gap-3 border-b-2 border-border pb-2">
               <h2 className="retro text-xs font-bold text-foreground">{group.title}</h2>
               <span className="text-xs text-muted-foreground">{group.docs.length} pages</span>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {group.docs.map((doc) => (
                 <a
                   key={doc.slug}
                   href={`/docs/${doc.slug}`}
-                  className="block min-h-32 border-2 border-border bg-card p-4 transition-colors hover:border-primary hover:bg-muted/40"
+                  className="block min-h-32 min-w-0 border-2 border-border bg-card p-4 transition-colors hover:border-primary hover:bg-muted/40"
                 >
-                  <span className="mb-3 block font-mono text-[10px] uppercase text-muted-foreground">{doc.slug}</span>
-                  <h3 className="retro mb-2 text-xs font-bold leading-relaxed text-foreground">{doc.title}</h3>
-                  <p className="text-xs leading-5 text-muted-foreground">{doc.description}</p>
+                  <span className="mb-3 block break-all font-mono text-[10px] uppercase text-muted-foreground">{doc.slug}</span>
+                  <h3 className="retro mb-2 break-words text-xs font-bold leading-relaxed text-foreground">{doc.title}</h3>
+                  <p className="break-words text-xs leading-5 text-muted-foreground">{doc.description}</p>
                 </a>
               ))}
             </div>

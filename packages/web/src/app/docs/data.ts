@@ -14,6 +14,8 @@ export interface DocGroup {
 
 export const DOCS_DIR = path.resolve(process.cwd(), "../../docs");
 
+const WEBSITE_HIDDEN_DOCS = new Set(["packages", "sdk", "tui"]);
+
 export const DOC_ORDER = [
 	"getting-started",
 	"configuration",
@@ -61,6 +63,10 @@ export function getAllSlugs(): string[] {
 		.map((file) => file.replace(/\.md$/, ""));
 }
 
+function isWebsiteDocSlug(slug: string): boolean {
+	return !WEBSITE_HIDDEN_DOCS.has(slug);
+}
+
 export function sortDocs<T extends { slug: string }>(docs: T[]): T[] {
 	return [...docs].sort((a, b) => {
 		const ai = DOC_ORDER.indexOf(a.slug);
@@ -70,14 +76,18 @@ export function sortDocs<T extends { slug: string }>(docs: T[]): T[] {
 }
 
 export function loadDocs(): DocEntry[] {
-	const docs = getAllSlugs().map((slug) => {
-		const content = fs.readFileSync(path.join(DOCS_DIR, `${slug}.md`), "utf-8");
-		return { slug, title: extractTitle(content), description: extractDescription(content) };
-	});
+	const docs = getAllSlugs()
+		.filter(isWebsiteDocSlug)
+		.map((slug) => {
+			const content = fs.readFileSync(path.join(DOCS_DIR, `${slug}.md`), "utf-8");
+			return { slug, title: extractTitle(content), description: extractDescription(content) };
+		});
 	return sortDocs(docs);
 }
 
 export function loadDoc(slug: string): { entry: DocEntry; content: string } | undefined {
+	if (!isWebsiteDocSlug(slug)) return undefined;
+
 	const filePath = path.join(DOCS_DIR, `${slug}.md`);
 	if (!fs.existsSync(filePath)) return undefined;
 	const content = fs.readFileSync(filePath, "utf-8");

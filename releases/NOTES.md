@@ -498,3 +498,18 @@
 - mode: patch
 - notes: fix(web): unbreak /docs/[slug] under next 16 and refine landing copy
 
+## v0.76.82 (2026-05-27)
+- mode: patch
+- notes: fix(web): tighten landing FAQ and prevent docs mobile overflow
+
+## v0.76.83 (2026-05-27)
+- mode: patch
+- notes: feat(web): add syntax highlighting to documentation code blocks
+
+## v0.76.84 (2026-05-27)
+- mode: patch
+- notes: fix(web): hide developer-only docs from public documentation
+
+## v0.76.85 (2026-05-27)
+- mode: patch
+- notes: fix(web): link hero open-source badge to repository

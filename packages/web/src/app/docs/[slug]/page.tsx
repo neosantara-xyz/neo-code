@@ -30,24 +30,24 @@ export default async function DocPage({ params }: { params: Promise<{ slug: stri
         </a>
       </div>
 
-      <div className="mb-12 grid gap-6 xl:grid-cols-[13rem_minmax(0,1fr)_14rem] xl:items-start">
-        <aside className="sticky top-6 hidden max-h-[calc(100vh-3rem)] overflow-y-auto xl:block">
+      <div className="mb-12 grid min-w-0 gap-6 xl:grid-cols-[13rem_minmax(0,1fr)_14rem] xl:items-start">
+        <aside className="sticky top-6 hidden max-h-[calc(100vh-3rem)] min-w-0 overflow-y-auto xl:block">
           <DocsSideNav docs={docs} currentSlug={slug} />
         </aside>
 
-        <div className="xl:hidden">
+        <div className="min-w-0 xl:hidden">
           <DocsMobileNav docs={docs} currentSlug={slug} />
         </div>
 
-        <div className="lg:hidden">
+        <div className="min-w-0 lg:hidden">
           <DocsTableOfContents items={toc} variant="mobile" />
         </div>
 
-        <article className="border-2 border-border bg-card px-4 py-6 sm:px-6 lg:px-8">
+        <article className="min-w-0 overflow-hidden border-2 border-border bg-card px-4 py-6 sm:px-6 lg:px-8">
           <DocsContent content={content} />
         </article>
 
-        <aside className="sticky top-6 hidden max-h-[calc(100vh-3rem)] overflow-y-auto lg:block">
+        <aside className="sticky top-6 hidden max-h-[calc(100vh-3rem)] min-w-0 overflow-y-auto lg:block">
           <DocsTableOfContents items={toc} />
         </aside>
       </div>
