@@ -82,7 +82,7 @@ export default function Home() {
           ]}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/mascot.svg" alt="Neo Kanci" className="mx-auto mt-8 h-28 w-28" />
+          <img src="/mascot.svg" alt="Neo Kanci" className="mx-auto mt-8 h-28 w-28 pixel-lift" />
         </Hero1>
 
 
