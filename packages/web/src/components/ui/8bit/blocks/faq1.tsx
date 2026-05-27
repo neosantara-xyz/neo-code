@@ -9,8 +9,10 @@ import {
 
 import "@/components/ui/8bit/styles/retro.css";
 
+import type { ReactNode } from "react";
+
 export interface FAQItem {
-  answer: string;
+  answer: ReactNode;
   question: string;
 }
 

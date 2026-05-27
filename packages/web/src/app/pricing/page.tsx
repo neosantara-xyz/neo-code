@@ -108,35 +108,35 @@ export default function PricingPage() {
           items={[
             {
               question: "How does billing work?",
-              answer: "Neo Code uses your Neosantara balance (saldo). You top up at app.neosantara.xyz and usage is deducted per token consumed. No monthly subscription, no daily caps — just pay for what you use. Billing is currently in beta; pricing and rate limits may change.",
+              answer: <>Neo Code uses your Neosantara balance. Top up at <a href="https://app.neosantara.xyz" className="underline">app.neosantara.xyz</a>, and usage is deducted per token. No subscription, no daily caps. Billing is in beta — pricing may change.</>,
             },
             {
               question: "Is pricing final?",
-              answer: "No. Neo Code pricing is in beta. Token rates, tier thresholds, and rate limits may be adjusted as we scale. Existing balances and tier progress are preserved across changes.",
+              answer: "No. Pricing is in beta. Token rates, tier thresholds, and rate limits may change as we scale. Your balance and tier progress are always preserved.",
             },
             {
               question: "What are RPM, ITPM, and OTPM?",
-              answer: "RPM is requests per minute — how many API calls you can make. ITPM is input tokens per minute — throughput for prompts you send. OTPM is output tokens per minute — throughput for responses you receive. These are rate limits, not quotas.",
+              answer: "RPM = requests per minute. ITPM = input tokens per minute. OTPM = output tokens per minute. These are rate limits, not quotas.",
             },
             {
               question: "What are tiers?",
-              answer: "Tiers determine your rate limits (RPM/ITPM/OTPM) and feature access. They unlock automatically based on your cumulative top-up amount — not current balance. Once unlocked, you never lose your tier.",
+              answer: "Tiers set your rate limits and feature access. They unlock based on cumulative top-up amount (not current balance). Once unlocked, you keep your tier permanently.",
             },
             {
               question: "What happens when my balance runs out?",
-              answer: "Requests will be rejected until you top up again. Your tier stays the same — it's based on cumulative deposits, not current balance.",
+              answer: "Requests are rejected until you top up. Your tier stays — it's based on total deposits, not current balance.",
             },
             {
-              question: "Can I use my Neosantara balance outside Neo Code?",
-              answer: "Yes. Your Neosantara balance works across all Neosantara API services. Neo Code is one client that consumes from the same balance via the Neosantara API.",
+              question: "Can I use my balance outside Neo Code?",
+              answer: <>Yes. Your balance works across all <a href="https://api.neosantara.xyz" className="underline">Neosantara API</a> services. Neo Code is one client that consumes from the same balance.</>,
             },
             {
               question: "What payment methods are accepted?",
-              answer: "Bank transfer, e-wallets (GoPay, OVO, DANA), QRIS, and credit/debit cards via Mayar payment gateway.",
+              answer: "Bank transfer, e-wallets (GoPay, OVO, DANA), QRIS, and credit/debit cards.",
             },
             {
               question: "What models are available?",
-              answer: "All non-deprecated text models with function calling support from the Neosantara API, including DeepSeek, Qwen, and other models routed through our infrastructure.",
+              answer: <>All non-deprecated text models with function calling from the Neosantara API. See <a href="/docs/models" className="underline">models documentation</a> for the full list.</>,
             },
           ]}
         />
