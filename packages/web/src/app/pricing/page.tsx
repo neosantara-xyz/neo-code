@@ -20,7 +20,7 @@ export default function PricingPage() {
       </div>
       <Pricing1
         title="Pricing"
-        description="Neo Code uses your Neosantara balance. No subscription — pay per token. Tiers unlock automatically based on cumulative top-up amount."
+        description="Neo Code uses your Neosantara balance. No subscription — pay per token. Tiers unlock automatically based on cumulative top-up amount. Pricing is in beta and subject to change."
         tiers={[
           {
             name: "Free",
@@ -108,7 +108,11 @@ export default function PricingPage() {
           items={[
             {
               question: "How does billing work?",
-              answer: "Neo Code uses your Neosantara balance (saldo). You top up at app.neosantara.xyz and usage is deducted per token consumed. No monthly subscription, no daily caps — just pay for what you use.",
+              answer: "Neo Code uses your Neosantara balance (saldo). You top up at app.neosantara.xyz and usage is deducted per token consumed. No monthly subscription, no daily caps — just pay for what you use. Billing is currently in beta; pricing and rate limits may change.",
+            },
+            {
+              question: "Is pricing final?",
+              answer: "No. Neo Code pricing is in beta. Token rates, tier thresholds, and rate limits may be adjusted as we scale. Existing balances and tier progress are preserved across changes.",
             },
             {
               question: "What are RPM, ITPM, and OTPM?",
@@ -121,6 +125,10 @@ export default function PricingPage() {
             {
               question: "What happens when my balance runs out?",
               answer: "Requests will be rejected until you top up again. Your tier stays the same — it's based on cumulative deposits, not current balance.",
+            },
+            {
+              question: "Can I use my Neosantara balance outside Neo Code?",
+              answer: "Yes. Your Neosantara balance works across all Neosantara API services. Neo Code is one client that consumes from the same balance via the Neosantara API.",
             },
             {
               question: "What payment methods are accepted?",
