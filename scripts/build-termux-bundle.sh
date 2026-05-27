@@ -21,10 +21,12 @@ if [ ! -d "$ROOT_DIR/packages/coding-agent/dist" ]; then
   npm run build >/dev/null
 fi
 
-# Pack all workspaces into a known temporary directory to avoid npm version
-# differences in output location (some versions write to cwd, others to the
-# workspace directory).
-npm pack --workspaces --pack-destination "$PACK_DIR" >/dev/null
+# Pack only the packages needed for the Termux bundle (excludes @neosantara/web).
+npm pack --pack-destination "$PACK_DIR" \
+  -w @neosantara/ai \
+  -w @neosantara/agent-core \
+  -w @neosantara/tui \
+  -w @neosantara/code >/dev/null
 
 cp "$PACK_DIR"/neosantara-ai-*.tgz "$STAGE_DIR/neosantara-ai.tgz"
 cp "$PACK_DIR"/neosantara-agent-core-*.tgz "$STAGE_DIR/neosantara-agent-core.tgz"
