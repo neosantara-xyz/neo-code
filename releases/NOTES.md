@@ -525,3 +525,7 @@
 ## v0.76.88 (2026-05-27)
 - mode: patch
 - notes: fix(web): align public pricing tiers with dashboard pricing
+## v0.76.89 (2026-05-27)
+- mode: patch
+- notes: fix(web): use ImageResponse constructor instead of JSX to fix OG image build errors
+

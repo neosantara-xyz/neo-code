@@ -15,8 +15,8 @@ export default async function Image({ params }: { params: Promise<{ slug: string
 	const doc = loadDoc(slug);
 	if (!doc) notFound();
 
-	return (
-		<ImageResponse {...size}>
+	return new ImageResponse(
+		(
 			<div
 				style={{
 					background: "#09090b",
@@ -39,6 +39,7 @@ export default async function Image({ params }: { params: Promise<{ slug: string
 				</div>
 				<div style={{ color: "#a1a1aa", fontSize: 24 }}>code.neosantara.xyz/docs/{doc.entry.slug}</div>
 			</div>
-		</ImageResponse>
+		),
+		size,
 	);
 }

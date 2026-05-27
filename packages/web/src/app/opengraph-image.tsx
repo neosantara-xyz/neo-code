@@ -6,8 +6,8 @@ export const contentType = "image/png";
 export const size = OG_IMAGE_SIZE;
 
 export default function Image() {
-	return (
-		<ImageResponse {...size}>
+	return new ImageResponse(
+		(
 			<div
 				style={{
 					background: "#09090b",
@@ -28,6 +28,7 @@ export default function Image() {
 				</div>
 				<div style={{ color: "#a1a1aa", fontSize: 24 }}>code.neosantara.xyz</div>
 			</div>
-		</ImageResponse>
+		),
+		size,
 	);
 }
