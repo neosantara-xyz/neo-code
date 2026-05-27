@@ -5,6 +5,7 @@ import { loadDoc, loadDocs } from "../data";
 
 export const contentType = "image/png";
 export const size = OG_IMAGE_SIZE;
+export const dynamic = "force-static";
 
 export function generateStaticParams() {
 	return loadDocs().map((doc) => ({ slug: doc.slug }));

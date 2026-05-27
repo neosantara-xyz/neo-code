@@ -4,6 +4,7 @@ import { DEFAULT_DESCRIPTION, OG_IMAGE_SIZE, SITE_NAME } from "../seo";
 export const alt = "Documentation - Neo Code";
 export const contentType = "image/png";
 export const size = OG_IMAGE_SIZE;
+export const dynamic = "force-static";
 
 export default function Image() {
 	return new ImageResponse(

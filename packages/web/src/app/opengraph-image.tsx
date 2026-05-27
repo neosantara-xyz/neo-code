@@ -4,6 +4,7 @@ import { DEFAULT_DESCRIPTION, DEFAULT_TITLE, OG_IMAGE_SIZE, SITE_NAME } from "./
 export const alt = DEFAULT_TITLE;
 export const contentType = "image/png";
 export const size = OG_IMAGE_SIZE;
+export const dynamic = "force-static";
 
 export default function Image() {
 	return new ImageResponse(
