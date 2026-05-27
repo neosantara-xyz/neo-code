@@ -61,7 +61,7 @@ export default function Home() {
 
   return (
     <PageSkeleton>
-      <main className="crt-on mx-auto max-w-3xl px-4 py-12">
+      <main className="crt-on mx-auto max-w-5xl px-4 py-12">
         {/* Hero */}
         <Hero1
           title="NEO CODE"
