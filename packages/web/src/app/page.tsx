@@ -85,18 +85,6 @@ export default function Home() {
           <img src="/mascot.svg" alt="Neo Kanci" className="mx-auto mt-8 h-28 w-28 pixel-lift" />
         </Hero1>
 
-        <section className="mb-16 grid gap-3 border-y-2 border-border py-6 text-center sm:grid-cols-3">
-          {[
-            ["NEOSANTARA", "First-class provider, no vendor SDKs"],
-            ["IDR BILLING", "All model prices in rupiah"],
-            ["OPENAI SDK", "Responses + completions transports"],
-          ].map(([label, text]) => (
-            <div key={label}>
-              <div className="retro mb-1 text-xs font-bold text-foreground">{label}</div>
-              <p className="text-xs leading-5 text-muted-foreground">{text}</p>
-            </div>
-          ))}
-        </section>
 
         {/* Install */}
         <Separator className="mb-16" />
