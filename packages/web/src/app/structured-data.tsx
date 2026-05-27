@@ -44,7 +44,7 @@ export function buildSiteStructuredData(): SiteStructuredData {
 	};
 }
 
-export function serializeJsonLd(data: JsonLdValue): string {
+export function serializeJsonLd(data: JsonLdValue | SiteStructuredData): string {
 	return JSON.stringify(data).replace(/</g, "\\u003c");
 }
 
