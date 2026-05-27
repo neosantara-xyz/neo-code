@@ -9,7 +9,7 @@ export const metadata: Metadata = {
     path: "/",
     title: DEFAULT_TITLE,
   }),
-  icons: { icon: "/icon.svg" },
+  icons: { icon: "/neo-code-favicon.svg" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

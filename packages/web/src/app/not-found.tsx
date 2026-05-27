@@ -7,7 +7,7 @@ export default function NotFound() {
       description="This path does not exist. Maybe it was compacted away."
       cta="Back to Home"
       href="/"
-      imageSrc="/neo-code-mark.svg"
+      imageSrc="/neo-kanci-ngantuk.svg"
     />
   );
 }
