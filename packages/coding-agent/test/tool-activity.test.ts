@@ -843,6 +843,34 @@ describe("tool activity tree v2 — structured rows and 3-state header", () => {
 		expect(renderCompact.rows.some((row) => row.kind === "detail")).toBe(false);
 	});
 
+	it("can keep inspected targets as tree rows in compact layout", () => {
+		const render = buildToolActivityGroupRender(
+			[
+				{
+					id: "ls-1",
+					toolName: "ls",
+					args: { path: "packages/coding-agent/src" },
+					result: { content: [{ type: "text", text: "index.ts" }] },
+					isError: false,
+					isPartial: false,
+				},
+				{
+					id: "read-1",
+					toolName: "read",
+					args: { path: "packages/coding-agent/src/core/tools/tool-activity.ts" },
+					result: { content: [{ type: "text", text: "ok" }] },
+					isError: false,
+					isPartial: false,
+				},
+			],
+			{ layout: "compact", showTargetDetailsInCompact: true },
+		);
+
+		expect(render.header?.text).toBe("● Explored");
+		expect(render.rows.some((row) => row.kind === "detail" && row.text.includes("coding-agent/src"))).toBe(true);
+		expect(render.rows.some((row) => row.kind === "detail" && row.text.includes("tool-activity.ts"))).toBe(true);
+	});
+
 	it("inlines single-tool result onto the action row when room allows", () => {
 		const render = buildToolActivityGroupRender(
 			[

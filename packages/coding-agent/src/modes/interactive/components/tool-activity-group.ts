@@ -496,6 +496,7 @@ export class ToolActivityGroupComponent extends Container {
 		const formatOptions: ToolActivityGroupFormatOptions = {
 			minimumCounts: this.getMinimumCounts(),
 			layout,
+			showTargetDetailsInCompact: true,
 			inlineSingleTool: layout !== "tight",
 			icons: this.icons,
 			forceRunning: this.streaming,

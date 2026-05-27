@@ -2,6 +2,8 @@ import { type Component, type Focusable, matchesKey, truncateToWidth } from "@ne
 import { theme } from "../theme/theme.js";
 import { rawKeyHint } from "./keybinding-hints.js";
 
+const TRANSCRIPT_TITLE = "T R A N S C R I P T";
+
 export class TranscriptPagerComponent implements Component, Focusable {
 	private scrollOffset = 0;
 	private autoFollow = true;
@@ -26,7 +28,7 @@ export class TranscriptPagerComponent implements Component, Focusable {
 
 	render(width: number): string[] {
 		const lines = this.getLines();
-		const viewportHeight = Math.max(1, this.getTerminalRows() - 3);
+		const viewportHeight = Math.max(1, this.getTerminalRows() - 5);
 		const maxScroll = Math.max(0, lines.length - viewportHeight);
 
 		if (this.autoFollow) {
@@ -37,30 +39,39 @@ export class TranscriptPagerComponent implements Component, Focusable {
 
 		const header = this.renderHeader(width);
 		const viewport = this.renderViewport(lines, viewportHeight, width);
-		const footer = this.renderFooter(width);
+		const bottomBar = this.renderBottomBar(width, viewportHeight);
+		const hints = this.renderHints(width);
 
-		return [...header, ...viewport, ...footer];
+		return [...header, ...viewport, bottomBar, ...hints];
 	}
 
 	handleInput(data: string): void {
-		if (matchesKey(data, "escape") || data === "q") {
+		if (matchesKey(data, "escape") || matchesKey(data, "ctrl+t") || data === "q") {
 			this.onClose();
 			return;
 		}
-		if (matchesKey(data, "up")) {
+		if (matchesKey(data, "up") || data === "k") {
 			this.scrollUp(1);
 			return;
 		}
-		if (matchesKey(data, "down")) {
+		if (matchesKey(data, "down") || data === "j") {
 			this.scrollDown(1);
 			return;
 		}
-		if (matchesKey(data, "pageUp")) {
+		if (matchesKey(data, "pageUp") || matchesKey(data, "ctrl+b")) {
 			this.scrollUp(this.pageSize());
 			return;
 		}
-		if (matchesKey(data, "pageDown")) {
+		if (matchesKey(data, "pageDown") || matchesKey(data, "ctrl+f") || data === " ") {
 			this.scrollDown(this.pageSize());
+			return;
+		}
+		if (matchesKey(data, "ctrl+u")) {
+			this.scrollUp(this.halfPageSize());
+			return;
+		}
+		if (matchesKey(data, "ctrl+d")) {
+			this.scrollDown(this.halfPageSize());
 			return;
 		}
 		if (matchesKey(data, "home")) {
@@ -90,12 +101,20 @@ export class TranscriptPagerComponent implements Component, Focusable {
 	}
 
 	private pageSize(): number {
-		return Math.max(1, this.getTerminalRows() - 3);
+		return Math.max(1, this.getTerminalRows() - 5);
+	}
+
+	private halfPageSize(): number {
+		return Math.max(1, Math.ceil(this.pageSize() / 2));
 	}
 
 	private renderHeader(width: number): string[] {
-		const headerText = theme.bold(this.title);
-		return [truncateToWidth(headerText, Math.max(1, width), "")];
+		const widthLimit = Math.max(1, width);
+		const title = `/ ${this.title || TRANSCRIPT_TITLE}`;
+		const fillWidth = Math.max(0, widthLimit - title.length);
+		const fill = theme.fg("dim", "/ ".repeat(Math.ceil(fillWidth / 2)));
+		const header = `${theme.fg("dim", title)}${fill}`;
+		return [truncateToWidth(header, widthLimit, "")];
 	}
 
 	private renderViewport(lines: string[], viewportHeight: number, width: number): string[] {
@@ -105,19 +124,33 @@ export class TranscriptPagerComponent implements Component, Focusable {
 			result.push(truncateToWidth(line, Math.max(1, width), ""));
 		}
 		while (result.length < viewportHeight) {
-			result.push("");
+			result.push(this.renderEmptyLine(width));
 		}
 		return result;
 	}
 
-	private renderFooter(width: number): string[] {
+	private renderEmptyLine(width: number): string {
+		if (width <= 0) return "";
+		return `${theme.fg("dim", "~")}${" ".repeat(Math.max(0, width - 1))}`;
+	}
+
+	private renderBottomBar(width: number, viewportHeight: number): string {
 		const lines = this.getLines();
-		const viewportHeight = Math.max(1, this.getTerminalRows() - 3);
 		const totalLines = lines.length;
-		const currentLine = Math.min(this.scrollOffset + viewportHeight, totalLines);
-		const positionIndicator = totalLines > 0 ? `Line ${currentLine}/${totalLines}` : "";
-		const followStatus = this.autoFollow ? "on" : "off";
-		const hint = `${rawKeyHint("up/dn", "scroll")} ${rawKeyHint("PgUp/PgDn", "page")} ${rawKeyHint("q/Esc", "close")} ${theme.fg("dim", `${positionIndicator} auto-follow: ${followStatus}`)}`;
-		return [truncateToWidth(hint, Math.max(1, width), "")];
+		const maxScroll = Math.max(0, totalLines - viewportHeight);
+		const percent = maxScroll === 0 ? 100 : Math.round((Math.min(this.scrollOffset, maxScroll) / maxScroll) * 100);
+		const percentText = ` ${percent}% `;
+		const line = theme.fg("dim", "─".repeat(Math.max(1, width)));
+		const start = Math.max(0, width - percentText.length - 1);
+		return `${truncateToWidth(line, start, "")}${theme.fg("dim", percentText)}`.padEnd(width);
+	}
+
+	private renderHints(width: number): string[] {
+		const first = `${rawKeyHint("up/down", "to scroll")}   ${rawKeyHint("PgUp/PgDn", "to page")}   ${rawKeyHint("Home/End", "to jump")}`;
+		const second = `${rawKeyHint("q/Ctrl+T", "to quit")}   ${rawKeyHint("Esc", "to close")}`;
+		return [
+			truncateToWidth(` ${first}`, Math.max(1, width), ""),
+			truncateToWidth(` ${second}`, Math.max(1, width), ""),
+		];
 	}
 }

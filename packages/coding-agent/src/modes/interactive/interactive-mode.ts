@@ -4809,7 +4809,7 @@ export class InteractiveMode {
 		this.transcriptPagerLines = lines;
 
 		const component = new TranscriptPagerComponent(
-			"Session Transcript",
+			"T R A N S C R I P T",
 			() => this.transcriptPagerLines,
 			() => this.ui.terminal.rows,
 			() => {

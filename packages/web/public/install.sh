@@ -56,8 +56,13 @@ ok()      { printf "  ${GREEN}[%s]${RESET} ${DIM}ok${RESET}\n" "$1"; }
 print_header() {
   ref="${1:-latest}"
   printf '\n'
-  printf "  ${CYAN}[o_o]${RESET} ${BOLD}Neo Code${RESET}\n"
-  printf "  ${CYAN}/|_|\\${RESET} ${DIM}installer ${ref}${RESET}\n"
+  printf "  ${CYAN}▄██▄   ▄██▄${RESET}\n"
+  printf " ${CYAN}██${DIM}░░${CYAN}██▄██${DIM}░░${CYAN}██${RESET}\n"
+  printf " ${CYAN}██${DIM}░░${CYAN}█████${DIM}░░${CYAN}██${RESET}\n"
+  printf "   ${CYAN}███${RESET} >_ ${CYAN}███${RESET}   ${BOLD}Neo Code${RESET}\n"
+  printf "  ${CYAN}██${RESET}  ▐▌ ▐▌ ${CYAN}██${RESET}  ${DIM}installer ${ref}${RESET}\n"
+  printf "  ${CYAN}▀██▄███▄██▀${RESET}\n"
+  printf "     ${CYAN}▀▀▀▀▀${RESET}\n"
   printf '\n'
 }
 
@@ -356,9 +361,9 @@ download() {
     return 0
   fi
   if command -v curl >/dev/null 2>&1; then
-    run curl -fL --progress-bar "$url" -o "$out"
+    run curl -fsSL "$url" -o "$out"
   elif command -v wget >/dev/null 2>&1; then
-    run wget -O "$out" "$url"
+    run wget -q -O "$out" "$url"
   else
     err "curl or wget is required for release mode"
     return 1

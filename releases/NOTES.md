@@ -533,3 +533,15 @@
 - mode: patch
 - notes: fix(build): make Termux bundle packaging deterministic for binary releases
 
+## v0.76.91 (2026-05-28)
+- mode: patch
+- notes: fix(installer): quiet release downloads and show Neo Code mascot header
+
+## v0.76.92 (2026-05-28)
+- mode: patch
+- notes: fix(tui): align Ctrl+T transcript pager chrome with Codex
+
+## v0.76.93 (2026-05-28)
+- mode: patch
+- notes: fix(tui): show inspected targets as tree rows in tool activity groups
+

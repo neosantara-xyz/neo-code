@@ -32,6 +32,12 @@ export interface ToolActivityGroupFormatOptions {
 	 */
 	layout?: "full" | "compact" | "tight";
 	/**
+	 * Keep completed target child rows even in `compact` layout. This is used by
+	 * the interactive activity feed so collapsed exploration groups still show
+	 * the concrete files/directories that were inspected.
+	 */
+	showTargetDetailsInCompact?: boolean;
+	/**
 	 * Optional theme-driven kind icons. Falls back to plain branch connector
 	 * (`├─`/`└─`) when omitted, which keeps the existing ASCII-friendly look.
 	 */
@@ -1094,6 +1100,24 @@ function targetDetailLabels(items: ToolActivityGroupItem[], maxItems = Infinity)
 	return visible;
 }
 
+function targetTreeDetailLabels(items: ToolActivityGroupItem[], maxItems = Infinity): string[] {
+	const labels: string[] = [];
+	const seen = new Set<string>();
+	for (const item of items) {
+		const activity = summarizeToolCall(item.toolName, item.args);
+		const fallback = activity.kind === "list" ? "." : "file";
+		const label = targetPathForAction(item, fallback);
+		if (!label || seen.has(label)) continue;
+		seen.add(label);
+		const suffix = targetDetailSuffix(item);
+		labels.push(suffix ? `${label} ${suffix}` : label);
+	}
+	const visible = labels.slice(0, maxItems);
+	const remaining = labels.length - visible.length;
+	if (remaining > 0) visible.push(`+${remaining} more files`);
+	return visible;
+}
+
 function getUniqueLabelsCount(items: ToolActivityGroupItem[]): number {
 	const seen = new Set<string>();
 	for (const item of items) {
@@ -1238,7 +1262,7 @@ function buildSignature(items: ToolActivityGroupItem[], options: ToolActivityGro
 				.sort()
 				.join(",")
 		: "";
-	return `${parts.join(";")}#${counts}#${options.layout ?? "full"}#${options.inlineSingleTool ? "1" : "0"}#${options.forceRunning ? "r" : ""}`;
+	return `${parts.join(";")}#${counts}#${options.layout ?? "full"}#${options.inlineSingleTool ? "1" : "0"}#${options.forceRunning ? "r" : ""}#${options.showTargetDetailsInCompact ? "targets" : ""}`;
 }
 
 function appendStructuredPhaseRows(
@@ -1252,8 +1276,14 @@ function appendStructuredPhaseRows(
 ): void {
 	const tightLayout = options.layout === "tight";
 	const compactLayout = options.layout === "compact" || tightLayout;
-	const includeTargets = !compactLayout && shouldShowTargetDetails(kind, kindItems, true);
-	const targets = includeTargets ? targetDetailLabels(kindItems) : [];
+	const includeTargets =
+		(!compactLayout || (options.showTargetDetailsInCompact === true && !tightLayout)) &&
+		shouldShowTargetDetails(kind, kindItems, true);
+	const targets = includeTargets
+		? options.showTargetDetailsInCompact === true
+			? targetTreeDetailLabels(kindItems)
+			: targetDetailLabels(kindItems)
+		: [];
 	const uniqueCount = getUniqueLabelsCount(kindItems);
 	const count = targets.length > 0 ? uniqueCount : kindItems.length;
 	const summary =

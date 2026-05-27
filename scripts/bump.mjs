@@ -15,6 +15,10 @@ function run(cmd) {
 	});
 }
 
+function refreshLockfile() {
+	run("npm install --package-lock-only --ignore-scripts");
+}
+
 function parseArgs(argv) {
 	let level = "patch";
 	let notes = "";
@@ -84,6 +88,7 @@ function main() {
 	if (version) {
 		run(`npm version ${version} -ws --no-git-tag-version`);
 		run("node scripts/sync-versions.js");
+		refreshLockfile();
 	} else {
 		run(`npm run version:${level}`);
 	}

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -45,6 +45,7 @@ describe("install.sh", () => {
 			"https://github.com/neosantara-xyz/neo-code/releases/download/v0.74.0/neo-linux-x64.tar.gz",
 		);
 		expect(output).toContain("Neo Code");
+		expect(output).toContain("▄██▄   ▄██▄");
 		expect(output).toContain("[fetch] Downloading neo-linux-x64.tar.gz");
 		expect(output).toContain(`ln -s ${home}/.local/neo/neo ${home}/.local/bin/neo`);
 	});
@@ -90,5 +91,14 @@ describe("install.sh", () => {
 		expect(output).toContain(
 			"https://github.com/neosantara-xyz/neo-code/releases/download/v0.74.0/neo-linux-x64.tar.gz",
 		);
+	});
+
+	it("keeps release downloads quiet instead of showing transfer progress", () => {
+		const script = readFileSync(installScriptPath, "utf8");
+
+		expect(script).toContain("curl -fsSL");
+		expect(script).toContain("wget -q -O");
+		expect(script).not.toContain("--progress-bar");
+		expect(script).not.toContain("wget -O");
 	});
 });
