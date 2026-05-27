@@ -23,7 +23,7 @@ export default function Image() {
 				}}
 			>
 				<div style={{ color: "#a1a1aa", fontSize: 28, letterSpacing: 0, textTransform: "uppercase" }}>{SITE_NAME}</div>
-				<div>
+				<div style={{ display: "flex", flexDirection: "column" }}>
 					<div style={{ fontSize: 72, fontWeight: 800, letterSpacing: 0, lineHeight: 1.08, maxWidth: 880 }}>Documentation</div>
 					<div style={{ color: "#d4d4d8", fontSize: 30, lineHeight: 1.45, marginTop: 28, maxWidth: 820 }}>{DEFAULT_DESCRIPTION}</div>
 				</div>
