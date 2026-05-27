@@ -1,6 +1,14 @@
 import { SiteFooter } from "@/components/site-footer";
 import "@/components/ui/8bit/styles/retro.css";
 import { getDocGroups, loadDocs } from "./data";
+import { buildSiteMetadata } from "../seo";
+
+export const metadata = buildSiteMetadata({
+  description: "Everything you need to install, configure, and use Neo Code.",
+  imagePath: "/docs/opengraph-image",
+  path: "/docs",
+  title: "Documentation - Neo Code",
+});
 
 export default function DocsPage() {
   const docs = loadDocs();

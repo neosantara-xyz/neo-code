@@ -2,12 +2,21 @@ import { notFound } from "next/navigation";
 import { DocsContent } from "../content";
 import { DocsMobileNav, DocsSideNav } from "../docs-shell";
 import { DocsTableOfContents } from "../docs-toc";
-import { getAllSlugs, loadDoc, loadDocs } from "../data";
+import { loadDoc, loadDocs } from "../data";
 import { extractTableOfContents } from "../toc";
 import { SiteFooter } from "@/components/site-footer";
+import { buildDocMetadata } from "../../seo";
 
 export async function generateStaticParams() {
-  return getAllSlugs().map((slug) => ({ slug }));
+  return loadDocs().map((doc) => ({ slug: doc.slug }));
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const current = loadDoc(slug);
+  if (!current) return {};
+
+  return buildDocMetadata(current.entry);
 }
 
 export default async function DocPage({ params }: { params: Promise<{ slug: string }> }) {

@@ -513,3 +513,15 @@
 ## v0.76.85 (2026-05-27)
 - mode: patch
 - notes: fix(web): link hero open-source badge to repository
+
+## v0.76.86 (2026-05-27)
+- mode: patch
+- notes: feat(web): add docs copy buttons and generated SEO metadata
+
+## v0.76.87 (2026-05-27)
+- mode: patch
+- notes: feat(web): add structured SEO data for public pages
+
+## v0.76.88 (2026-05-27)
+- mode: patch
+- notes: fix(web): align public pricing tiers with dashboard pricing

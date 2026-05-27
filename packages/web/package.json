@@ -1,6 +1,6 @@
 {
   "name": "@neosantara/web",
-  "version": "0.76.85",
+  "version": "0.76.88",
   "private": true,
   "scripts": {
     "dev": "next dev",

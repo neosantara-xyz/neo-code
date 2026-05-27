@@ -2,6 +2,15 @@ import Pricing1 from "@/components/ui/8bit/blocks/pricing1";
 import { Badge } from "@/components/ui/8bit/badge";
 import FAQ1 from "@/components/ui/8bit/blocks/faq1";
 import { SiteFooter } from "@/components/site-footer";
+import { buildSiteMetadata } from "../seo";
+import { PUBLIC_PRICING_CTA, PUBLIC_PRICING_PRICES } from "./pricing-prices";
+
+export const metadata = buildSiteMetadata({
+  description: "Neo Code pricing for Neosantara balance, IDR token billing, and automatic usage tiers.",
+  imagePath: "/opengraph-image",
+  path: "/pricing",
+  title: "Pricing - Neo Code",
+});
 
 export default function PricingPage() {
   return (
@@ -15,7 +24,7 @@ export default function PricingPage() {
         tiers={[
           {
             name: "Free",
-            price: "Rp 0",
+            price: PUBLIC_PRICING_PRICES.free,
             description: "No deposit required. Try Neo Code instantly.",
             cta: "Get Started",
             features: [
@@ -29,10 +38,10 @@ export default function PricingPage() {
           },
           {
             name: "Basic",
-            price: "Rp 85K",
+            price: PUBLIC_PRICING_PRICES.basic,
             period: "cumulative top-up",
             description: "For personal projects and daily coding.",
-            cta: "Top Up",
+            cta: PUBLIC_PRICING_CTA,
             features: [
               { text: "50 RPM", included: true },
               { text: "50K ITPM", included: true },
@@ -43,13 +52,28 @@ export default function PricingPage() {
             ],
           },
           {
+            name: "Standard",
+            price: PUBLIC_PRICING_PRICES.standard,
+            period: "cumulative top-up",
+            description: "More throughput for heavier coding sessions.",
+            cta: PUBLIC_PRICING_CTA,
+            features: [
+              { text: "1,000 RPM", included: true },
+              { text: "450K ITPM", included: true },
+              { text: "90K OTPM", included: true },
+              { text: "Balance-based usage", included: true },
+              { text: "Full MCP access", included: true },
+              { text: "Priority routing", included: true },
+            ],
+          },
+          {
             name: "Pro",
-            price: "Rp 3.35M",
+            price: PUBLIC_PRICING_PRICES.pro,
             period: "cumulative top-up",
             description: "Production-grade for professional developers.",
             badge: "Popular",
             highlighted: true,
-            cta: "Top Up",
+            cta: PUBLIC_PRICING_CTA,
             features: [
               { text: "2,000 RPM", included: true },
               { text: "1M ITPM", included: true },
@@ -61,10 +85,10 @@ export default function PricingPage() {
           },
           {
             name: "Enterprise",
-            price: "Rp 6.7M",
+            price: PUBLIC_PRICING_PRICES.enterprise,
             period: "cumulative top-up",
             description: "Maximum throughput for teams and heavy workloads.",
-            cta: "Top Up",
+            cta: PUBLIC_PRICING_CTA,
             features: [
               { text: "4,000 RPM", included: true },
               { text: "4M ITPM", included: true },

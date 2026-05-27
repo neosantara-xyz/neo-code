@@ -8,8 +8,7 @@ import {
   TableHeader,
 	TableRow,
 } from "@/components/ui/8bit/table";
-import { cn } from "@/lib/utils";
-import { highlightCodeBlock } from "./syntax-highlight";
+import { DocsCodeBlock } from "./code-block";
 import { createHeadingSlugger, reactNodeToText } from "./toc";
 
 export function DocsContent({ content }: { content: string }) {
@@ -54,17 +53,7 @@ export function DocsContent({ content }: { content: string }) {
             if (isBlock) {
               const language = className?.match(/language-(\S+)/)?.[1];
               const code = String(children).replace(/\n$/, "");
-              const highlighted = highlightCodeBlock(code, language);
-
-              return (
-                <code
-                  className={cn(
-                    "hljs block min-w-max text-xs leading-6",
-                    highlighted.language && `language-${highlighted.language}`,
-                  )}
-                  dangerouslySetInnerHTML={{ __html: highlighted.html }}
-                />
-              );
+              return <DocsCodeBlock code={code} language={language} />;
             }
             return (
               <code className="break-words border border-border bg-background px-1.5 py-0.5 text-xs text-primary">{children}</code>
