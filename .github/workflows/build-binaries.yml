@@ -79,7 +79,7 @@ jobs:
             neo-linux-arm64.tar.gz \
             neo-windows-x64.zip \
             ../../../install.sh \
-            ../../../dist/install/neo-termux.tar.gz \
+            ../../../dist/install/neo-termux-bundle.tar.gz \
             2>/dev/null || \
           gh release upload "${RELEASE_TAG}" \
             neo-darwin-arm64.tar.gz \
@@ -88,5 +88,5 @@ jobs:
             neo-linux-arm64.tar.gz \
             neo-windows-x64.zip \
             ../../../install.sh \
-            ../../../dist/install/neo-termux.tar.gz \
+            ../../../dist/install/neo-termux-bundle.tar.gz \
             --clobber
