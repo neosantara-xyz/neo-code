@@ -83,9 +83,9 @@ bundle_install_url() {
   release_ref="$1"
   cache_buster="$(date +%s 2>/dev/null || printf '%s' "$release_ref")"
   if [ -n "$DOWNLOAD_BASE_URL" ]; then
-    printf '%s/releases/%s/neo-termux.tar.gz?neo_code_cache=%s' "$DOWNLOAD_BASE_URL" "$release_ref" "$cache_buster"
+    printf '%s/releases/%s/neo-termux-npm-bundle.tar.gz?neo_code_cache=%s' "$DOWNLOAD_BASE_URL" "$release_ref" "$cache_buster"
   else
-    printf 'https://github.com/%s/releases/download/%s/neo-termux.tar.gz?neo_code_cache=%s' "$REPO" "$release_ref" "$cache_buster"
+    printf 'https://github.com/%s/releases/download/%s/neo-termux-npm-bundle.tar.gz?neo_code_cache=%s' "$REPO" "$release_ref" "$cache_buster"
   fi
 }
 
@@ -312,7 +312,7 @@ resolve_release_ref() {
       printf '%s' "$tag"
       return
     fi
-    printf 'latest'
+    # Could not resolve latest version from API or version.txt
     return
   fi
 
@@ -320,10 +320,28 @@ resolve_release_ref() {
 }
 
 fetch_latest_version() {
+  # If a custom download base URL is configured, try its version.txt first.
+  if [ -n "$DOWNLOAD_BASE_URL" ]; then
+    if command -v curl >/dev/null 2>&1; then
+      ver="$(curl -fsSL "${DOWNLOAD_BASE_URL}/releases/version.txt" 2>/dev/null)"
+    elif command -v wget >/dev/null 2>&1; then
+      ver="$(wget -qO- "${DOWNLOAD_BASE_URL}/releases/version.txt" 2>/dev/null)"
+    fi
+    if [ -n "${ver:-}" ]; then
+      printf '%s' "$ver"
+      return
+    fi
+  fi
+
+  # Fallback: resolve latest tag via GitHub API.
+  api_url="https://api.github.com/repos/${REPO}/releases/latest"
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "${DOWNLOAD_BASE_URL}/releases/version.txt" 2>/dev/null
+    tag="$(curl -fsSL "$api_url" 2>/dev/null | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO- "${DOWNLOAD_BASE_URL}/releases/version.txt" 2>/dev/null
+    tag="$(wget -qO- "$api_url" 2>/dev/null | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+  fi
+  if [ -n "${tag:-}" ]; then
+    printf '%s' "$tag"
   fi
 }
 
