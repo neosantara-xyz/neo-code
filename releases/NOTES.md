@@ -529,3 +529,7 @@
 - mode: patch
 - notes: fix(web): use ImageResponse constructor instead of JSX to fix OG image build errors
 
+## v0.76.90 (2026-05-28)
+- mode: patch
+- notes: fix(build): make Termux bundle packaging deterministic for binary releases
+
