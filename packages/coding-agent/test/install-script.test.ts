@@ -65,7 +65,7 @@ describe("install.sh", () => {
 
 		expect(output).toContain("Termux detected; using prebuilt npm bundle");
 		expect(output).toContain(
-			"https://github.com/neosantara-xyz/neo-code/releases/download/v0.74.0/neo-termux.tar.gz",
+			"https://github.com/neosantara-xyz/neo-code/releases/download/v0.74.0/neo-termux-bundle.tar.gz",
 		);
 		expect(output).toContain("[fetch] Downloading Termux bundle");
 		expect(output).toContain("[extract] Extracting installer bundle");
