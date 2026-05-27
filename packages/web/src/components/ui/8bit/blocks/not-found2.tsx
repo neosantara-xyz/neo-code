@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 
 import { cn } from "@/lib/utils";
 
@@ -37,7 +36,7 @@ export default function NotFound2({
 
       {imageSrc && (
         <div className="flex justify-center -mt-10">
-          <Image
+          <img
             alt="404"
             className="pixelated"
             height={200}
